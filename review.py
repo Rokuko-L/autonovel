@@ -19,15 +19,12 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+import utils
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env", override=True)
+load_dotenv()
 
 # Use Opus for reviews — it's the best at literary analysis
-
-CHAPTERS_DIR = BASE_DIR / "chapters"
-LOGS_DIR = BASE_DIR / "edit_logs"
 
 REVIEW_PROMPT = """Read the below novel, "{title}". Review it first as a literary critic (like a newspaper book review) and then as a professor of fiction. In the later review, give specific, actionable suggestions for any defects you find. Be fair but honest. You don't *have* to find defects.
 
@@ -42,13 +39,13 @@ def call_opus(prompt, max_tokens=8000):
 
 def get_title():
     """Extract novel title from first chapter or outline."""
-    outline = BASE_DIR / "outline.md"
+    outline = utils.get_outline_path()
     if outline.exists():
         first_line = outline.read_text().split("\n")[0]
         title = first_line.lstrip("# ").strip()
         if title:
             return title
-    ch1 = CHAPTERS_DIR / "ch_01.md"
+    ch1 = utils.get_chapters_dir() / "ch_01.md"
     if ch1.exists():
         first_line = ch1.read_text().split("\n")[0]
         return first_line.lstrip("# ").strip()
@@ -57,7 +54,7 @@ def get_title():
 
 def build_manuscript():
     """Concatenate all chapters into a single text."""
-    chapters = sorted(CHAPTERS_DIR.glob("ch_*.md"))
+    chapters = sorted(utils.get_chapters_dir().glob("ch_*.md"))
     if not chapters:
         print("ERROR: No chapters found.", file=sys.stderr)
         sys.exit(1)
@@ -195,9 +192,10 @@ def cmd_review(args):
     review_text = call_opus(prompt)
     
     # Save raw review
-    LOGS_DIR.mkdir(exist_ok=True)
+    logs_dir = utils.get_edit_logs_dir()
+    logs_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = LOGS_DIR / f"{timestamp}_review.json"
+    log_path = logs_dir / f"{timestamp}_review.json"
     
     parsed = parse_review(review_text)
     parsed["timestamp"] = timestamp
@@ -227,8 +225,9 @@ def cmd_review(args):
 
 def cmd_parse(args):
     """Parse the most recent review into actionable items."""
-    LOGS_DIR.mkdir(exist_ok=True)
-    reviews = sorted(LOGS_DIR.glob("*_review.json"), reverse=True)
+    logs_dir = utils.get_edit_logs_dir()
+    logs_dir.mkdir(exist_ok=True)
+    reviews = sorted(logs_dir.glob("*_review.json"), reverse=True)
     if not reviews:
         print("No reviews found. Run: review.py first")
         sys.exit(1)

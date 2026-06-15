@@ -7,13 +7,11 @@ Gives the reader panel enough to evaluate the ARC without 72k tokens.
 import re
 from pathlib import Path
 from dotenv import load_dotenv
+import utils
 from utils import call_anthropic, get_novel_title
 from genre import load_genre
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
-
-CHAPTERS_DIR = BASE_DIR / "chapters"
+load_dotenv()
 
 def call_writer(prompt, max_tokens=4000):
     return call_anthropic(prompt=prompt, system="You summarize novel chapters precisely. State what HAPPENS, what CHANGES, and what QUESTIONS are left open. No evaluation. No praise. Just events and shifts.", model_key="writer", max_tokens=max_tokens, timeout=120, temperature=0.1)
@@ -33,11 +31,21 @@ def extract_key_passages(text):
     return opening, closing, top_dialogue
 
 def main():
+    chapters_dir = utils.get_chapters_dir()
+    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
+    if not chapter_files:
+        print("No chapter files found!")
+        return
+
     summaries = []
     
-    for ch in range(1, 20):
-        path = CHAPTERS_DIR / f"ch_{ch:02d}.md"
-        text = path.read_text()
+    for path in chapter_files:
+        m = re.search(r"ch_(\d+)\.md", path.name)
+        if not m:
+            continue
+        ch = int(m.group(1))
+        
+        text = path.read_text(encoding="utf-8")
         wc = len(text.split())
         opening, closing, dialogue = extract_key_passages(text)
         
@@ -63,7 +71,8 @@ def main():
         print(f"Ch {ch}: summarized ({wc}w)")
     
     # Calculate total word count
-    total_wc = sum(len((CHAPTERS_DIR / f"ch_{c:02d}.md").read_text().split()) for c in range(1, 20))
+    total_wc = sum(len(p.read_text(encoding="utf-8").split()) for p in chapter_files)
+    num_chapters = len(chapter_files)
     
     # Assemble
     title = get_novel_title()
@@ -71,7 +80,7 @@ def main():
 ## Full-Arc Summary for Reader Panel
 
 This document contains chapter summaries, opening/closing passages,
-and key dialogue for all 23 chapters. Total novel: {total_wc:,} words.
+and key dialogue for all {num_chapters} chapters. Total novel: {total_wc:,} words.
 
 PREMISE: {load_genre()["generation"]["arc_summary_premise"]}
 
@@ -80,8 +89,8 @@ PREMISE: {load_genre()["generation"]["arc_summary_premise"]}
 """
     full += '\n---\n\n'.join(summaries)
     
-    out_path = BASE_DIR / "arc_summary.md"
-    out_path.write_text(full)
+    out_path = utils.get_arc_summary_path()
+    out_path.write_text(full, encoding="utf-8")
     print(f"\nSaved to {out_path} ({len(full.split())} words)")
 
 if __name__ == "__main__":

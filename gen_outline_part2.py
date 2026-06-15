@@ -4,18 +4,19 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from utils import call_anthropic, get_max_tokens_with_thinking
+import utils
+from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt
 from genre import load_genre
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
     return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, timeout=600)
 
 def main():
-    part1_path = BASE_DIR / ".outline_part1.md"
-    mystery_path = BASE_DIR / "MYSTERY.md"
+    root = utils.get_root_dir()
+    part1_path = utils.get_project_dir() / ".outline_part1.md"
+    mystery_path = root / "MYSTERY.md"
 
     if not part1_path.exists():
         print(f"ERROR: .outline_part1.md not found at {part1_path} — run gen_outline.py first", file=sys.stderr)
@@ -27,13 +28,14 @@ def main():
     mystery = mystery_path.read_text() if mystery_path.exists() else ""
 
     genre_cfg = load_genre()
-    prompt = genre_cfg["generation"]["gen_outline_part2_prompt"].format(
+    prompt = format_prompt(
+        genre_cfg["generation"]["gen_outline_part2_prompt"],
         part1=part1, mystery=mystery
     )
 
     print("Calling writer model...", file=sys.stderr)
     result = call_writer(prompt)
-    (BASE_DIR / "outline.md").write_text(part1 + "\n\n" + result, encoding="utf-8")
+    utils.get_outline_path().write_text(part1 + "\n\n" + result, encoding="utf-8")
     print(result)
 
 if __name__ == "__main__":

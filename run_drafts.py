@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Batch draft chapters with quick slop fix and spot-check evals."""
+import _utf8
 import subprocess
 import sys
 import re
@@ -7,7 +8,8 @@ import json
 import shlex
 
 def run(cmd, timeout=600):
-    r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=timeout)
+    cmd_norm = cmd.replace("\\", "/")
+    r = subprocess.run(shlex.split(cmd_norm), capture_output=True, text=True, encoding="utf-8", timeout=timeout)
     return r.stdout + r.stderr, r.returncode
 
 def slop_check(ch):

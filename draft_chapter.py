@@ -7,20 +7,18 @@ import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+import utils
 from utils import call_anthropic, get_novel_title
 from genre import load_genre
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
-
-CHAPTERS_DIR = BASE_DIR / "chapters"
+load_dotenv()
 
 def call_writer(prompt, max_tokens=16000):
     return call_anthropic(prompt=prompt, system=load_genre()["identity"]["chapter_system"], model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8)
 
 def load_file(path):
     try:
-        return Path(path).read_text()
+        return Path(path).read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
 
@@ -42,20 +40,21 @@ def main():
     chapter_num = int(sys.argv[1])
     
     # Load all context
-    voice = load_file(BASE_DIR / "voice.md")
-    world = load_file(BASE_DIR / "world.md")
-    characters = load_file(BASE_DIR / "characters.md")
-    outline = load_file(BASE_DIR / "outline.md")
-    canon = load_file(BASE_DIR / "canon.md")
+    voice = load_file(utils.get_voice_path())
+    world = load_file(utils.get_world_path())
+    characters = load_file(utils.get_characters_path())
+    outline = load_file(utils.get_outline_path())
+    canon = load_file(utils.get_canon_path())
     
     # Chapter-specific context
     chapter_outline = extract_chapter_outline(outline, chapter_num)
     next_chapter = extract_next_chapter_outline(outline, chapter_num)
     
     # Previous chapter (if exists)
-    prev_path = CHAPTERS_DIR / f"ch_{chapter_num - 1:02d}.md"
+    chapters_dir = utils.get_chapters_dir()
+    prev_path = chapters_dir / f"ch_{chapter_num - 1:02d}.md"
     if prev_path.exists():
-        prev_text = prev_path.read_text()
+        prev_text = prev_path.read_text(encoding="utf-8")
         prev_tail = prev_text[-2000:] if len(prev_text) > 2000 else prev_text
     else:
         prev_tail = "(first chapter -- no previous)"
@@ -91,8 +90,8 @@ Write the chapter now. Full text, beginning to end.
     result = call_writer(prompt)
     
     # Save
-    out_path = CHAPTERS_DIR / f"ch_{chapter_num:02d}.md"
-    out_path.write_text(result)
+    out_path = chapters_dir / f"ch_{chapter_num:02d}.md"
+    out_path.write_text(result, encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
     print(result)

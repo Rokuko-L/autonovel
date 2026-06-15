@@ -4,23 +4,24 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from utils import call_anthropic, get_max_tokens_with_thinking
+import utils
+from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt
 from genre import load_genre
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
     return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600)
 
 def main():
+    root = utils.get_root_dir()
     required = {
-        "seed.txt": BASE_DIR / "seed.txt",
-        "world.md": BASE_DIR / "world.md",
-        "characters.md": BASE_DIR / "characters.md",
-        "MYSTERY.md": BASE_DIR / "MYSTERY.md",
-        "CRAFT.md": BASE_DIR / "CRAFT.md",
-        "voice.md": BASE_DIR / "voice.md",
+        "seed.txt": utils.get_seed_path(),
+        "world.md": utils.get_world_path(),
+        "characters.md": utils.get_characters_path(),
+        "MYSTERY.md": root / "MYSTERY.md",
+        "CRAFT.md": root / "CRAFT.md",
+        "voice.md": utils.get_voice_path(),
     }
     for name, p in required.items():
         if not p.exists():
@@ -39,15 +40,16 @@ def main():
     voice_part2 = '\n'.join(voice_lines[part2_start:])
 
     genre_cfg = load_genre()
-    prompt = genre_cfg["generation"]["gen_outline_prompt"].format(
+    prompt = format_prompt(
+        genre_cfg["generation"]["gen_outline_prompt"],
         seed=seed, world=world, characters=characters,
         mystery=mystery, voice_part2=voice_part2, craft=craft
     )
 
     print("Calling writer model...", file=sys.stderr)
     result = call_writer(prompt)
-    (BASE_DIR / "outline.md").write_text(result, encoding="utf-8")
-    (BASE_DIR / ".outline_part1.md").write_text(result, encoding="utf-8")
+    utils.get_outline_path().write_text(result, encoding="utf-8")
+    (utils.get_project_dir() / ".outline_part1.md").write_text(result, encoding="utf-8")
     print(result)
 
 if __name__ == "__main__":

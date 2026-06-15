@@ -7,19 +7,19 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from utils import call_anthropic, get_max_tokens_with_thinking
+import utils
+from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt
 from genre import load_genre
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
     return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, timeout=300)
 
 def main():
-    seed_path = BASE_DIR / "seed.txt"
-    voice_path = BASE_DIR / "voice.md"
-    craft_path = BASE_DIR / "CRAFT.md"
+    seed_path = utils.get_seed_path()
+    voice_path = utils.get_voice_path()
+    craft_path = utils.get_root_dir() / "CRAFT.md"
 
     if not seed_path.exists():
         print(f"ERROR: seed.txt not found at {seed_path}", file=sys.stderr)
@@ -40,11 +40,11 @@ def main():
     voice_part2 = '\n'.join(voice_lines[part2_start:])
 
     genre = load_genre()
-    prompt = genre["generation"]["gen_world_prompt"].format(seed=seed, voice_part2=voice_part2)
+    prompt = format_prompt(genre["generation"]["gen_world_prompt"], seed=seed, voice_part2=voice_part2)
 
     print("Calling writer model...", file=sys.stderr)
     result = call_writer(prompt)
-    (BASE_DIR / "world.md").write_text(result, encoding="utf-8")
+    utils.get_world_path().write_text(result, encoding="utf-8")
     print(result)
 
 if __name__ == "__main__":

@@ -14,13 +14,7 @@ import json
 import re
 import sys
 from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent
-CHAPTERS_DIR = BASE_DIR / "chapters"
-EDIT_LOGS_DIR = BASE_DIR / "edit_logs"
-EVAL_LOGS_DIR = BASE_DIR / "eval_logs"
-BRIEFS_DIR = BASE_DIR / "briefs"
-VOICE_PATH = BASE_DIR / "voice.md"
+import utils
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +26,7 @@ def load_json(path: Path) -> dict:
 
 
 def chapter_path(ch: int) -> Path:
-    return CHAPTERS_DIR / f"ch_{ch:02d}.md"
+    return utils.get_chapters_dir() / f"ch_{ch:02d}.md"
 
 
 def chapter_text(ch: int) -> str:
@@ -63,9 +57,10 @@ def word_count(text: str) -> int:
 
 def extract_voice_rules() -> list[str]:
     """Pull the key guardrail / voice rules from voice.md Part 1 + Part 2."""
-    if not VOICE_PATH.exists():
+    voice_path = utils.get_voice_path()
+    if not voice_path.exists():
         return ["(voice.md not found)"]
-    voice = VOICE_PATH.read_text(encoding="utf-8")
+    voice = voice_path.read_text(encoding="utf-8")
 
     rules: list[str] = []
 
@@ -87,33 +82,35 @@ def extract_voice_rules() -> list[str]:
 
 def latest_full_eval() -> Path | None:
     """Find the most recent *_full.json in eval_logs/."""
-    if not EVAL_LOGS_DIR.exists():
+    eval_logs_dir = utils.get_eval_logs_dir()
+    if not eval_logs_dir.exists():
         return None
-    fulls = sorted(EVAL_LOGS_DIR.glob("*_full.json"))
+    fulls = sorted(eval_logs_dir.glob("*_full.json"))
     return fulls[-1] if fulls else None
 
 
 def latest_chapter_eval(ch: int) -> Path | None:
     """Find the most recent per-chapter eval for ch N."""
-    if not EVAL_LOGS_DIR.exists():
+    eval_logs_dir = utils.get_eval_logs_dir()
+    if not eval_logs_dir.exists():
         return None
     pattern = f"*_ch{ch:02d}.json"
-    matches = sorted(EVAL_LOGS_DIR.glob(pattern))
+    matches = sorted(eval_logs_dir.glob(pattern))
     # Also try without zero-pad
-    matches += sorted(EVAL_LOGS_DIR.glob(f"*_ch{ch}.json"))
+    matches += sorted(eval_logs_dir.glob(f"*_ch{ch}.json"))
     matches = sorted(set(matches))
     return matches[-1] if matches else None
 
 
 def load_panel() -> dict | None:
-    p = EDIT_LOGS_DIR / "reader_panel.json"
+    p = utils.get_edit_logs_dir() / "reader_panel.json"
     if not p.exists():
         return None
     return load_json(p)
 
 
 def load_cuts(ch: int) -> dict | None:
-    p = EDIT_LOGS_DIR / f"ch{ch:02d}_cuts.json"
+    p = utils.get_edit_logs_dir() / f"ch{ch:02d}_cuts.json"
     if not p.exists():
         return None
     return load_json(p)
@@ -607,7 +604,12 @@ def build_auto_brief() -> tuple[int, str]:
     """Auto-detect weakest chapter and build a combined brief."""
     full_eval_path = latest_full_eval()
     if full_eval_path is None:
-        sys.exit("ERROR: no *_full.json found in eval_logs/")
+        print("No *_full.json found in eval_logs/. Running evaluate.py --full first...", file=sys.stderr)
+        import subprocess
+        subprocess.run([sys.executable, "evaluate.py", "--full"], check=True)
+        full_eval_path = latest_full_eval()
+        if full_eval_path is None:
+            sys.exit("ERROR: no *_full.json found in eval_logs/ even after running evaluate.py --full")
 
     full_eval = load_json(full_eval_path)
     ch = full_eval.get("weakest_chapter")
@@ -840,8 +842,8 @@ def main():
         return
 
     # Save
-    BRIEFS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = BRIEFS_DIR / f"ch{ch:02d}_{suffix}.md"
+    briefs_dir = utils.get_briefs_dir()  # also creates the directory
+    out_path = briefs_dir / f"ch{ch:02d}_{suffix}.md"
     out_path.write_text(brief_text, encoding="utf-8")
     print(f"Saved: {out_path}", file=sys.stderr)
     print(f"Chapter: {ch}", file=sys.stderr)

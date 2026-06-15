@@ -9,15 +9,13 @@ Usage:
   python apply_cuts.py all --dry-run                       # show what would be cut
 """
 
+import _utf8
 import argparse
 import json
 import re
 import sys
 from pathlib import Path
-
-BASE = Path(__file__).resolve().parent
-CHAPTERS_DIR = BASE / "chapters"
-EDIT_LOGS_DIR = BASE / "edit_logs"
+import utils
 
 VALID_TYPES = {"OVER-EXPLAIN", "REDUNDANT", "FAT", "TELL", "STRUCTURAL", "GENERIC"}
 MIN_QUOTE_LEN = 25
@@ -25,7 +23,7 @@ MIN_QUOTE_LEN = 25
 
 def load_cuts(chapter_num: int) -> dict | None:
     """Load the cuts JSON for a given chapter number. Returns None if missing."""
-    cuts_file = EDIT_LOGS_DIR / f"ch{chapter_num:02d}_cuts.json"
+    cuts_file = utils.get_edit_logs_dir() / f"ch{chapter_num:02d}_cuts.json"
     if not cuts_file.exists():
         return None
     try:
@@ -37,7 +35,7 @@ def load_cuts(chapter_num: int) -> dict | None:
 
 
 def chapter_path(chapter_num: int) -> Path:
-    return CHAPTERS_DIR / f"ch_{chapter_num:02d}.md"
+    return utils.get_chapters_dir() / f"ch_{chapter_num:02d}.md"
 
 
 def find_and_remove(text: str, quote: str) -> tuple[str, bool, str]:
@@ -84,7 +82,7 @@ def collapse_blank_lines(text: str) -> str:
 def discover_chapters() -> list[int]:
     """Return sorted list of chapter numbers that have both a chapter file and a cuts file."""
     nums = set()
-    for p in EDIT_LOGS_DIR.glob("ch*_cuts.json"):
+    for p in utils.get_edit_logs_dir().glob("ch*_cuts.json"):
         m = re.match(r"ch(\d+)_cuts\.json", p.name)
         if m:
             nums.add(int(m.group(1)))
@@ -105,9 +103,13 @@ def process_chapter(
     data = load_cuts(chapter_num)
     if data is None:
         stats["error"] = "no cuts file"
+        print(f"[DEBUG] Chapter {chapter_num:02d}: no cuts file found. Status: SKIPPED", file=sys.stderr)
         return stats
 
     fat_pct = data.get("overall_fat_percentage", 0)
+    status_str = "SKIPPED" if fat_pct < min_fat else "PROCESSING"
+    print(f"[DEBUG] Chapter {chapter_num:02d}: fat score = {fat_pct}%, threshold = {min_fat}%. Status: {status_str}", file=sys.stderr)
+
     if fat_pct < min_fat:
         stats["skipped"] = len(data.get("cuts", []))
         stats["error"] = f"fat {fat_pct}% < threshold {min_fat}%"

@@ -10,26 +10,66 @@ import json
 import re
 from pathlib import Path
 from dotenv import load_dotenv
+import utils
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 
+def parse_json(text):
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r'^```\w*\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+    start = text.find('{')
+    if start == -1:
+        raise ValueError("No JSON object found in response")
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_string:
+            escape = True
+            continue
+        if c == '"' and not escape:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:i+1], strict=False)
+    return json.loads(text[start:], strict=False)
 
-CHAPTERS_DIR = BASE_DIR / "chapters"
 
 def call_model(prompt, max_tokens=1500):
     return call_anthropic(prompt=prompt, system="You produce structured outline entries for novel chapters. Be precise about what HAPPENS, what CHANGES, and what threads are planted/harvested. Output valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.1, timeout=120)
 
 def main():
     # Load supporting docs for context
-    characters = (BASE_DIR / "characters.md").read_text()[:3000]
+    characters = utils.get_characters_path().read_text(encoding="utf-8")[:3000]
     
+    chapters_dir = utils.get_chapters_dir()
+    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
+    if not chapter_files:
+        print("No chapter files found!")
+        return
+
     entries = []
     
-    for ch in range(1, 20):
-        path = CHAPTERS_DIR / f"ch_{ch:02d}.md"
-        text = path.read_text()
+    for path in chapter_files:
+        m = re.search(r"ch_(\d+)\.md", path.name)
+        if not m:
+            continue
+        ch = int(m.group(1))
+        
+        text = path.read_text(encoding="utf-8")
         wc = len(text.split())
         
         title_line = text.strip().split('\n')[0].lstrip('# ').strip()
@@ -54,21 +94,37 @@ Return JSON with these fields:
 
 JSON only, no other text."""
 
-        data = call_model(prompt)
+        raw_data = call_model(prompt)
+        data = parse_json(raw_data)
         data["num"] = ch
         data["words"] = wc
         entries.append(data)
         print(f"  {ch:2d}. {title_line} ({wc}w)")
     
     # Load existing outline header info
-    old_outline = (BASE_DIR / "outline.md").read_text()
+    try:
+        old_outline = utils.get_outline_path().read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        old_outline = ""
     
+    # Load dynamic title and cycle
+    title = utils.get_novel_title()
+    cycle_str = ""
+    state_path = utils.get_state_path()
+    if state_path.is_file():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            cycle = state.get("revision_cycle", 0)
+            cycle_str = f", Cycle {cycle}"
+        except Exception:
+            pass
+
     # Build new outline
     lines = []
-    lines.append("# THE SECOND SON OF THE HOUSE OF BELLS")
+    lines.append(f"# {title.upper()}")
     lines.append("## Chapter Outline (reflects actual novel as-written)")
     lines.append("")
-    lines.append(f"**23 chapters, {sum(e['words'] for e in entries):,} words**")
+    lines.append(f"**{len(entries)} chapters, {sum(e['words'] for e in entries):,} words**")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -132,10 +188,10 @@ JSON only, no other text."""
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("*Outline rebuilt from actual chapters, Cycle 5.*")
+    lines.append(f"*Outline rebuilt from actual chapters{cycle_str}.*")
     
     out = '\n'.join(lines)
-    (BASE_DIR / "outline.md").write_text(out)
+    utils.get_outline_path().write_text(out, encoding="utf-8")
     print(f"\nSaved outline.md ({len(out.split())} words)")
 
 if __name__ == "__main__":

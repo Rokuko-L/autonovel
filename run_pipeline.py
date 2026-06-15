@@ -6,17 +6,18 @@ Runs the complete autonovel pipeline from seed concept to finished novel.
 Manages state, git commits, evaluation, and retry logic.
 
 Usage:
-  python run_pipeline.py                    # run from current state
-  python run_pipeline.py --from-scratch     # start fresh (needs seed.txt or --notes)
-  python run_pipeline.py --from-scratch --genre "Horror" --chapters 8 --notes "haunted school"
+  python run_pipeline.py --project mynovel  # run from current state for project
+  python run_pipeline.py --project mynovel --from-scratch     # start fresh
+  python run_pipeline.py --project mynovel --from-scratch --genre "Horror" --chapters 8 --notes "haunted school"
                                            # auto-creates seed.txt from notes
-  python run_pipeline.py --phase foundation # run only foundation
-  python run_pipeline.py --phase drafting   # run only drafting
-  python run_pipeline.py --phase revision   # run only revision
-  python run_pipeline.py --phase export     # run only export
-  python run_pipeline.py --max-cycles 4     # limit revision cycles
+  python run_pipeline.py --project mynovel --phase foundation # run only foundation
+  python run_pipeline.py --project mynovel --phase drafting   # run only drafting
+  python run_pipeline.py --project mynovel --phase revision   # run only revision
+  python run_pipeline.py --project mynovel --phase export     # run only export
+  python run_pipeline.py --project mynovel --max-cycles 4     # limit revision cycles
 """
 
+import _utf8
 import argparse
 import json
 import os
@@ -24,6 +25,7 @@ import re
 import shlex
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -31,23 +33,16 @@ import httpx
 from dotenv import load_dotenv
 from genre import load_genre
 from utils import call_anthropic
+import utils
 
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants  (all path-dependent values are resolved at runtime via utils)
 # ---------------------------------------------------------------------------
 
-BASE_DIR = Path(__file__).resolve().parent
-STATE_FILE = BASE_DIR / "state.json"
-RESULTS_FILE = BASE_DIR / "results.tsv"
-CHAPTERS_DIR = BASE_DIR / "chapters"
-BRIEFS_DIR = BASE_DIR / "briefs"
-EDIT_LOGS_DIR = BASE_DIR / "edit_logs"
-EVAL_LOGS_DIR = BASE_DIR / "eval_logs"
-
 FOUNDATION_THRESHOLD = 7.5
-CHAPTER_THRESHOLD = 6.0
+CHAPTER_THRESHOLD = 7.0
 MAX_FOUNDATION_ITERS = 20
 MAX_CHAPTER_ATTEMPTS = 5
 MIN_REVISION_CYCLES = 3
@@ -59,13 +54,71 @@ PHASE_ORDER = ["foundation", "drafting", "revision", "export"]
 
 
 # ---------------------------------------------------------------------------
+# Git & registry helpers (Option B: per-project repos)
+# ---------------------------------------------------------------------------
+
+def ensure_gitignore_projects():
+    """Ensure root .gitignore contains a rule for projects/ to prevent nested-repo commits."""
+    root = utils.get_root_dir()
+    gi_path = root / ".gitignore"
+    entry = "projects/"
+    if gi_path.exists():
+        content = gi_path.read_text(encoding="utf-8")
+        lines = [l.strip() for l in content.splitlines()]
+        if entry in lines:
+            return  # already present
+        gi_path.write_text(content.rstrip() + "\n" + entry + "\n", encoding="utf-8")
+    else:
+        gi_path.write_text(entry + "\n", encoding="utf-8")
+    print(f"[git] Added '{entry}' to root .gitignore")
+
+
+def ensure_project_git(project_dir: Path):
+    """Initialize a git repo inside the project folder if not already present (idempotent)."""
+    git_dir = project_dir / ".git"
+    if git_dir.exists():
+        return  # already initialized
+    result = subprocess.run(
+        ["git", "init", str(project_dir)],
+        capture_output=True, text=True, encoding="utf-8"
+    )
+    if result.returncode == 0:
+        print(f"[git] Initialized project repo at {project_dir}")
+    else:
+        print(f"[git] WARNING: git init failed: {result.stderr.strip()}")
+    # Write a project-level .gitignore template
+    proj_gi = project_dir / ".gitignore"
+    if not proj_gi.exists():
+        proj_gi.write_text("*.aux\n*.log\n*.toc\n*.out\n*.synctex.gz\n", encoding="utf-8")
+
+
+def load_registry() -> dict:
+    """Load the project registry JSON. Returns empty dict if not found."""
+    reg_path = utils.get_registry_path()
+    if reg_path.exists():
+        try:
+            return json.loads(reg_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def update_registry(project_name: str, metadata: dict):
+    """Atomically update registry.json with project metadata."""
+    registry = load_registry()
+    registry[project_name] = metadata
+    utils.save_registry(registry, utils.get_registry_path())
+
+
+# ---------------------------------------------------------------------------
 # Helpers: state management
 # ---------------------------------------------------------------------------
 
 def load_state() -> dict:
-    """Load pipeline state from state.json, creating defaults if missing."""
-    if STATE_FILE.exists():
-        with open(STATE_FILE) as f:
+    """Load pipeline state from the active project's state.json, creating defaults if missing."""
+    state_path = utils.get_state_path()
+    if state_path.exists():
+        with open(state_path, encoding="utf-8") as f:
             return json.load(f)
     return default_state()
 
@@ -86,8 +139,9 @@ def default_state() -> dict:
 
 
 def save_state(state: dict):
-    """Write state to state.json."""
-    with open(STATE_FILE, "w") as f:
+    """Write state to the active project's state.json."""
+    state_path = utils.get_state_path()
+    with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 
@@ -97,13 +151,14 @@ def save_state(state: dict):
 
 def log_result(commit: str, phase: str, score, word_count: int,
                status: str, description: str):
-    """Append a row to results.tsv."""
+    """Append a row to results.tsv in the active project directory."""
+    results_file = utils.get_results_path()
     header = "commit\tphase\tscore\tword_count\tstatus\tdescription\n"
-    if not RESULTS_FILE.exists():
-        RESULTS_FILE.write_text(header)
-    elif RESULTS_FILE.stat().st_size == 0:
-        RESULTS_FILE.write_text(header)
-    with open(RESULTS_FILE, "a") as f:
+    if not results_file.exists():
+        results_file.write_text(header, encoding="utf-8")
+    elif results_file.stat().st_size == 0:
+        results_file.write_text(header, encoding="utf-8")
+    with open(results_file, "a", encoding="utf-8") as f:
         f.write(f"{commit}\t{phase}\t{score}\t{word_count}\t{status}\t{description}\n")
 
 
@@ -124,7 +179,7 @@ def step(text: str):
 # Helpers: subprocess execution
 # ---------------------------------------------------------------------------
 
-def run_tool(cmd: str, timeout: int = 600, check: bool = False) -> subprocess.CompletedProcess:
+def run_tool(cmd: str, timeout: int = 600, check: bool = False, cwd: str = None) -> subprocess.CompletedProcess:
     """
     Run a tool as a subprocess, capturing output.
     Uses shell=False with shlex.split for argument safety.
@@ -132,13 +187,15 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False) -> subprocess.Co
     """
     step(f"RUN: {cmd}")
     try:
+        cmd_norm = cmd.replace("\\", "/")
+        effective_cwd = cwd if cwd is not None else str(utils.get_root_dir())
         result = subprocess.run(
-            shlex.split(cmd), shell=False, capture_output=True, text=True,
-            timeout=timeout, cwd=str(BASE_DIR),
+            shlex.split(cmd_norm), shell=False, capture_output=True, text=True,
+            encoding="utf-8", timeout=timeout, cwd=effective_cwd,
         )
         if result.returncode != 0:
             print(f"    WARN: exit code {result.returncode}")
-            stderr_preview = (result.stderr or "")[:300]
+            stderr_preview = (result.stderr or "")[:2000]
             if stderr_preview:
                 print(f"    stderr: {stderr_preview}")
         if check and result.returncode != 0:
@@ -163,27 +220,29 @@ def uv_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
 
 def git_add_commit(message: str) -> str:
     """Stage all changes and commit. Returns short hash or empty string."""
-    run_tool("git add -A")
-    result = run_tool(f'git commit -m "{message}" --allow-empty')
-    if result.returncode == 0:
-        hash_result = run_tool("git rev-parse --short HEAD")
-        commit_hash = hash_result.stdout.strip()
-        step(f"GIT COMMIT: {commit_hash} — {message}")
-        return commit_hash
-    else:
-        step("GIT: nothing to commit or commit failed")
-        return ""
+    project_dir = utils.get_project_dir()
+    run_tool("git add -A", cwd=str(project_dir))
+    status_result = run_tool("git status --porcelain", cwd=str(project_dir))
+    if status_result.stdout.strip():
+        result = run_tool(f'git commit -m "{message}"', cwd=str(project_dir))
+        if result.returncode == 0:
+            hash_result = run_tool("git rev-parse --short HEAD", cwd=str(project_dir))
+            commit_hash = hash_result.stdout.strip()
+            step(f"GIT COMMIT: {commit_hash} — {message}")
+            return commit_hash
+    step("GIT: nothing to commit or commit failed")
+    return ""
 
 
 def git_reset_hard(ref: str = "HEAD~1"):
     """Hard reset to discard bad changes."""
     step(f"GIT RESET: {ref}")
-    run_tool(f"git reset --hard {ref}")
+    run_tool(f"git reset --hard {ref}", cwd=str(utils.get_project_dir()))
 
 
 def git_short_hash() -> str:
     """Get current HEAD short hash."""
-    r = run_tool("git rev-parse --short HEAD")
+    r = run_tool("git rev-parse --short HEAD", cwd=str(utils.get_project_dir()))
     return r.stdout.strip() if r.returncode == 0 else "unknown"
 
 
@@ -213,19 +272,21 @@ def parse_lore_score(stdout: str) -> float:
 
 
 def count_words_in_chapters() -> int:
-    """Sum word count across all chapter files."""
+    """Sum word count across all chapter files in the active project."""
     total = 0
-    if CHAPTERS_DIR.exists():
-        for f in CHAPTERS_DIR.glob("ch_*.md"):
-            total += len(f.read_text().split())
+    chapters_dir = utils.get_chapters_dir()
+    if chapters_dir.exists():
+        for f in chapters_dir.glob("ch_*.md"):
+            total += len(f.read_text(encoding="utf-8").split())
     return total
 
 
 def count_chapter_files() -> int:
-    """Count the number of chapter files."""
-    if not CHAPTERS_DIR.exists():
+    """Count the number of chapter files in the active project."""
+    chapters_dir = utils.get_chapters_dir()
+    if not chapters_dir.exists():
         return 0
-    return len(list(CHAPTERS_DIR.glob("ch_*.md")))
+    return len(list(chapters_dir.glob("ch_*.md")))
 
 
 def get_total_chapters(state: dict) -> int:
@@ -233,9 +294,9 @@ def get_total_chapters(state: dict) -> int:
     if state.get("chapters_total", 0) > 0:
         return state["chapters_total"]
     # Try to infer from outline.md
-    outline = BASE_DIR / "outline.md"
+    outline = utils.get_outline_path()
     if outline.exists():
-        text = outline.read_text()
+        text = outline.read_text(encoding="utf-8")
         matches = re.findall(r'###\s*Ch(?:apter)?\s*(\d+)', text)
         if matches:
             return max(int(m) for m in matches)
@@ -271,6 +332,9 @@ def process_notes(notes_input, genre):
 
     banner(f"PROCESSING NOTES ({word_count} words)", "-")
 
+    # seed.txt lives in the project directory
+    seed_file = utils.get_seed_path()
+
     if word_count < 300:
         step(f"Notes too short ({word_count}w). Expanding to ~500 words via LLM...")
         expanded = call_anthropic(
@@ -287,13 +351,13 @@ def process_notes(notes_input, genre):
             temperature=0.8,
             timeout=120,
         )
-        (BASE_DIR / "seed.txt").write_text(expanded, encoding="utf-8")
+        seed_file.write_text(expanded, encoding="utf-8")
         step(f"seed.txt written ({len(expanded.split())}w, expanded from {word_count})")
         return notes
 
     if word_count <= 1500:
         step(f"Notes are a good size ({word_count}w). Writing directly to seed.txt.")
-        (BASE_DIR / "seed.txt").write_text(notes, encoding="utf-8")
+        seed_file.write_text(notes, encoding="utf-8")
         return notes
 
     step(f"Notes are very long ({word_count}w). Summarizing to ~500 words for genre framework...")
@@ -308,7 +372,7 @@ def process_notes(notes_input, genre):
         temperature=0.3,
         timeout=120,
     )
-    (BASE_DIR / "seed.txt").write_text(notes, encoding="utf-8")
+    seed_file.write_text(notes, encoding="utf-8")
     step(f"seed.txt written with full {word_count}w doc. Summary ({len(summary.split())}w) sent to genre framework.")
     return summary
 
@@ -406,7 +470,7 @@ def run_drafting(state: dict) -> dict:
     total = get_total_chapters(state)
     start_chapter = state.get("chapters_drafted", 0) + 1
 
-    CHAPTERS_DIR.mkdir(exist_ok=True)
+    chapters_dir = utils.get_chapters_dir()  # also creates the directory
 
     for ch in range(start_chapter, total + 1):
         banner(f"Drafting Chapter {ch}/{total}", "-")
@@ -422,12 +486,12 @@ def run_drafting(state: dict) -> dict:
                 continue
 
             # Check the chapter file exists and has content
-            ch_file = CHAPTERS_DIR / f"ch_{ch:02d}.md"
+            ch_file = chapters_dir / f"ch_{ch:02d}.md"
             if not ch_file.exists() or ch_file.stat().st_size < 100:
                 step("Chapter file missing or too short, retrying...")
                 continue
 
-            word_count = len(ch_file.read_text().split())
+            word_count = len(ch_file.read_text(encoding="utf-8").split())
             step(f"Drafted {word_count} words")
 
             # Evaluate
@@ -450,15 +514,15 @@ def run_drafting(state: dict) -> dict:
                            "discard", f"Chapter {ch} attempt {attempt}")
                 # Remove the bad chapter file so next attempt starts fresh
                 if ch_file.exists():
-                    run_tool(f"git checkout -- chapters/ch_{ch:02d}.md")
+                    run_tool(f"git checkout -- chapters/ch_{ch:02d}.md", cwd=str(utils.get_project_dir()))
 
         if not drafted:
             step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
                  f"keeping last attempt and moving on")
             # Keep whatever we have and commit it
-            ch_file = CHAPTERS_DIR / f"ch_{ch:02d}.md"
+            ch_file = chapters_dir / f"ch_{ch:02d}.md"
             if ch_file.exists():
-                word_count = len(ch_file.read_text().split())
+                word_count = len(ch_file.read_text(encoding="utf-8").split())
                 commit_hash = git_add_commit(
                     f"ch{ch:02d}: best-effort after {MAX_CHAPTER_ATTEMPTS} attempts")
                 log_result(commit_hash, f"ch{ch:02d}", "?", word_count,
@@ -552,8 +616,8 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
     """
     banner("PHASE 3: REVISION", "=")
 
-    BRIEFS_DIR.mkdir(exist_ok=True)
-    EDIT_LOGS_DIR.mkdir(exist_ok=True)
+    briefs_dir = utils.get_briefs_dir()        # also creates the directory
+    edit_logs_dir = utils.get_edit_logs_dir()  # also creates the directory
 
     prev_score = state.get("novel_score", 0.0)
     start_cycle = state.get("revision_cycle", 0) + 1
@@ -562,12 +626,24 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
     for cycle in range(start_cycle, max_cycles + 1):
         banner(f"Revision Cycle {cycle}/{max_cycles}", "-")
 
-        # -- Step 1: Adversarial editing pass --
+        # -- Step 1: Adversarial editing pass (parallel per chapter) --
         step("Running adversarial editing on all chapters...")
-        uv_run("adversarial_edit.py all", timeout=900)
+        total_ch = get_total_chapters(state)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {
+                pool.submit(uv_run, f"adversarial_edit.py {ch}", 300): ch
+                for ch in range(1, total_ch + 1)
+            }
+            for future in as_completed(futures):
+                ch = futures[future]
+                try:
+                    future.result()
+                    step(f"  ch {ch}: done")
+                except Exception:
+                    step(f"  ch {ch}: edit failed, continuing anyway")
 
         # -- Step 2: Apply mechanical cuts (only if apply_cuts.py exists) --
-        apply_cuts = BASE_DIR / "apply_cuts.py"
+        apply_cuts = utils.get_root_dir() / "apply_cuts.py"
         if apply_cuts.exists():
             step("Applying mechanical cuts (OVER-EXPLAIN, REDUNDANT)...")
             run_tool("uv run python apply_cuts.py all "
@@ -575,12 +651,14 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
         else:
             step("apply_cuts.py not found, skipping mechanical cuts")
 
-        # -- Step 3: Reader panel --
+        # -- Step 3: Generate arc summary + Reader panel --
+        step("Generating arc summary for reader panel...")
+        uv_run("build_arc_summary.py", timeout=300)
         step("Running reader panel evaluation...")
         uv_run("reader_panel.py", timeout=600)
 
         # -- Step 4: Parse panel consensus --
-        panel_path = EDIT_LOGS_DIR / "reader_panel.json"
+        panel_path = edit_logs_dir / "reader_panel.json"
         consensus_items = parse_panel_consensus(panel_path)
 
         if consensus_items:
@@ -602,14 +680,14 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             pre_score = parse_score(pre_eval.stdout, "overall_score")
 
             # Generate revision brief
-            brief_file = BRIEFS_DIR / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
-            gen_brief = BASE_DIR / "gen_brief.py"
+            brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
+            gen_brief = utils.get_root_dir() / "gen_brief.py"
             if gen_brief.exists():
                 step(f"Generating brief for Ch {ch_num}...")
                 run_tool(f"uv run python gen_brief.py --panel {ch_num}", timeout=300)
                 # gen_brief.py may write to briefs/ — find the most recent brief
                 brief_candidates = sorted(
-                    BRIEFS_DIR.glob(f"ch{ch_num:02d}*.md"),
+                    briefs_dir.glob(f"ch{ch_num:02d}*.md"),
                     key=lambda p: p.stat().st_mtime, reverse=True)
                 if brief_candidates:
                     brief_file = brief_candidates[0]
@@ -637,8 +715,8 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
             post_score = parse_score(post_eval.stdout, "overall_score")
 
-            ch_file = CHAPTERS_DIR / f"ch_{ch_num:02d}.md"
-            word_count = len(ch_file.read_text().split()) if ch_file.exists() else 0
+            ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+            word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
 
             step(f"Ch {ch_num}: {pre_score} -> {post_score}")
 
@@ -690,7 +768,7 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
     # =========================================================
     # PHASE 3b: OPUS REVIEW LOOP (deep, prose-level refinement)
     # =========================================================
-    review_py = BASE_DIR / "review.py"
+    review_py = utils.get_root_dir() / "review.py"
     if review_py.exists():
         banner("PHASE 3b: OPUS REVIEW LOOP", "=")
         
@@ -701,7 +779,7 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             # Step 1: Generate the review
             step("Sending manuscript to Opus for review...")
             review_result = uv_run(
-                f"review.py --output reviews.md", timeout=900)
+                f"review.py --output {utils.get_reviews_path()}", timeout=900)
             
             # Step 2: Parse the review
             step("Parsing review...")
@@ -711,10 +789,10 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             
             # Step 3: Check stopping condition
             review_logs = sorted(
-                (EDIT_LOGS_DIR).glob("*_review.json"), reverse=True)
+                utils.get_edit_logs_dir().glob("*_review.json"), reverse=True)
             if review_logs:
 
-                review_data = json.loads(review_logs[0].read_text())
+                review_data = json.loads(review_logs[0].read_text(encoding="utf-8"))
                 stars = review_data.get("stars", 0) or 0
                 total_items = review_data.get("total_items", 0)
                 major_items = review_data.get("major_items", 0)
@@ -733,14 +811,14 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             
             # Step 4: Generate briefs from review items and fix
             step("Generating revision briefs from review...")
-            gen_brief_py = BASE_DIR / "gen_brief.py"
+            gen_brief_py = utils.get_root_dir() / "gen_brief.py"
             if gen_brief_py.exists():
                 # Auto mode: picks weakest chapter, cross-references all sources
                 run_tool("uv run python gen_brief.py --auto", timeout=300)
                 
                 # Find any generated briefs and apply the top one
                 recent_briefs = sorted(
-                    BRIEFS_DIR.glob("*_auto.md"),
+                    utils.get_briefs_dir().glob("*_auto.md"),
                     key=lambda p: p.stat().st_mtime, reverse=True)
                 if recent_briefs:
                     brief = recent_briefs[0]
@@ -756,7 +834,7 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             # Step 5: Mechanical fixes from review
             # Run slop pass on any mentioned patterns
             step("Running mechanical cleanup pass...")
-            apply_cuts_py = BASE_DIR / "apply_cuts.py"
+            apply_cuts_py = utils.get_root_dir() / "apply_cuts.py"
             if apply_cuts_py.exists():
                 run_tool(
                     "uv run python apply_cuts.py all --types OVER-EXPLAIN REDUNDANT --min-fat 15",
@@ -786,51 +864,56 @@ def run_export(state: dict) -> dict:
     """
     banner("PHASE 4: EXPORT", "=")
 
+    root_dir = utils.get_root_dir()
+    chapters_dir = utils.get_chapters_dir()
+    typeset_dir = utils.get_typeset_dir()
+
     # 1. Rebuild outline from chapters
-    build_outline = BASE_DIR / "build_outline.py"
+    build_outline = root_dir / "build_outline.py"
     if build_outline.exists():
         step("Rebuilding outline from chapters...")
         uv_run("build_outline.py", timeout=300)
 
     # 2. Build arc summary
-    build_arc = BASE_DIR / "build_arc_summary.py"
+    build_arc = root_dir / "build_arc_summary.py"
     if build_arc.exists():
         step("Building arc summary...")
         uv_run("build_arc_summary.py", timeout=300)
 
-    # 3. Concatenate chapters into manuscript.md
+    # 3. Concatenate chapters into manuscript.md (written into project dir)
     step("Building manuscript.md...")
-    manuscript = BASE_DIR / "manuscript.md"
-    chapter_files = sorted(CHAPTERS_DIR.glob("ch_*.md"))
+    manuscript = utils.get_manuscript_path()
+    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
 
     parts = []
     for ch_file in chapter_files:
-        text = ch_file.read_text().strip()
+        text = ch_file.read_text(encoding="utf-8").strip()
         if text:
             parts.append(text)
 
     if parts:
-        manuscript.write_text("\n\n---\n\n".join(parts) + "\n")
+        manuscript.write_text("\n\n---\n\n".join(parts) + "\n", encoding="utf-8")
         word_count = sum(len(p.split()) for p in parts)
         step(f"Manuscript: {len(parts)} chapters, {word_count} words")
     else:
         step("WARNING: no chapter files found for manuscript")
 
     # 4. Build LaTeX
-    build_tex = BASE_DIR / "typeset" / "build_tex.py"
+    build_tex = root_dir / "typeset" / "build_tex.py"
     if build_tex.exists():
         step("Building LaTeX content...")
-        run_tool(f"uv run python typeset/build_tex.py", timeout=120)
+        # Run with cwd set to project typeset dir so aux files stay isolated
+        run_tool(f"uv run python {build_tex}", timeout=120, cwd=str(utils.get_typeset_dir()))
 
         # 5. Typeset with tectonic (if available)
-        novel_tex = BASE_DIR / "typeset" / "novel.tex"
+        novel_tex = typeset_dir / "novel.tex"
         if novel_tex.exists():
-            tectonic_check = run_tool("which tectonic", timeout=10)
-            if tectonic_check.returncode == 0:
+            import shutil
+            if shutil.which("tectonic"):
                 step("Typesetting PDF with tectonic...")
-                result = run_tool("tectonic typeset/novel.tex", timeout=300)
+                result = run_tool(f"tectonic {novel_tex.name}", timeout=300, cwd=str(utils.get_typeset_dir()))
                 if result.returncode == 0:
-                    step("PDF generated: typeset/novel.pdf")
+                    step(f"PDF generated: {typeset_dir / 'novel.pdf'}")
                 else:
                     step("WARNING: tectonic typesetting failed")
             else:
@@ -860,9 +943,10 @@ def sanity_check(args):
     """Run pre-flight checks. Exit 1 on critical failures."""
     ok = True
     notes_provided = bool(args.notes)
+    root_dir = utils.get_root_dir()
 
     # 1. .env exists
-    if not (BASE_DIR / ".env").exists():
+    if not (root_dir / ".env").exists():
         print("FAIL: .env not found — create one from .env.example", file=sys.stderr)
         ok = False
 
@@ -879,14 +963,15 @@ def sanity_check(args):
         print(f"WARN: {base} unreachable — continuing anyway", file=sys.stderr)
 
     # 4. At least one of seed.txt or --notes exists
-    if not (BASE_DIR / "seed.txt").exists() and not notes_provided:
-        print("FAIL: provide --notes or place a seed.txt in the project root", file=sys.stderr)
+    if not (root_dir / "seed.txt").exists() and not utils.get_seed_path().exists() and not notes_provided:
+        print("FAIL: provide --notes or place a seed.txt in the project root or project folder", file=sys.stderr)
         ok = False
 
-    # 5. Genre is specified
+    # 5. Genre is specified (skip if already configured from a previous run)
     if not args.genre and not os.getenv("AUTONOVEL_GENRE"):
-        print("FAIL: provide --genre or set AUTONOVEL_GENRE in .env", file=sys.stderr)
-        ok = False
+        if not utils.get_active_genre_path().exists() and not (root_dir / "active_genre.json").exists():
+            print("FAIL: provide --genre or set AUTONOVEL_GENRE in .env", file=sys.stderr)
+            ok = False
 
     # --- Warnings (non-fatal) ---
 
@@ -900,16 +985,20 @@ def sanity_check(args):
                 print(f"WARN: --chapters '{args.chapters}' looks unusual", file=sys.stderr)
 
     # active_genre.json valid if present
-    if (BASE_DIR / "active_genre.json").exists():
+    active_path = utils.get_active_genre_path()
+    if not active_path.exists():
+        active_path = root_dir / "active_genre.json"
+    if active_path.exists():
         try:
-            json.loads((BASE_DIR / "active_genre.json").read_text())
+            json.loads(active_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            print("WARN: active_genre.json is corrupted — delete it and re-run", file=sys.stderr)
+            print(f"WARN: {active_path.name} is corrupted — delete it and re-run", file=sys.stderr)
 
     # state.json valid if present and not in --from-scratch mode
-    if (BASE_DIR / "state.json").exists() and not args.from_scratch:
+    state_path = utils.get_state_path()
+    if state_path.exists() and not args.from_scratch:
         try:
-            json.loads((BASE_DIR / "state.json").read_text())
+            json.loads(state_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             print("WARN: state.json is corrupted — use --from-scratch to reset", file=sys.stderr)
 
@@ -924,16 +1013,56 @@ def sanity_check(args):
 def run_pipeline(args):
     """Run the full pipeline or a specific phase."""
 
+    # Set active project FIRST so all path helpers resolve correctly
+    utils.set_project_name(args.project)
+    project_dir = utils.get_project_dir()
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    # Git Option B: guard root .gitignore and init project repo
+    ensure_gitignore_projects()
+    ensure_project_git(project_dir)
+
     sanity_check(args)
+
+    root_dir = utils.get_root_dir()
 
     # Load or initialize state
     if args.from_scratch:
         banner("STARTING FROM SCRATCH")
-        seed_file = BASE_DIR / "seed.txt"
-        if not seed_file.exists() and not args.notes:
-            print("ERROR: No seed.txt found and no --notes provided. "
-                  "Provide --notes or create seed.txt manually.")
+        import shutil
+
+        # Clean up existing files in the project directory to prevent cross-contamination
+        if project_dir.exists():
+            for name in ["chapters", "briefs", "edit_logs", "eval_logs", "typeset"]:
+                p = project_dir / name
+                if p.is_dir():
+                    try:
+                        shutil.rmtree(p)
+                    except Exception as e:
+                        print(f"WARN: Failed to clean directory {name}: {e}", file=sys.stderr)
+            for name in ["world.md", "characters.md", "outline.md", "canon.md", "manuscript.md", "arc_summary.md", "results.tsv", "state.json", "active_genre.json", "seed.txt"]:
+                p = project_dir / name
+                if p.is_file():
+                    try:
+                        p.unlink()
+                    except Exception as e:
+                        print(f"WARN: Failed to remove file {name}: {e}", file=sys.stderr)
+
+        # Initialize project-specific seed
+        seed_dest = utils.get_seed_path()
+        if not args.notes:
+            if not seed_dest.exists():
+                global_seed = root_dir / "seed.txt"
+                if global_seed.exists():
+                    print(f"\n[WARNING][CONTAMINATION RISK] No project-specific seed.txt found. Copying global seed.txt to {seed_dest}.\n", file=sys.stderr)
+                    shutil.copy2(global_seed, seed_dest)
+                else:
+                    print("ERROR: No seed.txt found in project directory or repository root, and no --notes provided.", file=sys.stderr)
+                    sys.exit(1)
+        elif not utils.get_seed_path().exists() and not (root_dir / "seed.txt").exists():
+            print("ERROR: No seed.txt found in project directory or repository root, and no --notes provided.", file=sys.stderr)
             sys.exit(1)
+
         state = default_state()
         # Write user-provided chapter count into state before banner
         if args.chapters:
@@ -941,15 +1070,21 @@ def run_pipeline(args):
                 state["chapters_total"] = int(args.chapters)
             except ValueError:
                 pass  # non-numeric string like "short story" — let genre framework resolve
+        
+        # Copy template voice.md file to project directory if it exists in root
+        voice_template = root_dir / "voice.md"
+        if voice_template.exists():
+            shutil.copy2(voice_template, utils.get_voice_path())
+                
         save_state(state)
     else:
         state = load_state()
 
-    # Ensure directories exist
-    CHAPTERS_DIR.mkdir(exist_ok=True)
-    BRIEFS_DIR.mkdir(exist_ok=True)
-    EDIT_LOGS_DIR.mkdir(exist_ok=True)
-    EVAL_LOGS_DIR.mkdir(exist_ok=True)
+    # Ensure directories exist (helpers create them)
+    utils.get_chapters_dir()
+    utils.get_briefs_dir()
+    utils.get_edit_logs_dir()
+    utils.get_eval_logs_dir()
 
     # Apply max_cycles override
     max_cycles = args.max_cycles if args.max_cycles else MAX_REVISION_CYCLES
@@ -988,18 +1123,19 @@ def run_pipeline(args):
                 notes_for_genre = None
                 if args.notes:
                     notes_for_genre = process_notes(args.notes, args.genre)
-                seed_path = BASE_DIR / "seed.txt"
+                seed_path = utils.get_seed_path()
                 if not seed_path.exists():
-                    print(f"ERROR: seed.txt not found after process_notes at {seed_path}", file=sys.stderr)
+                    print(f"ERROR: seed.txt not found at {seed_path}", file=sys.stderr)
                     sys.exit(1)
                 # TODO: --continue mode — if pre-written chapters exist, generate
                 # an outline that picks up from the last written beat instead of
                 # starting from chapter 1.
 
                 # Step 1: Initialize genre configuration
-                if not (BASE_DIR / "active_genre.json").exists() and args.genre:
+                active_genre_path = utils.get_active_genre_path()
+                if (not active_genre_path.exists() or args.from_scratch or args.genre) and args.genre:
                     banner("STEP 1: Initializing genre configuration")
-                    cmd = [sys.executable, str(BASE_DIR / "gen_genre_framework.py")]
+                    cmd = [sys.executable, str(root_dir / "gen_genre_framework.py")]
                     if args.genre:
                         cmd += ["--genre", args.genre]
                     if args.chapters:
@@ -1007,6 +1143,8 @@ def run_pipeline(args):
                     if notes_for_genre:
                         cmd += ["--notes", notes_for_genre]
                     subprocess.run(cmd, check=True)
+                    from genre import reload_genre
+                    reload_genre()
                     print("Genre config ready.\n")
 
                 # Load genre config for chapter count
@@ -1036,7 +1174,19 @@ def run_pipeline(args):
     elapsed = datetime.now() - start_time
     hours = elapsed.total_seconds() / 3600
 
+    # Update project registry with final metadata
+    update_registry(args.project, {
+        "title": state.get("title", args.project),
+        "genre": args.genre or os.getenv("AUTONOVEL_GENRE", "unknown"),
+        "created_at": state.get("created_at", datetime.now().isoformat()),
+        "last_modified": datetime.now().isoformat(),
+        "phase": state.get("phase", "unknown"),
+        "novel_score": state.get("novel_score", 0.0),
+        "word_count": count_words_in_chapters(),
+    })
+
     banner("PIPELINE COMPLETE")
+    print(f"  Project:    {args.project}")
     print(f"  Time:       {hours:.1f} hours")
     print(f"  Phase:      {state.get('phase')}")
     print(f"  Foundation: {state.get('foundation_score', 0)}")
@@ -1052,15 +1202,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-  python run_pipeline.py                     # resume from current state
-  python run_pipeline.py --from-scratch      # start fresh from seed.txt
-  python run_pipeline.py --phase foundation  # run only foundation
-  python run_pipeline.py --phase drafting    # run only drafting
-  python run_pipeline.py --phase revision    # run only revision
-  python run_pipeline.py --phase export      # run only export
-  python run_pipeline.py --max-cycles 4      # limit revision to 4 cycles
+  python run_pipeline.py --project mynovel              # resume from current state
+  python run_pipeline.py --project mynovel --from-scratch  # start fresh from seed.txt
+  python run_pipeline.py --project mynovel --phase foundation  # run only foundation
+  python run_pipeline.py --project mynovel --phase drafting    # run only drafting
+  python run_pipeline.py --project mynovel --phase revision    # run only revision
+  python run_pipeline.py --project mynovel --phase export      # run only export
+  python run_pipeline.py --project mynovel --max-cycles 4      # limit revision to 4 cycles
 """)
 
+    parser.add_argument(
+        "--project", default=os.environ.get("AUTONOVEL_PROJECT", "default"),
+        help="Project name (creates isolated session in projects/<name>/)")
     parser.add_argument(
         "--from-scratch", action="store_true",
         help="Reset state and start from seed.txt")

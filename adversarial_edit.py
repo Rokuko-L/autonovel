@@ -12,15 +12,10 @@ import json
 import re
 from pathlib import Path
 from dotenv import load_dotenv
+import utils
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
-
-
-CHAPTERS_DIR = BASE_DIR / "chapters"
-EDIT_LOG_DIR = BASE_DIR / "edit_logs"
-EDIT_LOG_DIR.mkdir(exist_ok=True)
+load_dotenv()
 
 def call_judge(prompt, max_tokens=8000):
     return call_anthropic(prompt=prompt, system="You are a ruthless literary editor. You cut fat from prose. You have no sentiment about good-enough sentences -- if a sentence isn't earning its place, it goes. You quote exactly from the text. You never invent or paraphrase. Always respond with valid JSON.", model_key="judge", max_tokens=max_tokens, temperature=0.3, timeout=300)
@@ -110,8 +105,10 @@ Respond with JSON:
 """
 
 def edit_chapter(ch_num):
-    ch_path = CHAPTERS_DIR / f"ch_{ch_num:02d}.md"
-    text = ch_path.read_text()
+    chapters_dir = utils.get_chapters_dir()
+    edit_log_dir = utils.get_edit_logs_dir()
+    ch_path = chapters_dir / f"ch_{ch_num:02d}.md"
+    text = ch_path.read_text(encoding="utf-8")
     word_count = len(text.split())
     
     prompt = EDIT_PROMPT.format(chapter_text=text, word_count=word_count)
@@ -119,9 +116,34 @@ def edit_chapter(ch_num):
     result = parse_json(raw)
     
     # Save log
-    log_path = EDIT_LOG_DIR / f"ch{ch_num:02d}_cuts.json"
-    with open(log_path, "w") as f:
+    log_path = edit_log_dir / f"ch{ch_num:02d}_cuts.json"
+    with open(log_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
+
+    # Validate LLM quotes match chapter text
+    cuts = result.get("cuts", [])
+    fat_pct = result.get("overall_fat_percentage", 0)
+    print(f"  [DEBUG] Chapter {ch_num:02d} fat score generated: {fat_pct}%", file=sys.stderr)
+    
+    matched_count = 0
+    failed_cuts = []
+    for cut in cuts:
+        quote = cut.get("quote", "")
+        if not quote.strip():
+            continue
+        # Normalize whitespace to check presence
+        norm_quote = re.sub(r"\s+", " ", quote).strip()
+        norm_text = re.sub(r"\s+", " ", text).strip()
+        if norm_quote in norm_text:
+            matched_count += 1
+        else:
+            failed_cuts.append(quote)
+            
+    print(f"  [DEBUG] Quote Match Validation: {matched_count}/{len(cuts)} quotes matched in chapter text.", file=sys.stderr)
+    if failed_cuts:
+        print(f"  [DEBUG][WARN] {len(failed_cuts)} recommended cuts do NOT match the chapter text exactly (LLM alignment issue).", file=sys.stderr)
+        for i, fq in enumerate(failed_cuts[:3]):
+            print(f"    - Misaligned quote {i+1}: {fq[:60]}...", file=sys.stderr)
     
     return result, word_count
 
@@ -131,7 +153,7 @@ def main():
         sys.exit(1)
     
     if sys.argv[1] == "all":
-        chapters = list(range(1, 25))
+        chapters = sorted([int(m.group(1)) for p in utils.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
     else:
         chapters = [int(sys.argv[1])]
     

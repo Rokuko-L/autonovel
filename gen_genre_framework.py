@@ -277,7 +277,8 @@ def main():
                 sys.exit(1)
 
         # Success — write active_genre.json
-        out_path = BASE_DIR / "active_genre.json"
+        import utils
+        out_path = utils.get_active_genre_path()
         out_path.write_text(json.dumps(config, indent=2))
         print(f"✅ Genre config written to {out_path}", file=sys.stderr)
         print(f"   Genre: {config['genre_name']}")

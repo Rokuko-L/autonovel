@@ -12,11 +12,11 @@ import re
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+import utils
 from utils import call_anthropic
 from genre import load_genre
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 
 READERS = {
     "editor": {
@@ -110,9 +110,9 @@ Respond with JSON:
 
 def call_reader(reader_key, arc_summary):
     reader = READERS[reader_key]
-    ch_files = sorted(BASE_DIR.glob("chapters/ch_*.md"))
+    ch_files = sorted(utils.get_chapters_dir().glob("ch_*.md"))
     chapter_count = len(ch_files)
-    word_count = sum(len(f.read_text().split()) for f in ch_files) if ch_files else 0
+    word_count = sum(len(f.read_text(encoding="utf-8").split()) for f in ch_files) if ch_files else 0
     cut_words = int(word_count * 0.1) if word_count else 7000
     prompt = build_reader_prompt().format(arc_summary=arc_summary, word_count=word_count, chapter_count=chapter_count, cut_words=cut_words)
     raw = call_anthropic(prompt=prompt, system=reader["system"], model_key="judge", max_tokens=4000, timeout=300, temperature=0.7)
@@ -145,7 +145,7 @@ def find_disagreements(results):
     disagreements = []
     
     for question in ["momentum_loss", "cut_candidate", "thinnest_character", "worst_scene"]:
-        answers = {k: v.get(question, "") for k, v in results.items()}
+        answers = {k: str(v.get(question, "")) for k, v in results.items()}
         # Extract chapter numbers mentioned
         chapters_mentioned = {}
         for reader, answer in answers.items():
@@ -172,7 +172,7 @@ def find_disagreements(results):
     return disagreements
 
 def main():
-    arc_summary = (BASE_DIR / "arc_summary.md").read_text()
+    arc_summary = utils.get_arc_summary_path().read_text(encoding="utf-8")
     
     results = {}
     for reader_key, reader_info in READERS.items():
@@ -185,9 +185,9 @@ def main():
             results[reader_key] = result
             
             # Print highlights
-            print(f"  Momentum loss: {result.get('momentum_loss', '')[:150]}...")
-            print(f"  Best scene: {result.get('best_scene', '')[:150]}...")
-            print(f"  Would recommend: {result.get('would_recommend', '')[:150]}...")
+            print(f"  Momentum loss: {str(result.get('momentum_loss', ''))[:150]}...")
+            print(f"  Best scene: {str(result.get('best_scene', ''))[:150]}...")
+            print(f"  Would recommend: {str(result.get('would_recommend', ''))[:150]}...")
         except Exception as e:
             print(f"  ERROR: {e}")
     
@@ -205,7 +205,7 @@ def main():
         print(f"\n--- {question.upper()} ---")
         for reader_key in READERS:
             if reader_key in results:
-                answer = results[reader_key].get(question, "N/A")
+                answer = str(results[reader_key].get(question, "N/A"))
                 print(f"  [{READERS[reader_key]['name']}]: {answer[:300]}")
     
     if disagreements:
@@ -223,7 +223,7 @@ def main():
         "disagreements": disagreements,
         "timestamp": datetime.now().isoformat()
     }
-    out_path = BASE_DIR / "edit_logs" / "reader_panel.json"
+    out_path = utils.get_edit_logs_dir() / "reader_panel.json"
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)
     print(f"\nSaved to {out_path}")

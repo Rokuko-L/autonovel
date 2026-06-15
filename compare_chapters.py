@@ -15,13 +15,10 @@ import random
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+import utils
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
-
-
-CHAPTERS_DIR = BASE_DIR / "chapters"
+load_dotenv()
 
 def call_judge(prompt, max_tokens=4000):
     return call_anthropic(prompt=prompt, system="You are a literary editor comparing two chapters of the same novel. You pick the better one. You are not allowed to call it a tie. You quote specific passages to justify your choice. Respond with valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.2, timeout=300)
@@ -86,8 +83,9 @@ Respond with JSON:
 """
 
 def compare(ch_a, ch_b):
-    text_a = (CHAPTERS_DIR / f"ch_{ch_a:02d}.md").read_text()
-    text_b = (CHAPTERS_DIR / f"ch_{ch_b:02d}.md").read_text()
+    chapters_dir = utils.get_chapters_dir()
+    text_a = (chapters_dir / f"ch_{ch_a:02d}.md").read_text()
+    text_b = (chapters_dir / f"ch_{ch_b:02d}.md").read_text()
     
     # Truncate to ~3000 words each to fit context
     words_a = text_a.split()
@@ -171,7 +169,7 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         # Full tournament
-        chapters = list(range(1, 25))
+        chapters = sorted([int(m.group(1)) for p in utils.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
         ranking, elo, matchups = run_tournament(chapters)
         
         print(f"\n{'='*50}")
@@ -187,7 +185,7 @@ def main():
             "matchups": matchups,
             "timestamp": datetime.now().isoformat()
         }
-        out_path = BASE_DIR / "edit_logs" / "tournament_results.json"
+        out_path = utils.get_edit_logs_dir() / "tournament_results.json"
         with open(out_path, "w") as f:
             json.dump(results, f, indent=2)
         print(f"\nSaved to {out_path}")

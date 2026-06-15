@@ -23,18 +23,13 @@ from datetime import datetime
 from pathlib import Path
 
 # --- Configuration ---
-BASE_DIR = Path(__file__).resolve().parent
 
 # Load .env file if present
 from dotenv import load_dotenv
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 from genre import load_genre
-
-
-CHAPTERS_DIR = BASE_DIR / "chapters"
-EVAL_LOG_DIR = BASE_DIR / "eval_logs"
-EVAL_LOG_DIR.mkdir(exist_ok=True)
+import utils
 
 
 # ---- Mechanical Slop Detection (no LLM needed) ----
@@ -237,33 +232,34 @@ def slop_score(text):
 def load_file(path):
     """Load a text file, return empty string if missing."""
     try:
-        return Path(path).read_text()
+        return Path(path).read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
 
 
 def load_layer_files():
-    """Load all planning layer files."""
+    """Load all planning layer files from the active project directory."""
     return {
-        "voice": load_file(BASE_DIR / "voice.md"),
-        "world": load_file(BASE_DIR / "world.md"),
-        "characters": load_file(BASE_DIR / "characters.md"),
-        "outline": load_file(BASE_DIR / "outline.md"),
-        "canon": load_file(BASE_DIR / "canon.md"),
+        "voice": load_file(utils.get_voice_path()),
+        "world": load_file(utils.get_world_path()),
+        "characters": load_file(utils.get_characters_path()),
+        "outline": load_file(utils.get_outline_path()),
+        "canon": load_file(utils.get_canon_path()),
     }
 
 
 def load_chapter(n):
-    """Load a single chapter file."""
-    return load_file(CHAPTERS_DIR / f"ch_{n:02d}.md")
+    """Load a single chapter file from the active project."""
+    return load_file(utils.get_chapters_dir() / f"ch_{n:02d}.md")
 
 
 def load_all_chapters():
-    """Load all chapter files in order."""
+    """Load all chapter files in order from the active project."""
+    chapters_dir = utils.get_chapters_dir()
     chapters = {}
-    for f in sorted(glob.glob(str(CHAPTERS_DIR / "ch_*.md"))):
+    for f in sorted(glob.glob(str(chapters_dir / "ch_*.md"))):
         num = int(re.search(r'ch_(\d+)', f).group(1))
-        chapters[num] = Path(f).read_text()
+        chapters[num] = Path(f).read_text(encoding="utf-8")
     return chapters
 
 
@@ -311,6 +307,17 @@ def parse_json_response(text):
         # Last resort: fix common issues (literal newlines in strings)
         fixed = re.sub(r'(?<!\\)\n', '\\n', text)
         return json.loads(fixed, strict=False)
+
+
+def call_judge_json(prompt, max_tokens=2000, retries=3):
+    for attempt in range(1, retries + 1):
+        try:
+            raw = call_judge(prompt, max_tokens)
+            return parse_json_response(raw)
+        except (json.JSONDecodeError, ValueError) as e:
+            if attempt == retries:
+                raise e
+            print(f"JSON decode failed on attempt {attempt}/{retries}: {e}. Retrying LLM call...", file=sys.stderr)
 
 
 # --- Foundation Evaluation ---
@@ -370,19 +377,20 @@ invent something during drafting, your score is too high. Revise down.
 
 def evaluate_foundation():
     layers = load_layer_files()
-    prompt = build_foundation_prompt().format(**layers)
-    raw = call_judge(prompt, max_tokens=16000)
-    return parse_json_response(raw)
+    prompt = build_foundation_prompt()
+    for key, val in layers.items():
+        prompt = prompt.replace(f"{{{key}}}", val)
+    return call_judge_json(prompt, max_tokens=16000)
 
 
 # --- Chapter Evaluation ---
 
-def build_chapter_prompt():
+def build_chapter_prompt(voice, world, characters, canon, chapter_outline, prev_chapter_tail, chapter_text):
     cfg = load_genre()
     ccfg = cfg["evaluation"]["chapter"]
     prompt = ccfg["overall_calibration"] + "\n\n"
 
-    prompt += """VOICE DEFINITION:
+    prompt += f"""VOICE DEFINITION:
 {voice}
 
 WORLD BIBLE (summary):
@@ -452,7 +460,7 @@ def evaluate_chapter(chapter_num):
     prev_text = load_chapter(chapter_num - 1) if chapter_num > 1 else "(first chapter)"
     prev_tail = prev_text[-3000:] if len(prev_text) > 3000 else prev_text
 
-    prompt = build_chapter_prompt().format(
+    prompt = build_chapter_prompt(
         voice=layers["voice"],
         world=layers["world"][:4000],  # truncate world bible
         characters=layers["characters"],
@@ -461,8 +469,7 @@ def evaluate_chapter(chapter_num):
         prev_chapter_tail=prev_tail,
         chapter_text=chapter_text,
     )
-    raw = call_judge(prompt, max_tokens=8000)
-    result = parse_json_response(raw)
+    result = call_judge_json(prompt, max_tokens=8000)
 
     # Mechanical slop check -- adjusts score independently of judge
     slop = slop_score(chapter_text)
@@ -548,8 +555,7 @@ def evaluate_full():
         outline=layers["outline"],
         chapter_summaries="\n".join(summaries),
     )
-    raw = call_judge(prompt)
-    return parse_json_response(raw)
+    return call_judge_json(prompt)
 
 
 # --- Main ---
@@ -590,8 +596,9 @@ def main():
     # Save full eval log
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     mode = args.phase or (f"ch{args.chapter:02d}" if args.chapter else "full")
-    log_path = EVAL_LOG_DIR / f"{timestamp}_{mode}.json"
-    with open(log_path, "w") as f:
+    eval_log_dir = utils.get_eval_logs_dir()  # also creates the directory
+    log_path = eval_log_dir / f"{timestamp}_{mode}.json"
+    with open(log_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
     print(f"\neval_log: {log_path}")
 

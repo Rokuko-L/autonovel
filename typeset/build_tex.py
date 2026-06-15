@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Build LaTeX source from chapter files."""
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to find _utf8 and utils
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import _utf8
 import re
 import os
 from pathlib import Path
+import utils
 
-BASE = Path(__file__).resolve().parent.parent
-CHAPTERS_DIR = BASE / "chapters"
-OUT_DIR = BASE / "typeset"
+CHAPTERS_DIR = utils.get_chapters_dir()
+OUT_DIR = utils.get_typeset_dir()
 
 def latex_escape(t):
     t = t.replace('&', '\\&')
@@ -93,9 +100,14 @@ def make_drop_cap(latex_body):
     return drop + '\n\n' + rest
 
 chapters_tex = []
-for n in range(1, 20):
-    path = os.path.join(CHAPTERS_DIR, f"ch_{n:02d}.md")
-    with open(path) as f:
+chapter_files = sorted(CHAPTERS_DIR.glob("ch_*.md"))
+for path in chapter_files:
+    m = re.search(r"ch_(\d+)\.md", path.name)
+    if not m:
+        continue
+    n = int(m.group(1))
+    
+    with open(path, encoding="utf-8") as f:
         text = f.read()
     
     lines = text.strip().split('\n')
@@ -112,7 +124,7 @@ for n in range(1, 20):
     latex_body = make_drop_cap(latex_body)
     
     # Check for chapter ornament (prefer vector PDF over raster PNG)
-    art_base = os.path.dirname(CHAPTERS_DIR)
+    art_base = str(utils.get_project_dir())
     pdf_path = os.path.join(art_base, "art", "pdf", f"ornament_ch{n:02d}.pdf")
     png_path = os.path.join(art_base, "art", f"ornament_ch{n:02d}.png")
     ornament_tex = ""

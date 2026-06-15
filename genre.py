@@ -133,10 +133,14 @@ def load_genre():
     if _cache is not None:
         return _cache
     
-    # Priority: 1) active_genre.json  2) AUTONOVEL_GENRE env pointing to file  3) default_fantasy.json
+    # Priority: 1) project active_genre.json 2) global active_genre.json 3) AUTONOVEL_GENRE env pointing to file 4) default_fantasy.json
+    import utils
+    project_active_path = utils.get_active_genre_path()
     genre_env = os.environ.get(GENRE_ENV_VAR, "")
     
-    if ACTIVE_PATH.exists():
+    if project_active_path.exists():
+        path = project_active_path
+    elif ACTIVE_PATH.exists():
         path = ACTIVE_PATH
     elif genre_env:
         genre_path = BASE_DIR / "genres" / f"{genre_env}.json"
