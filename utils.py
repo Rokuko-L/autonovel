@@ -5,7 +5,7 @@ import httpx
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 
 DEFAULT_MODELS = {
     "writer": "claude-sonnet-4-6",

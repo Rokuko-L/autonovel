@@ -38,7 +38,7 @@ load_dotenv()
 # Constants
 # ---------------------------------------------------------------------------
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 STATE_FILE = BASE_DIR / "state.json"
 RESULTS_FILE = BASE_DIR / "results.tsv"
 CHAPTERS_DIR = BASE_DIR / "chapters"
@@ -988,6 +988,10 @@ def run_pipeline(args):
                 notes_for_genre = None
                 if args.notes:
                     notes_for_genre = process_notes(args.notes, args.genre)
+                seed_path = BASE_DIR / "seed.txt"
+                if not seed_path.exists():
+                    print(f"ERROR: seed.txt not found after process_notes at {seed_path}", file=sys.stderr)
+                    sys.exit(1)
                 # TODO: --continue mode — if pre-written chapters exist, generate
                 # an outline that picks up from the last written beat instead of
                 # starting from chapter 1.
