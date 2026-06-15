@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
 def call_claude(prompt, max_tokens=get_max_tokens_with_thinking(3000)):

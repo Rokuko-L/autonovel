@@ -11,7 +11,7 @@ import statistics
 from pathlib import Path
 from collections import Counter
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 CHAPTERS_DIR = BASE_DIR / "chapters"
 
 # The three vocabulary wells from voice.md

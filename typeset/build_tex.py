@@ -4,7 +4,7 @@ import re
 import os
 from pathlib import Path
 
-BASE = Path(__file__).parent.parent
+BASE = Path(__file__).resolve().parent.parent
 CHAPTERS_DIR = BASE / "chapters"
 OUT_DIR = BASE / "typeset"
 

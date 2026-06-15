@@ -16,7 +16,7 @@ import sys
 import json
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 
 # Load env
 from dotenv import load_dotenv
@@ -251,8 +251,8 @@ def main():
                 print(f"  Raw output (first 500 chars): {raw[:500]}", file=sys.stderr)
                 continue
             else:
-                print(f"  Failed after 3 attempts. Raw output saved to /tmp/genre_fail.json", file=sys.stderr)
-                Path("/tmp/genre_fail.json").write_text(raw)
+                print(f"  Failed after 3 attempts. Raw output saved to {BASE_DIR / 'genre_fail.json'}", file=sys.stderr)
+                (BASE_DIR / "genre_fail.json").write_text(raw)
                 sys.exit(1)
 
         # Inject user directives and correct chapter count
@@ -273,7 +273,7 @@ def main():
                 continue
             else:
                 print(f"  Failed after 3 validation attempts.", file=sys.stderr)
-                Path("/tmp/genre_fail.json").write_text(json.dumps(config, indent=2))
+                (BASE_DIR / "genre_fail.json").write_text(json.dumps(config, indent=2))
                 sys.exit(1)
 
         # Success — write active_genre.json

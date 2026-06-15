@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from utils import call_anthropic, BASE_DIR, get_max_tokens_with_thinking
+from utils import call_anthropic, get_max_tokens_with_thinking
 from genre import load_genre
 
 BASE_DIR = Path(__file__).resolve().parent

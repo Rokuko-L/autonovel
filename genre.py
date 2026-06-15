@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 ACTIVE_PATH = BASE_DIR / "active_genre.json"
 DEFAULT_PATH = BASE_DIR / "genres" / "default_fantasy.json"
 GENRE_ENV_VAR = "AUTONOVEL_GENRE"

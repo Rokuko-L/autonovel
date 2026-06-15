@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from utils import call_anthropic, get_novel_title
 from genre import load_genre
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 CHAPTERS_DIR = BASE_DIR / "chapters"

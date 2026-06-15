@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 ART_DIR = BASE_DIR / "art"
 
 # Standard trade paperback dimensions
