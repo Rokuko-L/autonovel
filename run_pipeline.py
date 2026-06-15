@@ -27,8 +27,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+from dotenv import load_dotenv
 from genre import load_genre
 from utils import call_anthropic
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -849,11 +853,78 @@ def run_export(state: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Sanity check (pre-flight before any LLM call)
+# ---------------------------------------------------------------------------
+
+def sanity_check(args):
+    """Run pre-flight checks. Exit 1 on critical failures."""
+    ok = True
+    notes_provided = bool(args.notes)
+
+    # 1. .env exists
+    if not (BASE_DIR / ".env").exists():
+        print("FAIL: .env not found — create one from .env.example", file=sys.stderr)
+        ok = False
+
+    # 2. API key loaded (load_dotenv already called at module level)
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("FAIL: ANTHROPIC_API_KEY not set in .env", file=sys.stderr)
+        ok = False
+
+    # 3. API endpoint reachable
+    base = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    try:
+        httpx.get(base, timeout=5)
+    except Exception:
+        print(f"WARN: {base} unreachable — continuing anyway", file=sys.stderr)
+
+    # 4. At least one of seed.txt or --notes exists
+    if not (BASE_DIR / "seed.txt").exists() and not notes_provided:
+        print("FAIL: provide --notes or place a seed.txt in the project root", file=sys.stderr)
+        ok = False
+
+    # 5. Genre is specified
+    if not args.genre and not os.getenv("AUTONOVEL_GENRE"):
+        print("FAIL: provide --genre or set AUTONOVEL_GENRE in .env", file=sys.stderr)
+        ok = False
+
+    # --- Warnings (non-fatal) ---
+
+    # Chapters parseable
+    if args.chapters:
+        try:
+            int(args.chapters)
+        except ValueError:
+            descriptive = {"short", "story", "novella", "novelette", "epic", "saga"}
+            if not any(w in args.chapters.lower() for w in descriptive):
+                print(f"WARN: --chapters '{args.chapters}' looks unusual", file=sys.stderr)
+
+    # active_genre.json valid if present
+    if (BASE_DIR / "active_genre.json").exists():
+        try:
+            json.loads((BASE_DIR / "active_genre.json").read_text())
+        except json.JSONDecodeError:
+            print("WARN: active_genre.json is corrupted — delete it and re-run", file=sys.stderr)
+
+    # state.json valid if present and not in --from-scratch mode
+    if (BASE_DIR / "state.json").exists() and not args.from_scratch:
+        try:
+            json.loads((BASE_DIR / "state.json").read_text())
+        except json.JSONDecodeError:
+            print("WARN: state.json is corrupted — use --from-scratch to reset", file=sys.stderr)
+
+    if not ok:
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
 
 def run_pipeline(args):
     """Run the full pipeline or a specific phase."""
+
+    sanity_check(args)
 
     # Load or initialize state
     if args.from_scratch:
