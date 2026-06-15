@@ -45,7 +45,7 @@ def find_font(name, style="Regular"):
 
 def compose_cover(
     art_path,
-    title="The Second Son of the House of Bells",
+    title="Untitled Novel",
     author="Claude Hermes",
     subtitle="A Novel",
     blurb="",
@@ -330,7 +330,7 @@ def compose_cover(
 def main():
     parser = argparse.ArgumentParser(description="Compose print-ready book cover")
     parser.add_argument("art_path", help="Path to panoramic cover art")
-    parser.add_argument("--title", default="The Second Son of the House of Bells")
+    parser.add_argument("--title", default="Untitled Novel")
     parser.add_argument("--author", default="Claude Hermes")
     parser.add_argument("--subtitle", default="A Novel")
     parser.add_argument("--blurb", default="")

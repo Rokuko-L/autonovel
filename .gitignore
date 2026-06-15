@@ -6,5 +6,6 @@ __pycache__/
 .env
 .venv/
 typeset/*.pdf
+active_genre.json
 typeset/chapters_content.tex
 *.pdf

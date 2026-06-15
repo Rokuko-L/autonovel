@@ -6,20 +6,17 @@ The disagreements between readers are where editorial decisions live.
 
 Usage: python reader_panel.py
 """
-import os
 import sys
 import json
 import re
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+from utils import call_anthropic
+from genre import load_genre
 
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env")
-
-JUDGE_MODEL = os.environ.get("AUTONOVEL_JUDGE_MODEL", "claude-opus-4-6")
-API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-API_BASE = os.environ.get("AUTONOVEL_API_BASE_URL", "https://api.anthropic.com")
 
 READERS = {
     "editor": {
@@ -37,16 +34,7 @@ READERS = {
     },
     "genre_reader": {
         "name": "The Genre Reader",
-        "system": (
-            "You are an avid fantasy reader who reads 50+ novels a year. "
-            "You care about pacing, mystery, worldbuilding payoff, and whether "
-            "you want to keep turning pages. You get bored by beautiful prose "
-            "that doesn't GO anywhere. You notice when an investigation stalls, "
-            "when tension plateaus, when the author is more in love with their "
-            "world than their story. You compare everything to Sanderson, Le Guin, "
-            "Jemisin, Rothfuss, Hobb. You are generous with what you love and "
-            "blunt about what bores you. You respond with valid JSON only."
-        ),
+        "system": load_genre()["evaluation"]["reader_panel"]["genre_reader_identity"],
     },
     "writer": {
         "name": "The Writer",
@@ -76,58 +64,58 @@ READERS = {
     },
 }
 
-READER_PROMPT = """You have just read a complete fantasy novel in summary form.
-The summaries include chapter-by-chapter events, opening and closing passages
-from each chapter, and key dialogue. The full novel is 72,422 words across
-24 chapters.
+def build_reader_prompt():
+    cfg = load_genre()
+    mods = cfg["evaluation"]["reader_panel"].get("prompt_modifications", {}) or {}
+    earned_hint = mods.get("earned_ending_hint", "Does the ending feel earned by everything before it?")
 
-{arc_summary}
+    prompt = f"""You have just read a complete novel in summary form.
+The summaries include chapter-by-chapter events, opening and closing passages
+from each chapter, and key dialogue. The full novel is {{word_count:,}} words across
+{{chapter_count}} chapters.
+
+{{arc_summary}}
 
 Now answer these questions about the NOVEL AS A WHOLE. Be specific.
 Quote passages when you can. Name chapter numbers.
 
 Respond with JSON:
-{{
-  "momentum_loss": "Where does the story lose momentum? Name the specific chapter(s) and what causes the drag. If it never loses momentum, say so and explain why.",
-  
-  "earned_ending": "Does the ending feel earned by everything before it? Does Cass's choice in Ch 22 land? Does the final image in Ch 24 mirror Ch 1 in a way that satisfies? What, if anything, feels unearned?",
-  
-  "cut_candidate": "If the novel had to be 10% shorter (~7,000 words), which chapter or section would you cut first? Why? What would be lost?",
-  
-  "missing_scene": "Is there a scene the novel NEEDS that it doesn't have? A conversation that should happen, a moment that's earned but never delivered, a character who deserves more page time? Be specific about where it would go.",
-  
-  "thinnest_character": "Which character feels thinnest by the end? Who do you want to know more about? Who could be cut without the novel suffering?",
-  
-  "best_scene": "What's the single best scene in the novel? Quote the moment that made you feel something. Why does it work?",
-  
-  "worst_scene": "What's the single weakest scene? What goes wrong? How would you fix it?",
-  
-  "would_recommend": "Would you recommend this novel? To whom? What would you say about it in one sentence?",
-  
-  "haunts_you": "Is there a line or moment that stays with you after reading? Quote it.",
-  
-  "next_book": "Would you read the author's next book? Why or why not?"
-}}
+{{{{
+  "momentum_loss": "Where does the story lose momentum?...",
+
+  "earned_ending": "{earned_hint}",
+
+  "cut_candidate": "If the novel had to be 10% shorter (~{{cut_words:,}} words), which chapter or section would you cut first?...",
+
+  "missing_scene": "Is there a scene the novel NEEDS that it doesn't have?...",
+
+  "thinnest_character": "Which character feels thinnest?...",
+
+  "best_scene": "What's the single best scene?...",
+
+  "worst_scene": "What's the single weakest scene?...",
+
+  "would_recommend": "Would you recommend this novel?...",
+
+  "haunts_you": "Is there a line or moment that stays with you?...",
+
+  "next_book": "Would you read the author's next book?..."
 """
+    extra_qs = mods.get("extra_questions", {}) or {}
+    for qkey, qtext in extra_qs.items():
+        prompt += f'\n  "{qkey}": "{qtext}",'
+
+    prompt += "\n}}"
+    return prompt
 
 def call_reader(reader_key, arc_summary):
-    import httpx
     reader = READERS[reader_key]
-    headers = {
-        "x-api-key": API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-    payload = {
-        "model": JUDGE_MODEL,
-        "max_tokens": 4000,
-        "temperature": 0.7,  # Higher temp for personality
-        "system": reader["system"],
-        "messages": [{"role": "user", "content": READER_PROMPT.format(arc_summary=arc_summary)}],
-    }
-    resp = httpx.post(f"{API_BASE}/v1/messages", headers=headers, json=payload, timeout=300)
-    resp.raise_for_status()
-    raw = resp.json()["content"][0]["text"]
+    ch_files = sorted(BASE_DIR.glob("chapters/ch_*.md"))
+    chapter_count = len(ch_files)
+    word_count = sum(len(f.read_text().split()) for f in ch_files) if ch_files else 0
+    cut_words = int(word_count * 0.1) if word_count else 7000
+    prompt = build_reader_prompt().format(arc_summary=arc_summary, word_count=word_count, chapter_count=chapter_count, cut_words=cut_words)
+    raw = call_anthropic(prompt=prompt, system=reader["system"], model_key="judge", max_tokens=4000, timeout=300, temperature=0.7)
     
     # Parse JSON
     raw = raw.strip()

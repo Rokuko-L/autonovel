@@ -1,0 +1,192 @@
+"""
+genre.py — Genre configuration loader.
+All pipeline scripts call load_genre() to get active genre config.
+Fallback: genres/default_fantasy.json if no active_genre.json exists.
+"""
+import json
+import math
+import os
+import sys
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent
+ACTIVE_PATH = BASE_DIR / "active_genre.json"
+DEFAULT_PATH = BASE_DIR / "genres" / "default_fantasy.json"
+GENRE_ENV_VAR = "AUTONOVEL_GENRE"
+
+_cache = None
+
+REQUIRED_KEYS = [
+    "genre_name", "identity", "generation", "evaluation", "framework",
+    "identity.seed_system", "identity.world_system", "identity.character_system",
+    "identity.outline_system", "identity.chapter_system", "identity.revision_system",
+    "identity.canon_system", "identity.evaluator_system",
+    "generation.world", "generation.world.description", "generation.world.sections",
+    "generation.character", "generation.character.description", "generation.character.focus_areas",
+    "generation.outline", "generation.outline.description",
+    "generation.outline.estimated_chapters", "generation.outline.estimated_words",
+    "generation.outline.notes",
+    "generation.seed_generate_prompt", "generation.seed_riff_prompt",
+    "generation.gen_world_prompt", "generation.gen_characters_prompt",
+    "generation.gen_outline_prompt", "generation.gen_outline_part2_prompt",
+    "generation.gen_canon_prompt", "generation.gen_revision_prompt",
+    "generation.draft_chapter_instructions", "generation.anti_pattern_rules",
+    "generation.canon_categories", "generation.arc_summary_premise",
+    "evaluation.foundation", "evaluation.foundation.overall_calibration",
+    "evaluation.foundation.dimensions",
+    "evaluation.chapter", "evaluation.chapter.overall_calibration",
+    "evaluation.chapter.dimensions",
+    "evaluation.reader_panel", "evaluation.reader_panel.genre_reader_identity",
+    "framework.lore_priorities", "framework.character_framework", "framework.plot_framework",
+]
+
+FOUNDATION_DIM_KEYS = {"world_depth", "character_depth", "plot_structure",
+                        "internal_consistency", "voice_clarity", "canon_coverage"}
+CHAPTER_DIM_KEYS = {"voice_adherence", "beat_coverage", "character_voice",
+                     "prose_quality", "engagement", "continuity"}
+
+def _get_nested(d, key):
+    """Get nested key like 'identity.seed_system' from dict."""
+    parts = key.split(".")
+    for part in parts:
+        if isinstance(d, dict) and part in d:
+            d = d[part]
+        else:
+            return None
+    return d
+
+def validate(config):
+    """Raise ValueError with all validation errors at once."""
+    errors = []
+    
+    # Check all required keys exist
+    for key in REQUIRED_KEYS:
+        val = _get_nested(config, key)
+        if val is None:
+            errors.append(f"Missing required key: {key}")
+    
+    # Check generation prompt strings are not empty
+    prompt_keys = [
+        "generation.seed_generate_prompt", "generation.seed_riff_prompt",
+        "generation.gen_world_prompt", "generation.gen_characters_prompt",
+        "generation.gen_outline_prompt", "generation.gen_outline_part2_prompt",
+        "generation.gen_canon_prompt", "generation.gen_revision_prompt",
+    ]
+    for key in prompt_keys:
+        val = _get_nested(config, key)
+        if val and len(str(val).strip()) < 50:
+            errors.append(f"Prompt too short ({len(str(val).strip())} chars): {key}")
+    
+    # Check foundation dimension keys
+    fdims = _get_nested(config, "evaluation.foundation.dimensions") or []
+    fdims_keys = {d.get("key") for d in fdims}
+    missing_f = FOUNDATION_DIM_KEYS - fdims_keys
+    if missing_f:
+        errors.append(f"Foundation dims missing: {missing_f}")
+    extra_f = fdims_keys - FOUNDATION_DIM_KEYS
+    if extra_f:
+        errors.append(f"Foundation dims extra unknown keys: {extra_f}")
+    
+    # Check chapter dimension keys
+    cdims = _get_nested(config, "evaluation.chapter.dimensions") or []
+    cdims_keys = {d.get("key") for d in cdims}
+    missing_c = CHAPTER_DIM_KEYS - cdims_keys
+    if missing_c:
+        errors.append(f"Chapter dims missing: {missing_c}")
+    extra_c = cdims_keys - CHAPTER_DIM_KEYS
+    if extra_c:
+        errors.append(f"Chapter dims extra unknown keys: {extra_c}")
+    
+    # Validate foundation weights sum to ~1.0
+    fweight = sum(d.get("weight", 0) for d in fdims)
+    if not math.isclose(fweight, 1.0, abs_tol=0.02):
+        errors.append(f"Foundation weights sum to {fweight:.3f}, expected ~1.0")
+    
+    # Validate chapter weights sum to ~1.0
+    cweight = sum(d.get("weight", 0) for d in cdims)
+    if not math.isclose(cweight, 1.0, abs_tol=0.02):
+        errors.append(f"Chapter weights sum to {cweight:.3f}, expected ~1.0")
+    
+    # Check criteria strings are substantial
+    for dim in fdims + cdims:
+        crit = dim.get("criteria", "")
+        if len(crit.strip()) < 30:
+            errors.append(f"Criteria too short for dim '{dim.get('key')}': {len(crit.strip())} chars")
+    
+    # Check evaluator_system starts correctly
+    eval_sys = _get_nested(config, "identity.evaluator_system") or ""
+    if not eval_sys.startswith("You are a literary critic"):
+        errors.append("evaluator_system must start with 'You are a literary critic...'")
+    
+    # Check framework fields
+    for fkey in ["lore_priorities", "character_framework", "plot_framework"]:
+        val = _get_nested(config, f"framework.{fkey}")
+        if val and len(str(val).strip()) < 20:
+            errors.append(f"framework.{fkey} too short ({len(str(val).strip())} chars)")
+    
+    if errors:
+        raise ValueError("Genre config validation failed:\n  " + "\n  ".join(errors))
+
+
+def load_genre():
+    global _cache
+    if _cache is not None:
+        return _cache
+    
+    # Priority: 1) active_genre.json  2) AUTONOVEL_GENRE env pointing to file  3) default_fantasy.json
+    genre_env = os.environ.get(GENRE_ENV_VAR, "")
+    
+    if ACTIVE_PATH.exists():
+        path = ACTIVE_PATH
+    elif genre_env:
+        genre_path = BASE_DIR / "genres" / f"{genre_env}.json"
+        if genre_path.exists():
+            path = genre_path
+        else:
+            print(f"WARNING: Genre '{genre_env}' not found at {genre_path}, using default", file=sys.stderr)
+            path = DEFAULT_PATH
+    else:
+        path = DEFAULT_PATH
+    
+    if not path.exists():
+        raise FileNotFoundError(f"Genre config not found: {path}")
+    
+    config = json.loads(path.read_text(encoding="utf-8"))
+    validate(config)
+    _cache = config
+    return config
+
+
+def reload_genre():
+    global _cache
+    _cache = None
+    return load_genre()
+
+
+def format_prompt(template, **kwargs):
+    """Safely format a prompt template with kwargs, preserving unset placeholders."""
+    import string
+    # Only replace placeholders that are provided
+    formatter = string.Formatter()
+    result = template
+    for key, val in kwargs.items():
+        result = result.replace(f"{{{key}}}", str(val))
+    return result
+
+
+# CLI usage: python genre.py --validate
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--validate", action="store_true", help="Validate current genre config")
+    args = parser.parse_args()
+    if args.validate:
+        try:
+            cfg = load_genre()
+            print(f"✅ Genre '{cfg['genre_name']}' loaded and valid")
+            print(f"   Estimated: {cfg['generation']['outline']['estimated_chapters']} chapters, {cfg['generation']['outline']['estimated_words']:,} words")
+            print(f"   Foundation dims: {[d['key'] for d in cfg['evaluation']['foundation']['dimensions']]}")
+            print(f"   Chapter dims: {[d['key'] for d in cfg['evaluation']['chapter']['dimensions']]}")
+        except (ValueError, FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"❌ Validation failed: {e}")
+            sys.exit(1)

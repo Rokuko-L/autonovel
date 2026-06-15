@@ -19,12 +19,12 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 
+from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
+
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env", override=True)
 
-WRITER_MODEL = os.environ.get("AUTONOVEL_WRITER_MODEL", "claude-sonnet-4-6")
-API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-API_BASE = os.environ.get("AUTONOVEL_API_BASE_URL", "https://api.anthropic.com")
+
 
 CHAPTERS_DIR = BASE_DIR / "chapters"
 AUDIO_DIR = BASE_DIR / "audiobook"
@@ -34,8 +34,8 @@ SCRIPTS_DIR = AUDIO_DIR / "scripts"
 CHARACTERS = {
     "NARRATOR": "The narrative voice — warm, measured, precise. Reads prose with the rhythm of the novel's world.",
     "CASS": "14-year-old boy. Dry, sharp, sometimes frustrated. His voice tightens when he lies or holds back.",
-    "EDDAN": "52, Cass's father. Deep, rough, terse. Sentences often trail off or restart. Workshop voice is steadier than kitchen voice.",
-    "PERIN": "26, Cass's brother. Dry, precise, carries something heavy. Letters-voice is more controlled than in-person voice.",
+    "EDDAN": "[FATHER]. Deep, rough, terse. Sentences often trail off or restart. Workshop voice is steadier than kitchen voice.",
+    "PERIN": "[BROTHER]. Dry, precise, carries something heavy. Letters-voice is more controlled than in-person voice.",
     "LENNE": "14, female. Quick, confident, intellectually sharp. Composes while she talks — fingers moving, voice certain.",
     "TORVALD": "63, retired dye merchant. Gravelly, warm, rambling. Outer-district speech — longer sentences, less careful, trade metaphors.",
     "MARET": "60, female. Controlled, precise, still. No wasted words. When she finally shows emotion it's devastating.",
@@ -65,26 +65,8 @@ Rules:
 """
 
 
-def call_claude(prompt, max_tokens=8000):
-    import httpx
-    resp = httpx.post(
-        f"{API_BASE}/v1/messages",
-        headers={
-            "x-api-key": API_KEY,
-            "anthropic-version": "2023-06-01",
-            "anthropic-beta": "context-1m-2025-08-07",
-            "content-type": "application/json",
-        },
-        json={
-            "model": WRITER_MODEL,
-            "max_tokens": max_tokens,
-            "temperature": 0.1,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=300,
-    )
-    resp.raise_for_status()
-    return resp.json()["content"][0]["text"]
+def call_claude(prompt, max_tokens=get_max_tokens_with_thinking(8000)):
+    return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, temperature=0.1, beta_context=True, timeout=300)
 
 
 def parse_chapter(ch_num):
@@ -115,7 +97,7 @@ RULES:
 6. Scene breaks (---) become {{"speaker": "NARRATOR", "text": "[pause]"}}
 7. Chapter titles become the first segment: {{"speaker": "NARRATOR", "text": "[slowly] Chapter One: The Morning Pitch"}}
 8. Add audio tags based on emotional context. Be subtle — most lines need no tag.
-9. Internal thoughts in *italics* should be read by the CHARACTER (Cass usually), tagged [softly] or [whisper].
+9. Internal thoughts in *italics* should be read by the CHARACTER (usually the protagonist), tagged [softly] or [whisper].
 
 OUTPUT FORMAT: A JSON array of objects, each with:
   "speaker": character name (from the list above)

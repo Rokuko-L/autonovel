@@ -28,15 +28,10 @@ BASE_DIR = Path(__file__).parent
 # Load .env file if present
 from dotenv import load_dotenv
 load_dotenv(BASE_DIR / ".env")
+from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
+from genre import load_genre
 
-# Judge uses Opus 4.6 (harsh, critical). Writer uses Sonnet 4.6 (fast, long context).
-# Intentionally different to avoid self-congratulation.
-JUDGE_MODEL = os.environ.get("AUTONOVEL_JUDGE_MODEL", "claude-opus-4-6")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-API_BASE_URL = os.environ.get("AUTONOVEL_API_BASE_URL", "https://api.anthropic.com")
 
-# Beta header to unlock 1M context window on both Opus 4.6 and Sonnet 4.6
-ANTHROPIC_BETA = "context-1m-2025-08-07"
 CHAPTERS_DIR = BASE_DIR / "chapters"
 EVAL_LOG_DIR = BASE_DIR / "eval_logs"
 EVAL_LOG_DIR.mkdir(exist_ok=True)
@@ -273,35 +268,7 @@ def load_all_chapters():
 
 
 def call_judge(prompt, max_tokens=2000):
-    """Call the Anthropic judge LLM and return its response text."""
-    import httpx
-
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": ANTHROPIC_BETA,
-        "content-type": "application/json",
-    }
-    payload = {
-        "model": JUDGE_MODEL,
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-        "system": "You are a literary critic and novel editor. "
-                  "You evaluate fiction with precision. Always respond with valid JSON. "
-                  "No markdown fences, no preamble -- just the JSON object.",
-        "messages": [
-            {"role": "user", "content": prompt},
-        ],
-    }
-
-    resp = httpx.post(
-        f"{API_BASE_URL}/v1/messages",
-        headers=headers,
-        json=payload,
-        timeout=180,
-    )
-    resp.raise_for_status()
-    return resp.json()["content"][0]["text"]
+    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["evaluator_system"], model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
 
 
 def parse_json_response(text):
@@ -348,31 +315,12 @@ def parse_json_response(text):
 
 # --- Foundation Evaluation ---
 
-FOUNDATION_PROMPT = """Evaluate these fantasy novel planning documents.
+def build_foundation_prompt():
+    cfg = load_genre()
+    ecfg = cfg["evaluation"]["foundation"]
+    prompt = ecfg["overall_calibration"] + "\n\n"
 
-SCORING CALIBRATION (read this before scoring anything):
-
-  9-10: Could not improve this with a month of focused editorial work.
-        Published-novel quality. You can name the specific published
-        novel it competes with. Reserve 10 for work that SURPRISES you.
-  7-8:  Strong. A skilled author could draft from this document with
-        minimal invention. Gaps exist but are minor and enumerable.
-  5-6:  Functional but thin. A writer would need to invent significant
-        material on the fly. Major gaps or generic choices.
-  3-4:  Sketchy. More questions than answers. Would require heavy
-        supplementation before drafting.
-  1-2:  Placeholder or stub. Not usable for drafting.
-  0:    Empty or missing.
-
-  A score of 8+ requires ZERO major gaps. A score of 9+ requires
-  that you genuinely struggled to find flaws. Err toward lower scores.
-
-MANDATORY: For EVERY dimension, before scoring, you must identify:
-  (a) The single biggest GAP or WEAKNESS in that area
-  (b) A specific, actionable improvement that would raise the score
-  If you cannot find a gap, explain why you believe one doesn't exist.
-
-VOICE DEFINITION:
+    prompt += """VOICE DEFINITION:
 {voice}
 
 WORLD BIBLE:
@@ -388,165 +336,53 @@ CANON (established facts):
 {canon}
 
 CROSS-CHECKS (perform these before scoring):
-1. Check all example dialogue lines against ANTI-SLOP patterns:
-   - Look for structural formulas repeated across characters
-     ("not X, but Y" / "either X, or Y" / "there's a difference")
-   - Check for AI rhetorical tics disguised as character voice
-   - Deduct from character_distinctiveness if multiple characters
-     share the same sentence structures
-2. Check for missing NEGATIVE SPACE -- what's absent?
-   - Are there gaps in the magic system that would block a specific
-     plot scene? (e.g., can Cass hear lies in written documents?
-     What happens during the climax -- what rule resolves it?)
-   - Are there characters needed for the plot who don't exist?
-   - Are there scenes the outline demands that the world can't support?
-3. Check for CONVENIENT GAPS vs DELIBERATE MYSTERY:
-   - Convenient: "the details are unclear" where specifics are needed
-   - Deliberate: withholding information from the READER while the
-     AUTHOR knows the answer. If the planning docs dodge a question
-     that a writer would need answered to draft a scene, that's a gap,
-     not an iceberg.
-4. Check the canon for INTERNAL CONTRADICTIONS:
-   - Cross-reference dates, ages, and timelines
-   - Check if character abilities match magic system rules
-   - Look for factual conflicts between documents
+1. Check all example dialogue lines against ANTI-SLOP patterns
+2. Check for missing NEGATIVE SPACE
+3. Check for CONVENIENT GAPS vs DELIBERATE MYSTERY
+4. Check the canon for INTERNAL CONTRADICTIONS
 
 Score these dimensions (gap + improvement required for each):
 
-LORE & WORLDBUILDING:
-- magic_system: Hard rules with COSTS and LIMITATIONS per Sanderson's
-  Second Law. Could a writer resolve the CLIMACTIC CONFLICT using only
-  rules already established? Are costs plot-driving, not decorative?
-  Are there at least 3 societal implications explored with specificity?
-  Is the system TESTABLE -- could you write a courtroom scene, a
-  contract negotiation, and a magical confrontation without inventing
-  new rules?
-- world_history: Timeline of events creating PRESENT-DAY tensions.
-  Each historical event should map to a current faction conflict or
-  character motivation. Decorative history (cool but plot-irrelevant)
-  counts against the score, not for it.
-- geography_and_culture: Locations distinct with sensory signatures.
-  Cultures with specific customs that GENERATE CONFLICT. Economy that
-  creates class tension. Check: could two different scenes set in two
-  different locations feel meaningfully different based on what's here?
-- lore_interconnection: Does changing one element force changes in
-  at least two others? Test by mentally removing the magic system --
-  does the political structure collapse? Does the class system change?
-  If elements are modular/detachable, score low.
-- iceberg_depth: Implied depth vs stated depth. But CHECK: does the
-  author actually know the answers to the mysteries, or are they
-  handwaving? If a planning doc says "the answer will be revealed"
-  without specifying WHAT the answer is, that's a gap wearing an
-  iceberg costume.
+"""
+    for dim in ecfg["dimensions"]:
+        prompt += f"- {dim['key'].replace('_', ' ').title()}: {dim['criteria']}\n\n"
 
-CHARACTER:
-- character_depth: Wound/want/need/lie chains that are CAUSALLY LINKED
-  (not just thematically associated). The lie must logically follow
-  from the wound. The want must be the wrong solution to the lie.
-  The need must directly oppose the want. Check each chain for
-  logical gaps. Also check: are ANY characters missing wound/want/need
-  chains who probably need them?
-- character_distinctiveness: Remove all dialogue tags from the example
-  lines. Can you identify the speaker from sentence structure alone?
-  Check for REPEATED STRUCTURAL FORMULAS across characters (e.g.,
-  multiple characters using "X. Not Y." or balanced antithesis).
-  Check that metaphor domains don't overlap. Check that speech
-  patterns reflect character background (a 14-year-old should not
-  sound like a 60-year-old merchant).
-- character_secrets: Each major character's secret should be something
-  that, if revealed, changes the plot's trajectory. Vague secrets
-  ("he knows more than he says") score lower than specific ones
-  ("he knows the harmonic means X, which would invalidate Y").
-
-STRUCTURE:
-- outline_completeness: Chapters with beats, POV, emotional arc,
-  try-fail cycle type. Save the Cat beats at correct % marks.
-  Score 0 if empty. Score 5+ only if act structure exists.
-- foreshadowing_balance: Every planted thread has a planned payoff.
-  Score 0 if ledger is empty regardless of implicit threads in
-  other documents -- foreshadowing must be TRACKED to count.
-
-CRAFT:
-- internal_consistency: Actively hunt for contradictions. Cross-ref
-  dates, ages, character counts, named locations. Flag any case
-  where documents disagree. A single major contradiction caps this
-  at 6. Three or more caps at 4.
-- voice_clarity: Voice definition must be specific and ACTIONABLE.
-  Exemplar passages must demonstrate the voice. Anti-exemplars must
-  define boundaries. Check exemplar dialogue for AI slop patterns.
-  A voice doc that is beautiful but contains slop in its own examples
-  is undermined -- deduct.
-- canon_coverage: Facts logged, sourced, and sufficient to catch
-  contradictions. Check: if a writer introduced a NEW fact in
-  chapter 5, could they verify it against the canon? Is the canon
-  granular enough? Are there known facts from other docs that
-  AREN'T in the canon?
-
+    prompt += f"""
 Respond with JSON:
 {{
-  "magic_system": {{"score": N, "gap": "biggest weakness", "fix": "specific improvement", "note": "..."}},
-  "world_history": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "geography_and_culture": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "lore_interconnection": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "iceberg_depth": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "character_depth": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "character_distinctiveness": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "character_secrets": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "outline_completeness": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "foreshadowing_balance": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "internal_consistency": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "voice_clarity": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "canon_coverage": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},
-  "slop_in_planning_docs": {{"found": ["list any AI slop patterns found in exemplar dialogue, voice examples, or character descriptions"], "note": "..."}},
-  "contradictions_found": ["list any factual contradictions between documents"],
+{chr(10).join(f'  "{dim["key"]}": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},' for dim in ecfg["dimensions"])}
+  "slop_in_planning_docs": {{"found": ["list any AI slop patterns"], "note": "..."}},
+  "contradictions_found": ["list any factual contradictions"],
   "overall_score": N,
   "lore_score": N,
   "weakest_dimension": "...",
-  "top_3_improvements": ["ranked list of the 3 highest-leverage improvements"]
+  "top_3_improvements": ["ranked list of improvements"]
 }}
 
-WEIGHTING: lore/worldbuilding 40%, character 30%, structure 20%, craft 10%.
-A novel with thin worldbuilding but a complete outline is WORSE than deep
-worldbuilding with an incomplete outline.
+WEIGHTING: {" + ".join(f'{dim["key"].replace("_"," ").title()} {dim["weight"]*100:.0f}%' for dim in ecfg["dimensions"])}.
 
 FINAL CHECK: If your overall_score is above 7, re-read your gap lists.
 If any gap describes a problem that would force a writer to stop and
 invent something during drafting, your score is too high. Revise down.
 """
+    return prompt
 
 
 def evaluate_foundation():
     layers = load_layer_files()
-    prompt = FOUNDATION_PROMPT.format(**layers)
+    prompt = build_foundation_prompt().format(**layers)
     raw = call_judge(prompt, max_tokens=16000)
     return parse_json_response(raw)
 
 
 # --- Chapter Evaluation ---
 
-CHAPTER_PROMPT = """Evaluate this fantasy novel chapter against the planning docs.
+def build_chapter_prompt():
+    cfg = load_genre()
+    ccfg = cfg["evaluation"]["chapter"]
+    prompt = ccfg["overall_calibration"] + "\n\n"
 
-SCORING CALIBRATION:
-  9-10: Among the best chapters you've read in published fantasy. Name
-        a specific published chapter it competes with, or don't give 9+.
-  7-8:  Strong, publishable with editorial polish. Specific flaws exist
-        but don't break the reading experience.
-  5-6:  Functional but flat. A competent draft that needs substantial revision.
-        Generic where it should be specific. Safe where it should risk.
-  3-4:  Significant problems. Voice breaks, beats missed, prose generic.
-  1-2:  Not usable. Rewrite from scratch.
-
-  The MEDIAN score for a competent AI-generated chapter should be 6.
-  A 7 means it does something a generic AI draft wouldn't.
-  An 8 means a human editor would keep it with minor notes.
-  Most dimensions should score 6-7. Reserve 8+ for genuine excellence.
-
-MANDATORY: For each dimension, you must identify:
-  (a) The single WEAKEST MOMENT -- quote the specific sentence or passage
-  (b) What would make it better -- a concrete revision, not a vague note
-  If every sentence is perfect, you're not reading carefully enough.
-
-VOICE DEFINITION:
+    prompt += """VOICE DEFINITION:
 {voice}
 
 WORLD BIBLE (summary):
@@ -569,105 +405,34 @@ THE CHAPTER TO EVALUATE:
 
 CROSS-CHECKS (perform before scoring):
 1. QUOTE TEST: Find the 3 best sentences and 3 weakest sentences.
-   If you can't find 3 weak ones, lower your standards -- every
-   chapter has weak moments. Look for: generic phrasing where
-   specificity was possible, rhythmic monotony in any paragraph,
-   metaphors that don't come from the character's experience,
-   emotional moments that tell instead of show, transitions that
-   summarize instead of dramatize.
-2. DIALOGUE REALISM: Read all dialogue aloud (mentally). Does it
-   sound like speech or like written prose? Do characters say things
-   a 14-year-old / 60-year-old / etc. would actually say?
-3. SCENE VS SUMMARY: How much of the chapter is in-scene (moment
-   by moment, with dialogue and action) vs summary (narrator
-   compressing time)? Chapters heavy on summary score lower on
-   engagement regardless of prose quality.
-4. AI PATTERN CHECK: Look for these common AI writing patterns:
-   - Every paragraph the same length
-   - Observations always in threes (X, Y, and Z)
-   - Emotional beats that arrive on schedule rather than surprising
-   - Characters who never say the wrong thing or talk past each other
-   - Description that catalogs instead of selecting (listing 5 sensory
-     details when 2 specific ones would be sharper)
-   - Internal monologue explaining what the scene already showed
-5. EARNED VS GIVEN: Is tension earned through scene work or handed to
-   the reader through the narrator's assertions? Is mystery maintained
-   through genuine withholding or through the character conveniently
-   not thinking about things they'd think about?
+2. DIALOGUE REALISM: Read all dialogue aloud (mentally).
+3. SCENE VS SUMMARY: How much is in-scene vs summary?
+4. AI PATTERN CHECK: Common AI writing patterns.
+5. EARNED VS GIVEN: Is tension earned or asserted?
 
 Score these dimensions:
 
-- voice_adherence: Does the prose match voice.md Part 2? Check: sentence
-  rhythm variation, vocabulary wells, body-before-emotion principle,
-  the specific tone described. Quote the strongest voice moment AND
-  the weakest. Does ANY passage sound like generic fantasy prose that
-  could appear in any novel? If yes, score 7 max.
+"""
+    for dim in ccfg["dimensions"]:
+        prompt += f"- {dim['key'].replace('_', ' ').title()}: {dim['criteria']}\n\n"
 
-- beat_coverage: Did it hit every beat from the outline? Were beats
-  dramatized or merely mentioned? A beat that's summarized in a sentence
-  instead of lived in a scene counts as half-hit. Score reflects
-  QUALITY of beat execution, not just presence.
-
-- character_voice: Remove all dialogue tags mentally. Can you tell who's
-  speaking? Do characters ever sound alike? Does dialogue read as speech
-  or as written prose? Does Cass sound like a specific 14-year-old, or
-  like "young protagonist"? Does anyone say something surprising -- not
-  just the right thing, but a REAL thing? Characters who never stumble,
-  hesitate, or say something slightly wrong are AI-pattern characters.
-
-- plants_seeded: Were foreshadowing elements placed naturally? A plant
-  that's obvious is worse than a plant that's invisible. Score based on
-  HOW WELL they're integrated, not just whether they're present.
-
-- prose_quality: Sentence variety (measure: do 3+ consecutive sentences
-  start the same way?). Specificity (concrete nouns > abstract).
-  Metaphors from Cass's experience, not from a thesaurus. Show-don't-tell
-  at emotional peaks. QUOTE the weakest sentence and explain why. Also
-  check for: repeated phrases, leaned-on constructions, paragraphs that
-  could be cut without loss.
-
-- continuity: Does it follow logically from the previous chapter? Emotional
-  continuity as well as plot continuity. Does the character's state of
-  mind track?
-
-- canon_compliance: Check ALL facts against canon. List violations.
-  One major violation caps score at 6. Check: character names, locations,
-  magic system rules, timeline, established events, physical descriptions.
-
-- lore_integration: Does the world do WORK in this chapter, or is it
-  set dressing? A scene that could happen in any fantasy city with
-  find-and-replace on proper nouns scores 5 max.
-
-- engagement: Would a reader turn the page? Where does tension come from --
-  plot, character, mystery, prose? Is there a moment that SURPRISES?
-  Predictable excellence is still predictable. Score 8+ only if the
-  chapter does something unexpected.
-
+    prompt += f"""
 Respond with JSON:
 {{
-  "voice_adherence": {{"score": N, "weakest_moment": "quote the specific weak passage", "fix": "how to improve it", "note": "..."}},
-  "beat_coverage": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},
-  "character_voice": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},
-  "plants_seeded": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},
-  "prose_quality": {{"score": N, "weakest_sentence": "quote it", "fix": "rewrite suggestion", "strongest_sentence": "quote it", "note": "..."}},
-  "continuity": {{"score": N, "note": "..."}},
-  "canon_compliance": {{"score": N, "violations": ["list any found"], "note": "..."}},
-  "lore_integration": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},
-  "engagement": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},
+{chr(10).join(f'  "{dim["key"]}": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},' for dim in ccfg["dimensions"])}
   "three_weakest_sentences": ["quote 1", "quote 2", "quote 3"],
   "three_strongest_sentences": ["quote 1", "quote 2", "quote 3"],
   "ai_patterns_detected": ["list any AI writing patterns found"],
   "overall_score": N,
   "weakest_dimension": "...",
-  "top_3_revisions": ["specific, actionable revision 1", "revision 2", "revision 3"],
-  "new_canon_entries": ["any new facts established in this chapter"]
+  "top_3_revisions": ["specific revision 1", "revision 2", "revision 3"],
+  "new_canon_entries": ["any new facts established"]
 }}
 
 FINAL CHECK: If your overall_score is above 7, re-read your weakest_moment
-quotes. If any of them describe a problem that an editor would flag, your
-score is too high. The median AI chapter is a 6. An 8 is exceptional. A 9
-is rare. A 10 does not exist for a first draft.
+quotes. If any describe a problem an editor would flag, your score is too high.
 """
+    return prompt
 
 
 def evaluate_chapter(chapter_num):
@@ -687,7 +452,7 @@ def evaluate_chapter(chapter_num):
     prev_text = load_chapter(chapter_num - 1) if chapter_num > 1 else "(first chapter)"
     prev_tail = prev_text[-3000:] if len(prev_text) > 3000 else prev_text
 
-    prompt = CHAPTER_PROMPT.format(
+    prompt = build_chapter_prompt().format(
         voice=layers["voice"],
         world=layers["world"][:4000],  # truncate world bible
         characters=layers["characters"],

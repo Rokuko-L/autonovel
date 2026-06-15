@@ -4,9 +4,10 @@ import subprocess
 import sys
 import re
 import json
+import shlex
 
 def run(cmd, timeout=600):
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=timeout)
     return r.stdout + r.stderr, r.returncode
 
 def slop_check(ch):
@@ -72,7 +73,7 @@ for ch in chapters:
     results.append((ch, words, slop['slop_penalty'], score))
     
     # Git commit
-    run(f"cd /home/jeffq/autonovel && git add chapters/ch_{ch:02d}.md state.json")
+    run(f"git add chapters/ch_{ch:02d}.md state.json")
     
     # Update state.json
     with open("state.json") as f:

@@ -19,10 +19,13 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+from genre import load_genre
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -43,6 +46,7 @@ MAX_CHAPTER_ATTEMPTS = 5
 MIN_REVISION_CYCLES = 3
 MAX_REVISION_CYCLES = 6
 PLATEAU_DELTA = 0.3
+CHAPTERS_TOTAL = 24  # default; overridden by genre config at runtime
 
 PHASE_ORDER = ["foundation", "drafting", "revision", "export"]
 
@@ -67,7 +71,7 @@ def default_state() -> dict:
         "foundation_score": 0.0,
         "lore_score": 0.0,
         "chapters_drafted": 0,
-        "chapters_total": 0,
+        "chapters_total": CHAPTERS_TOTAL,
         "novel_score": 0.0,
         "revision_cycle": 0,
         "debts": [],
@@ -116,13 +120,13 @@ def step(text: str):
 def run_tool(cmd: str, timeout: int = 600, check: bool = False) -> subprocess.CompletedProcess:
     """
     Run a tool as a subprocess, capturing output.
-    Uses shell=True so callers can pass full command strings.
+    Uses shell=False with shlex.split for argument safety.
     Returns CompletedProcess; never raises unless check=True.
     """
     step(f"RUN: {cmd}")
     try:
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
+            shlex.split(cmd), shell=False, capture_output=True, text=True,
             timeout=timeout, cwd=str(BASE_DIR),
         )
         if result.returncode != 0:
@@ -228,7 +232,7 @@ def get_total_chapters(state: dict) -> int:
         matches = re.findall(r'###\s*Ch(?:apter)?\s*(\d+)', text)
         if matches:
             return max(int(m) for m in matches)
-    return 24  # sensible default
+    return CHAPTERS_TOTAL
 
 
 # ---------------------------------------------------------------------------
@@ -251,22 +255,22 @@ def run_foundation(state: dict) -> dict:
 
         # 1. Generate planning documents
         step("Generating world bible...")
-        uv_run("gen_world.py", timeout=300)
+        uv_run("gen_world.py", timeout=600)
 
         step("Generating characters...")
-        uv_run("gen_characters.py", timeout=300)
+        uv_run("gen_characters.py", timeout=600)
 
         step("Generating outline (part 1)...")
-        uv_run("gen_outline.py", timeout=300)
+        uv_run("gen_outline.py", timeout=900)
 
         step("Generating outline (part 2 — foreshadowing)...")
-        uv_run("gen_outline_part2.py", timeout=300)
+        uv_run("gen_outline_part2.py", timeout=600)
 
         step("Generating canon...")
-        uv_run("gen_canon.py", timeout=300)
+        uv_run("gen_canon.py", timeout=600)
 
         step("Running voice fingerprint...")
-        uv_run("voice_fingerprint.py", timeout=300)
+        uv_run("voice_fingerprint.py", timeout=600)
 
         # 2. Evaluate
         step("Evaluating foundation...")
@@ -277,7 +281,7 @@ def run_foundation(state: dict) -> dict:
         step(f"Foundation score: {score}  (lore: {lore}, prev best: {best_score})")
 
         # 3. Keep or discard
-        if score > best_score:
+        if score >= best_score:
             commit_hash = git_add_commit(
                 f"foundation iter {i}: score {score} (lore {lore})")
             log_result(commit_hash, "foundation", score, 0, "keep",
@@ -300,8 +304,8 @@ def run_foundation(state: dict) -> dict:
         step(f"WARNING: max iterations ({MAX_FOUNDATION_ITERS}) reached "
              f"with score {best_score}")
 
-    # Determine total chapters from outline
-    total = get_total_chapters(state)
+    # Determine total chapters from state (preset by genre config in run_pipeline)
+    total = state.get("chapters_total", CHAPTERS_TOTAL)
     state["chapters_total"] = total
     state["phase"] = "drafting"
     state["current_focus"] = "chapter_drafting"
@@ -368,7 +372,7 @@ def run_drafting(state: dict) -> dict:
                            "discard", f"Chapter {ch} attempt {attempt}")
                 # Remove the bad chapter file so next attempt starts fresh
                 if ch_file.exists():
-                    run_tool(f"git checkout -- chapters/ch_{ch:02d}.md 2>/dev/null || true")
+                    run_tool(f"git checkout -- chapters/ch_{ch:02d}.md")
 
         if not drafted:
             step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
@@ -826,6 +830,26 @@ def run_pipeline(args):
     for phase in phases:
         try:
             if phase == "foundation":
+                global CHAPTERS_TOTAL
+
+                # Step 0: Initialize genre configuration
+                if not (BASE_DIR / "active_genre.json").exists() and args.genre:
+                    banner("STEP 0: Initializing genre configuration")
+                    cmd = ["python3", str(BASE_DIR / "gen_genre_framework.py")]
+                    if args.genre:
+                        cmd += ["--genre", args.genre]
+                    if args.chapters:
+                        cmd += ["--chapters", args.chapters]
+                    if args.notes:
+                        cmd += ["--notes", args.notes]
+                    subprocess.run(cmd, check=True)
+                    print("Genre config ready.\n")
+
+                # Load genre config for chapter count
+                genre_cfg = load_genre()
+                CHAPTERS_TOTAL = genre_cfg["generation"]["outline"]["estimated_chapters"]
+                state["chapters_total"] = CHAPTERS_TOTAL
+
                 state = run_foundation(state)
             elif phase == "drafting":
                 state = run_drafting(state)
@@ -882,6 +906,12 @@ Examples:
     parser.add_argument(
         "--max-cycles", type=int, default=None,
         help=f"Maximum revision cycles (default: {MAX_REVISION_CYCLES})")
+    parser.add_argument("--genre", default=os.environ.get("AUTONOVEL_GENRE", ""),
+                        help="Genre description (e.g., 'Cyberpunk Noir')")
+    parser.add_argument("--chapters", default=os.environ.get("AUTONOVEL_CHAPTERS", "24"),
+                        help="Number of chapters (or 'short story', 'novella', etc.)")
+    parser.add_argument("--notes", default=os.environ.get("AUTONOVEL_NOTES", ""),
+                        help="User's specific ideas for the novel")
 
     args = parser.parse_args()
     run_pipeline(args)
