@@ -7,7 +7,9 @@ Manages state, git commits, evaluation, and retry logic.
 
 Usage:
   python run_pipeline.py                    # run from current state
-  python run_pipeline.py --from-scratch     # start fresh from seed.txt
+  python run_pipeline.py --from-scratch     # start fresh (needs seed.txt or --notes)
+  python run_pipeline.py --from-scratch --genre "Horror" --chapters 8 --notes "haunted school"
+                                           # auto-creates seed.txt from notes
   python run_pipeline.py --phase foundation # run only foundation
   python run_pipeline.py --phase drafting   # run only drafting
   python run_pipeline.py --phase revision   # run only revision
@@ -26,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 from genre import load_genre
+from utils import call_anthropic
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -233,6 +236,77 @@ def get_total_chapters(state: dict) -> int:
         if matches:
             return max(int(m) for m in matches)
     return CHAPTERS_TOTAL
+
+
+# ---------------------------------------------------------------------------
+# Dynamic seed processor
+# ---------------------------------------------------------------------------
+
+def process_notes(notes_input, genre):
+    """Process user notes into seed.txt and return the string for gen_genre_framework.
+
+    Resolves file-or-string input, then branches on word count:
+      Short (<300w):     LLM expand → seed.txt gets expansion, returns original
+      Goldilocks (300-1500w):        seed.txt gets notes, returns original
+      Massive (>1500w):  LLM summarize → seed.txt gets full doc, returns summary
+
+    Returns None if no notes_input provided.
+    """
+    if not notes_input:
+        return None
+
+    notes_path = Path(notes_input)
+    if notes_path.exists():
+        notes = notes_path.read_text(encoding="utf-8")
+        step(f"Read notes from file: {notes_input}")
+    else:
+        notes = str(notes_input)
+
+    word_count = len(notes.split())
+    genre_str = genre or "the specified genre"
+
+    banner(f"PROCESSING NOTES ({word_count} words)", "-")
+
+    if word_count < 300:
+        step(f"Notes too short ({word_count}w). Expanding to ~500 words via LLM...")
+        expanded = call_anthropic(
+            prompt=(
+                f"The user has provided a very brief premise for a {genre_str} novel:\n\n"
+                f"'{notes}'\n\n"
+                f"Expand this into a dense, rich 500-word story document. "
+                f"Establish a compelling core conflict, hint at the worldbuilding/setting, "
+                f"and outline the protagonist's main flaw and goal. "
+                f"Make it highly specific and creative."
+            ),
+            model_key="writer",
+            max_tokens=2000,
+            temperature=0.8,
+            timeout=120,
+        )
+        (BASE_DIR / "seed.txt").write_text(expanded, encoding="utf-8")
+        step(f"seed.txt written ({len(expanded.split())}w, expanded from {word_count})")
+        return notes
+
+    if word_count <= 1500:
+        step(f"Notes are a good size ({word_count}w). Writing directly to seed.txt.")
+        (BASE_DIR / "seed.txt").write_text(notes, encoding="utf-8")
+        return notes
+
+    step(f"Notes are very long ({word_count}w). Summarizing to ~500 words for genre framework...")
+    summary = call_anthropic(
+        prompt=(
+            f"The user has provided a massive document ({word_count} words) for a {genre_str} novel. "
+            f"Extract a dense 500-word summary of the core premise, genre, main characters, "
+            f"and central conflict. Do not write a story, just extract the core DNA."
+        ),
+        model_key="writer",
+        max_tokens=2000,
+        temperature=0.3,
+        timeout=120,
+    )
+    (BASE_DIR / "seed.txt").write_text(notes, encoding="utf-8")
+    step(f"seed.txt written with full {word_count}w doc. Summary ({len(summary.split())}w) sent to genre framework.")
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -785,8 +859,9 @@ def run_pipeline(args):
     if args.from_scratch:
         banner("STARTING FROM SCRATCH")
         seed_file = BASE_DIR / "seed.txt"
-        if not seed_file.exists():
-            print("ERROR: seed.txt not found. Cannot start from scratch without a seed.")
+        if not seed_file.exists() and not args.notes:
+            print("ERROR: No seed.txt found and no --notes provided. "
+                  "Provide --notes or create seed.txt manually.")
             sys.exit(1)
         state = default_state()
         save_state(state)
@@ -832,16 +907,24 @@ def run_pipeline(args):
             if phase == "foundation":
                 global CHAPTERS_TOTAL
 
-                # Step 0: Initialize genre configuration
+                # Step 0: Process user notes → auto-create seed.txt
+                notes_for_genre = None
+                if args.notes:
+                    notes_for_genre = process_notes(args.notes, args.genre)
+                # TODO: --continue mode — if pre-written chapters exist, generate
+                # an outline that picks up from the last written beat instead of
+                # starting from chapter 1.
+
+                # Step 1: Initialize genre configuration
                 if not (BASE_DIR / "active_genre.json").exists() and args.genre:
-                    banner("STEP 0: Initializing genre configuration")
+                    banner("STEP 1: Initializing genre configuration")
                     cmd = ["python3", str(BASE_DIR / "gen_genre_framework.py")]
                     if args.genre:
                         cmd += ["--genre", args.genre]
                     if args.chapters:
                         cmd += ["--chapters", args.chapters]
-                    if args.notes:
-                        cmd += ["--notes", args.notes]
+                    if notes_for_genre:
+                        cmd += ["--notes", notes_for_genre]
                     subprocess.run(cmd, check=True)
                     print("Genre config ready.\n")
 
@@ -911,7 +994,8 @@ Examples:
     parser.add_argument("--chapters", default=os.environ.get("AUTONOVEL_CHAPTERS", "24"),
                         help="Number of chapters (or 'short story', 'novella', etc.)")
     parser.add_argument("--notes", default=os.environ.get("AUTONOVEL_NOTES", ""),
-                        help="User's specific ideas for the novel")
+                        help="Story premise or file path (e.g., --notes my_ideas.txt). "
+                             "Auto-expands if <300 words, auto-summarizes if >1500.")
 
     args = parser.parse_args()
     run_pipeline(args)
