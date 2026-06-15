@@ -227,12 +227,11 @@ def main():
         user_field = ""
 
     # Build the meta-prompt
-    prompt = META_PROMPT.format(
-        genre_description=args.genre,
-        chapter_count=chapter_count,
-        estimated_words=estimated_words,
-        user_directives_block=user_block,
-    )
+    prompt = META_PROMPT
+    prompt = prompt.replace("{genre_description}", args.genre)
+    prompt = prompt.replace("{chapter_count}", str(chapter_count))
+    prompt = prompt.replace("{estimated_words}", str(estimated_words))
+    prompt = prompt.replace("{user_directives_block}", user_block)
 
     print(f"Generating genre config for: {args.genre} ({chapter_count} chapters, {estimated_words:,} words)...", file=sys.stderr)
     if args.notes:

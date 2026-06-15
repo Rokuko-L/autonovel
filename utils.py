@@ -1,8 +1,11 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import httpx
 
 load_dotenv()
+
+BASE_DIR = Path(__file__).parent
 
 DEFAULT_MODELS = {
     "writer": "claude-sonnet-4-6",

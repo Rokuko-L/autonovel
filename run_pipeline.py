@@ -149,8 +149,8 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False) -> subprocess.Co
 
 
 def uv_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
-    """Shorthand for 'uv run python <script>' from project root."""
-    return run_tool(f"uv run \"{sys.executable}\" {script}", timeout=timeout)
+    """Shorthand for 'uv run python <script>' from project root. Fails fast."""
+    return run_tool(f"uv run \"{sys.executable}\" {script}", timeout=timeout, check=True)
 
 
 # ---------------------------------------------------------------------------
