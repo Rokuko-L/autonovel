@@ -150,7 +150,7 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False) -> subprocess.Co
 
 def uv_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
     """Shorthand for 'uv run python <script>' from project root."""
-    return run_tool(f"uv run python {script}", timeout=timeout)
+    return run_tool(f"uv run \"{sys.executable}\" {script}", timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -924,7 +924,7 @@ def run_pipeline(args):
                 # Step 1: Initialize genre configuration
                 if not (BASE_DIR / "active_genre.json").exists() and args.genre:
                     banner("STEP 1: Initializing genre configuration")
-                    cmd = ["python3", str(BASE_DIR / "gen_genre_framework.py")]
+                    cmd = [sys.executable, str(BASE_DIR / "gen_genre_framework.py")]
                     if args.genre:
                         cmd += ["--genre", args.genre]
                     if args.chapters:
