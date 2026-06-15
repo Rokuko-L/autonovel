@@ -1,5 +1,8 @@
 import os
+from dotenv import load_dotenv
 import httpx
+
+load_dotenv()
 
 DEFAULT_MODELS = {
     "writer": "claude-sonnet-4-6",
@@ -36,9 +39,7 @@ def call_anthropic(
     timeout=300,
 ):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "") or os.environ.get(
-        "AUTONOVEL_API_BASE_URL", "https://api.anthropic.com"
-    )
+    base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 
     model = os.environ.get(MODEL_ENV_VARS[model_key], DEFAULT_MODELS[model_key])
 

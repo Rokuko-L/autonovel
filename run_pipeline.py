@@ -864,6 +864,12 @@ def run_pipeline(args):
                   "Provide --notes or create seed.txt manually.")
             sys.exit(1)
         state = default_state()
+        # Write user-provided chapter count into state before banner
+        if args.chapters:
+            try:
+                state["chapters_total"] = int(args.chapters)
+            except ValueError:
+                pass  # non-numeric string like "short story" — let genre framework resolve
         save_state(state)
     else:
         state = load_state()
