@@ -730,22 +730,38 @@ class AutonovelApp(ctk.CTk):
         if not self.process:
             return
         
-        self.write_log("\n[SYSTEM] Stopping process, sending SIGTERM...\n")
-        self.process.terminate()
+        self.write_log("\n[SYSTEM] Stopping process...\n")
         self.set_status("Stopping...", "#F59E0B")
 
-        # Background thread to monitor process and send SIGKILL if still active after 3s
-        def poll_and_kill():
-            for _ in range(30):  # 3 seconds max polling
-                if self.process is None or self.process.poll() is not None:
-                    return
-                threading.Event().wait(0.1)
-            
-            if self.process and self.process.poll() is None:
-                self.write_log("\n[SYSTEM] Process still alive after 3s. Force killing (SIGKILL)...\n")
-                self.process.kill()
+        import platform
+        if platform.system() == "Windows":
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(self.process.pid)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+                self.write_log("[SYSTEM] Process tree terminated using taskkill.\n")
+            except Exception as e:
+                self.write_log(f"[SYSTEM] Failed to run taskkill: {e}. Falling back to terminate().\n")
+                self.process.terminate()
+        else:
+            self.process.terminate()
 
-        threading.Thread(target=poll_and_kill, daemon=True).start()
+            # Background thread to monitor process and send SIGKILL if still active after 3s
+            def poll_and_kill():
+                for _ in range(30):  # 3 seconds max polling
+                    if self.process is None or self.process.poll() is not None:
+                        return
+                    threading.Event().wait(0.1)
+                
+                if self.process and self.process.poll() is None:
+                    self.write_log("\n[SYSTEM] Process still alive after 3s. Force killing (SIGKILL)...\n")
+                    self.process.kill()
+
+            threading.Thread(target=poll_and_kill, daemon=True).start()
 
     def poll_queue(self):
         try:
