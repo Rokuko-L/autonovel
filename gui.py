@@ -554,7 +554,7 @@ class AutonovelApp(ctk.CTk):
         self.cb_skip_panel = self.add_skip_checkbox(fr_check, 2, "Skip Reader Panel (--skip-reader-panel)", "Skips running reader_panel.py and the arc summary generation.", self.settings["skip_reader_panel"])
         self.cb_skip_targeted = self.add_skip_checkbox(fr_check, 3, "Skip Targeted Revisions (--skip-targeted-revisions)", "Prevents applying automated chapter revisions from reader panel consensus.", self.settings["skip_targeted_revisions"])
         self.cb_skip_eval = self.add_skip_checkbox(fr_check, 4, "Skip Full Novel Evaluation (--skip-full-novel-eval)", "Skips generating full novel quality metrics and skips plateau validation.", self.settings["skip_full_novel_eval"])
-        self.cb_skip_opus_review = self.add_skip_checkbox(fr_check, 5, "Skip Opus Review Loop (--skip-opus-review)", "Skips the deep prose-level Opus evaluation rounds (Phase 3b) completely.", self.settings["skip_opus_review"])
+        self.cb_skip_opus = self.add_skip_checkbox(fr_check, 5, "Skip Opus Review Loop (--skip-opus-review)", "Skips the deep prose-level Opus evaluation rounds (Phase 3b) completely.", self.settings["skip_opus_review"])
 
     def add_skip_checkbox(self, parent, row, title, desc, default_val):
         fr = ctk.CTkFrame(parent, fg_color="transparent")
