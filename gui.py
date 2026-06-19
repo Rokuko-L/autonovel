@@ -835,6 +835,10 @@ class AutonovelApp(ctk.CTk):
             cmd += ["--genre", genre]
         if chapters:
             cmd += ["--chapters", chapters]
+
+        notes = self.txt_notes.get("1.0", "end-1c").strip()
+        if notes:
+            cmd += ["--notes", notes]
         
         if words:
             try:
