@@ -21,45 +21,7 @@ def call_judge(prompt, max_tokens=8000):
     return call_anthropic(prompt=prompt, system="You are a ruthless literary editor. You cut fat from prose. You have no sentiment about good-enough sentences -- if a sentence isn't earning its place, it goes. You quote exactly from the text. You never invent or paraphrase. Always respond with valid JSON.", model_key="judge", max_tokens=max_tokens, temperature=0.3, timeout=300)
 
 def parse_json(text):
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r'^```\w*\n?', '', text)
-        text = re.sub(r'\n?```$', '', text)
-    start = text.find('{')
-    if start == -1:
-        start = text.find('[')
-    if start == -1:
-        raise ValueError("No JSON found")
-    # Try direct parse first
-    try:
-        return json.loads(text[start:], strict=False)
-    except json.JSONDecodeError:
-        # Find matching brace
-        depth = 0
-        in_string = False
-        escape = False
-        open_char = text[start]
-        close_char = '}' if open_char == '{' else ']'
-        for i in range(start, len(text)):
-            c = text[i]
-            if escape:
-                escape = False
-                continue
-            if c == '\\' and in_string:
-                escape = True
-                continue
-            if c == '"' and not escape:
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if c == open_char:
-                depth += 1
-            elif c == close_char:
-                depth -= 1
-                if depth == 0:
-                    return json.loads(text[start:i+1], strict=False)
-        return json.loads(text[start:], strict=False)
+    return utils.parse_json_response(text)
 
 EDIT_PROMPT = """You are editing a fantasy novel chapter. Your job: identify exactly
 what to cut or rewrite to make this chapter tighter, sharper, more alive.
@@ -148,14 +110,23 @@ def edit_chapter(ch_num):
     return result, word_count
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python adversarial_edit.py <chapter_num|all>")
-        sys.exit(1)
-    
-    if sys.argv[1] == "all":
+    import argparse
+    parser = argparse.ArgumentParser(description="Adversarial edit a chapter or all chapters")
+    parser.add_argument("chapter", help="Chapter number (integer) or 'all'")
+    parser.add_argument("--project", default=None, help="Project name (under projects/)")
+    args = parser.parse_args()
+
+    if args.project:
+        utils.set_project_name(args.project)
+
+    if args.chapter == "all":
         chapters = sorted([int(m.group(1)) for p in utils.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
     else:
-        chapters = [int(sys.argv[1])]
+        try:
+            chapters = [int(args.chapter)]
+        except ValueError:
+            print("Error: chapter must be an integer or 'all'")
+            sys.exit(1)
     
     for ch in chapters:
         print(f"\n{'='*50}")

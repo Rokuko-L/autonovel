@@ -189,7 +189,38 @@ MODEL_ENV_VARS = {
 
 
 def extract_text_from_response(resp):
-    data = resp if isinstance(resp, dict) else resp.json()
+    if isinstance(resp, dict):
+        data = resp
+    else:
+        content_type = resp.headers.get("content-type", "")
+        if "text/event-stream" in content_type or not resp.text.strip().startswith("{"):
+            text_content = ""
+            for line in resp.text.splitlines():
+                line = line.strip()
+                if line.startswith("data:"):
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        continue
+                    try:
+                        import json
+                        item = json.loads(data_str)
+                        if item.get("type") == "content_block_delta":
+                            delta = item.get("delta", {})
+                            if delta.get("type") == "text_delta":
+                                text_content += delta.get("text", "")
+                    except json.JSONDecodeError:
+                        pass
+            data = {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": text_content
+                    }
+                ]
+            }
+        else:
+            data = resp.json()
+
     for block in data["content"]:
         if block["type"] == "text":
             return block["text"]
@@ -288,4 +319,192 @@ def format_prompt(template: str, **kwargs) -> str:
         template = template.replace(f"{{{{{k}}}}}", str(v))
         template = template.replace(f"{{{k}}}", str(v))
     return template
+
+
+def is_json_boundary(text: str, idx: int, is_key: bool) -> bool:
+    """Check if the lookahead character indicates this quote is a JSON structural boundary."""
+    n = len(text)
+    j = idx
+    while j < n and text[j].isspace():
+        j += 1
+    if j == n:
+        return True
+    
+    c = text[j]
+    if is_key:
+        return c == ':'
+    else:
+        if c in ('}', ']'):
+            return True
+        if c == ',':
+            # Check what follows the comma; it must be a valid JSON key, value, or closing brace
+            k = j + 1
+            while k < n and text[k].isspace():
+                k += 1
+            if k == n:
+                return True
+            next_c = text[k]
+            if next_c in ('"', '{', '[', '}', ']'):
+                return True
+            if next_c.isdigit() or next_c == '-':
+                return True
+            if next_c in ('t', 'f', 'n'):
+                word = text[k:k+5]
+                if word.startswith('true') or word.startswith('false') or word.startswith('null'):
+                    return True
+            return False
+        if c == '"':
+            # Lookahead check for missing commas: see if this starts a new key (e.g. "key":)
+            k = j + 1
+            while k < n and text[k] != '"':
+                k += 1
+            if k < n:
+                k += 1
+                while k < n and text[k].isspace():
+                    k += 1
+                if k < n and text[k] == ':':
+                    return True
+            return False
+        return False
+
+
+def repair_unescaped_quotes(text: str) -> str:
+    """Escapes unescaped double quotes inside JSON string values."""
+    result = []
+    in_value_string = False
+    is_key = False
+    i = 0
+    n = len(text)
+    stack = []  # Track open containers: '{' or '['
+    
+    while i < n:
+        c = text[i]
+        
+        # Track containers if we are outside any string
+        if not in_value_string:
+            if c in ('{', '['):
+                stack.append(c)
+            elif c in ('}', ']'):
+                if stack:
+                    stack.pop()
+                    
+        if c == '"':
+            # Check if this quote is already escaped
+            is_escaped = False
+            backslashes = 0
+            k = i - 1
+            while k >= 0 and text[k] == '\\':
+                backslashes += 1
+                k -= 1
+            if backslashes % 2 == 1:
+                is_escaped = True
+                
+            if is_escaped:
+                result.append(c)
+                i += 1
+                continue
+                
+            if not in_value_string:
+                # Entering a JSON key or string value
+                # Determine if it's a key or a value
+                if stack and stack[-1] == '[':
+                    # Inside an array, it's always a value string
+                    is_key = False
+                else:
+                    # Inside an object or at top-level
+                    last_char = None
+                    k = len(result) - 1
+                    while k >= 0:
+                        if not result[k].isspace():
+                            last_char = result[k]
+                            break
+                        k -= 1
+                    is_key = (last_char != ':')
+                
+                in_value_string = True
+                result.append(c)
+                i += 1
+            else:
+                # Inside a string. Check if this is the closing boundary quote
+                if is_json_boundary(text, i + 1, is_key):
+                    in_value_string = False
+                    result.append(c)
+                else:
+                    result.append('\\"')
+                i += 1
+        else:
+            result.append(c)
+            i += 1
+            
+    return "".join(result)
+
+
+def fix_truncated_json(text: str) -> str:
+    """Heal truncated JSON strings by closing open string values and structures."""
+    in_string = False
+    escape = False
+    stack = []
+    
+    for i, c in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_string:
+            escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c in ('{', '['):
+            stack.append(c)
+        elif c in ('}', ']'):
+            if stack:
+                stack.pop()
+                
+    if in_string:
+        text += '"'
+    for open_char in reversed(stack):
+        if open_char == '{':
+            text += '}'
+        elif open_char == '[':
+            text += ']'
+    return text
+
+
+def parse_json_response(text: str) -> dict | list:
+    """Extract and heal JSON from LLM response text."""
+    import re
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r'^```\w*\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+        
+    start = text.find('{')
+    if start == -1:
+        start = text.find('[')
+    if start == -1:
+        raise ValueError("No JSON object or array found in response")
+        
+    json_part = text[start:]
+    
+    # Run repairs
+    json_part = repair_unescaped_quotes(json_part)
+    
+    # Missing commas repair (avoiding escaped quotes using negative lookbehind (?<!\\))
+    json_part = re.sub(
+        r'(?<!\\)("|\d|\]|\}|true|false|null)\s+(?<!\\)(\s*"([^"]+)"\s*:)',
+        r'\1,\n\2',
+        json_part
+    )
+    
+    # Trailing commas repair
+    json_part = re.sub(r',\s*([\}\]])', r'\1', json_part)
+    
+    # Heal truncated JSON
+    json_part = fix_truncated_json(json_part)
+    
+    return json.loads(json_part, strict=False)
+
 

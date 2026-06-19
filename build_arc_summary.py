@@ -30,32 +30,18 @@ def extract_key_passages(text):
     
     return opening, closing, top_dialogue
 
-def main():
-    chapters_dir = utils.get_chapters_dir()
-    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
-    if not chapter_files:
-        print("No chapter files found!")
-        return
-
-    summaries = []
+def process_chapter_arc_summary(path, ch):
+    text = path.read_text(encoding="utf-8")
+    wc = len(text.split())
+    opening, closing, dialogue = extract_key_passages(text)
     
-    for path in chapter_files:
-        m = re.search(r"ch_(\d+)\.md", path.name)
-        if not m:
-            continue
-        ch = int(m.group(1))
-        
-        text = path.read_text(encoding="utf-8")
-        wc = len(text.split())
-        opening, closing, dialogue = extract_key_passages(text)
-        
-        # Get a 100-word summary from the model
-        summary = call_writer(
-            f"Summarize this chapter in exactly 3 sentences. What happens, what changes, what question is left open.\n\nCHAPTER {ch}:\n{text}",
-            max_tokens=200
-        )
-        
-        entry = f"""### Chapter {ch} ({wc} words)
+    # Get a 100-word summary from the model
+    summary = call_writer(
+        f"Summarize this chapter in exactly 3 sentences. What happens, what changes, what question is left open.\n\nCHAPTER {ch}:\n{text}",
+        max_tokens=200
+    )
+    
+    entry = f"""### Chapter {ch} ({wc} words)
 **Summary:** {summary}
 
 **Opening:** {opening}...
@@ -64,11 +50,41 @@ def main():
 
 **Key dialogue:**
 """
-        for d in dialogue:
-            entry += f'> "{d}"\n\n'
-        
-        summaries.append(entry)
-        print(f"Ch {ch}: summarized ({wc}w)")
+    for d in dialogue:
+        entry += f'> "{d}"\n\n'
+    
+    print(f"Ch {ch}: summarized ({wc}w)")
+    return ch, entry
+
+def main():
+    chapters_dir = utils.get_chapters_dir()
+    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
+    if not chapter_files:
+        print("No chapter files found!")
+        return
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    futures = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+
+        for path in chapter_files:
+            m = re.search(r"ch_(\d+)\.md", path.name)
+            if not m:
+                continue
+            ch = int(m.group(1))
+            futures.append(executor.submit(process_chapter_arc_summary, path, ch))
+            
+    results = []
+    for future in as_completed(futures):
+        try:
+            results.append(future.result())
+        except Exception as e:
+            print(f"Error summarizing chapter: {e}")
+            
+    # Sort results by chapter number
+    results.sort(key=lambda x: x[0])
+    summaries = [entry for _, entry in results]
     
     # Calculate total word count
     total_wc = sum(len(p.read_text(encoding="utf-8").split()) for p in chapter_files)

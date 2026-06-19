@@ -240,6 +240,74 @@ def git_reset_hard(ref: str = "HEAD~1"):
     run_tool(f"git reset --hard {ref}", cwd=str(utils.get_project_dir()))
 
 
+def git_commit_staged(message: str) -> str:
+    """Commit already-staged changes. Returns short hash or empty string."""
+    project_dir = utils.get_project_dir()
+    status_result = run_tool("git status --porcelain", cwd=str(project_dir))
+    # Check if there are staged changes (staged changes start with non-space in porcelain status)
+    staged = False
+    for line in status_result.stdout.splitlines():
+        if line and not line.startswith(" ") and not line.startswith("?"):
+            staged = True
+            break
+    if staged:
+        result = run_tool(f'git commit -m "{message}"', cwd=str(project_dir))
+        if result.returncode == 0:
+            hash_result = run_tool("git rev-parse --short HEAD", cwd=str(project_dir))
+            commit_hash = hash_result.stdout.strip()
+            step(f"GIT COMMIT STAGED: {commit_hash} — {message}")
+            return commit_hash
+    step("GIT: nothing staged to commit or commit failed")
+    return ""
+
+
+def get_historical_best_for_chapter(ch_num: int) -> tuple[float, str]:
+    """
+    Parses results.tsv to find the highest score kept for this chapter.
+    Returns: (best_score, commit_hash)
+    """
+    results_path = utils.get_results_path()
+    if not results_path.exists():
+        return 0.0, "HEAD"
+        
+    best_score = 0.0
+    best_commit = "HEAD"
+    target_phases = {f"ch{ch_num:02d}", f"rev-ch{ch_num:02d}", f"rev-ch{ch_num:02d}-review"}
+    
+    try:
+        with open(results_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) <= 1:
+            return 0.0, "HEAD"
+            
+        headers = lines[0].strip().split("\t")
+        commit_idx = headers.index("commit")
+        phase_idx = headers.index("phase")
+        score_idx = headers.index("score")
+        status_idx = headers.index("status")
+        
+        for line in lines[1:]:
+            parts = line.strip().split("\t")
+            if len(parts) > max(commit_idx, phase_idx, score_idx, status_idx):
+                phase = parts[phase_idx]
+                status = parts[status_idx]
+                commit = parts[commit_idx]
+                if phase in target_phases and status == "keep" and commit != "reverted":
+                    try:
+                        score = float(parts[score_idx])
+                        if score > best_score:
+                            best_score = score
+                            best_commit = commit
+                    except ValueError:
+                        continue
+    except Exception as e:
+        step(f"Warning: Failed to parse historical best for ch {ch_num}: {e}")
+        
+    return best_score, best_commit
+
+
+
+
 def git_short_hash() -> str:
     """Get current HEAD short hash."""
     r = run_tool("git rev-parse --short HEAD", cwd=str(utils.get_project_dir()))
@@ -346,7 +414,7 @@ def process_notes(notes_input, genre):
                 f"and outline the protagonist's main flaw and goal. "
                 f"Make it highly specific and creative."
             ),
-            model_key="writer",
+            model_key="judge",
             max_tokens=2000,
             temperature=0.8,
             timeout=120,
@@ -367,7 +435,7 @@ def process_notes(notes_input, genre):
             f"Extract a dense 500-word summary of the core premise, genre, main characters, "
             f"and central conflict. Do not write a story, just extract the core DNA."
         ),
-        model_key="writer",
+        model_key="judge",
         max_tokens=2000,
         temperature=0.3,
         timeout=120,
@@ -514,7 +582,18 @@ def run_drafting(state: dict) -> dict:
                            "discard", f"Chapter {ch} attempt {attempt}")
                 # Remove the bad chapter file so next attempt starts fresh
                 if ch_file.exists():
-                    run_tool(f"git checkout -- chapters/ch_{ch:02d}.md", cwd=str(utils.get_project_dir()))
+                    rel_path = f"chapters/ch_{ch:02d}.md"
+                    res = subprocess.run(
+                        shlex.split(f"git ls-files --error-unmatch {rel_path}"),
+                        cwd=str(utils.get_project_dir()),
+                        capture_output=True,
+                        text=True,
+                        shell=False
+                    )
+                    if res.returncode == 0:
+                        run_tool(f"git checkout -- {rel_path}", cwd=str(utils.get_project_dir()))
+                    else:
+                        ch_file.unlink(missing_ok=True)
 
         if not drafted:
             step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
@@ -610,7 +689,16 @@ def parse_panel_consensus(panel_path: Path) -> list[dict]:
     return unique[:5]  # top 3-5 consensus items
 
 
-def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
+def run_revision(
+    state: dict,
+    max_cycles: int = MAX_REVISION_CYCLES,
+    skip_adversarial_editing: bool = False,
+    skip_mechanical_cuts: bool = False,
+    skip_reader_panel: bool = False,
+    skip_targeted_revisions: bool = False,
+    skip_full_novel_eval: bool = False,
+    skip_opus_review: bool = False
+) -> dict:
     """
     Revision phase: adversarial editing, reader panel, targeted revisions.
     """
@@ -621,127 +709,206 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
 
     prev_score = state.get("novel_score", 0.0)
     start_cycle = state.get("revision_cycle", 0) + 1
-    max_cycles = min(max_cycles, MAX_REVISION_CYCLES)
+    tolerance = 0.8
 
     for cycle in range(start_cycle, max_cycles + 1):
         banner(f"Revision Cycle {cycle}/{max_cycles}", "-")
 
-        # -- Step 1: Adversarial editing pass (parallel per chapter) --
-        step("Running adversarial editing on all chapters...")
-        total_ch = get_total_chapters(state)
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {
-                pool.submit(uv_run, f"adversarial_edit.py {ch}", 300): ch
-                for ch in range(1, total_ch + 1)
-            }
-            for future in as_completed(futures):
-                ch = futures[future]
-                try:
-                    future.result()
-                    step(f"  ch {ch}: done")
-                except Exception:
-                    step(f"  ch {ch}: edit failed, continuing anyway")
-
-        # -- Step 2: Apply mechanical cuts (only if apply_cuts.py exists) --
+        # Check if we should run adversarial editing or mechanical cuts
+        run_adv = not skip_adversarial_editing
         apply_cuts = utils.get_root_dir() / "apply_cuts.py"
-        if apply_cuts.exists():
-            step("Applying mechanical cuts (OVER-EXPLAIN, REDUNDANT)...")
-            run_tool("uv run python apply_cuts.py all "
-                     "--types OVER-EXPLAIN REDUNDANT --min-fat 15", timeout=300)
+        run_cuts = not skip_mechanical_cuts and apply_cuts.exists()
+
+        if run_adv or run_cuts:
+            # Evaluate current baseline score (before Step 1/2 edits)
+            step("Evaluating baseline novel score before Cycle edits...")
+            baseline_eval = uv_run("evaluate.py --full", timeout=600)
+            cycle_baseline_score = parse_score(baseline_eval.stdout, "novel_score")
+            if cycle_baseline_score < 0:
+                cycle_baseline_score = parse_score(baseline_eval.stdout, "overall_score")
+
+            if run_adv:
+                # -- Step 1: Adversarial editing pass (parallel per chapter) --
+                step("Running adversarial editing on all chapters...")
+                total_ch = get_total_chapters(state)
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    futures = {
+                        pool.submit(uv_run, f"adversarial_edit.py {ch}", 300): ch
+                        for ch in range(1, total_ch + 1)
+                    }
+                    for future in as_completed(futures):
+                        ch = futures[future]
+                        try:
+                            future.result()
+                            step(f"  ch {ch}: done")
+                        except Exception:
+                            step(f"  ch {ch}: edit failed, continuing anyway")
+            else:
+                step("Skipping adversarial editing as requested")
+
+            if run_cuts:
+                # -- Step 2: Apply mechanical cuts --
+                step("Applying mechanical cuts (OVER-EXPLAIN, REDUNDANT)...")
+                run_tool("uv run python apply_cuts.py all "
+                         "--types OVER-EXPLAIN REDUNDANT --min-fat 15", timeout=300)
+            else:
+                if skip_mechanical_cuts:
+                    step("Skipping mechanical cuts as requested")
+                else:
+                    step("apply_cuts.py not found, skipping mechanical cuts")
+
+            # Evaluate full novel score after Step 1 & 2
+            step("Evaluating novel score after Adversarial Edits & Mechanical Cuts...")
+            post_step12_eval = uv_run("evaluate.py --full", timeout=600)
+            post_step12_score = parse_score(post_step12_eval.stdout, "novel_score")
+            if post_step12_score < 0:
+                post_step12_score = parse_score(post_step12_eval.stdout, "overall_score")
+
+            step(f"Novel score shift after Step 1 & 2: {cycle_baseline_score} -> {post_step12_score}")
+
+            # Validation check with tolerance
+            if post_step12_score >= (cycle_baseline_score - tolerance):
+                # Commit the changes as a clean validated snapshot
+                # Stage everything
+                run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                commit_hash = git_add_commit(
+                    f"revision cycle {cycle}: apply adversarial edits and mechanical cuts {cycle_baseline_score}->{post_step12_score}"
+                )
+                log_result(commit_hash, f"rev-cycle-{cycle}-cuts", post_step12_score,
+                           count_words_in_chapters(), "keep",
+                           f"Cycle {cycle}: Step 1/2 cuts kept {cycle_baseline_score}->{post_step12_score}")
+            else:
+                step(f"Step 1 & 2 edits made the novel significantly worse ({post_step12_score} < {cycle_baseline_score - tolerance}), reverting edits")
+                git_reset_hard("HEAD")
+                log_result("reverted", f"rev-cycle-{cycle}-cuts", post_step12_score,
+                           count_words_in_chapters(), "discard",
+                           f"Cycle {cycle}: Step 1/2 cuts regressed {cycle_baseline_score}->{post_step12_score}")
         else:
-            step("apply_cuts.py not found, skipping mechanical cuts")
+            step("Skipping both adversarial editing and mechanical cuts — no Cycle edits to apply")
 
         # -- Step 3: Generate arc summary + Reader panel --
-        step("Generating arc summary for reader panel...")
-        uv_run("build_arc_summary.py", timeout=300)
-        step("Running reader panel evaluation...")
-        uv_run("reader_panel.py", timeout=600)
+        if not skip_reader_panel:
+            step("Generating arc summary for reader panel...")
+            uv_run("build_arc_summary.py", timeout=300)
+            step("Running reader panel evaluation...")
+            uv_run("reader_panel.py", timeout=600)
+        else:
+            step("Skipping reader panel as requested")
 
         # -- Step 4: Parse panel consensus --
         panel_path = edit_logs_dir / "reader_panel.json"
-        consensus_items = parse_panel_consensus(panel_path)
+        if not skip_reader_panel:
+            consensus_items = parse_panel_consensus(panel_path)
+        else:
+            if panel_path.exists():
+                consensus_items = parse_panel_consensus(panel_path)
+            else:
+                consensus_items = []
 
-        if consensus_items:
+        # -- Step 5: Targeted revisions for consensus items --
+        if not skip_targeted_revisions and consensus_items:
             step(f"Found {len(consensus_items)} consensus items:")
             for item in consensus_items:
                 print(f"    Ch {item['chapter']}: {item['question']} "
                       f"(flagged by {item['count']} readers)")
-        else:
+
+            for idx, item in enumerate(consensus_items):
+                ch_num = item["chapter"]
+                question = item["question"]
+                banner(f"  Revising Ch {ch_num} ({question}) [{idx+1}/{len(consensus_items)}]", ".")
+
+                # Snapshot the current chapter score for comparison
+                pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                pre_score = parse_score(pre_eval.stdout, "overall_score")
+
+                # Generate revision brief
+                brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
+                gen_brief = utils.get_root_dir() / "gen_brief.py"
+                if gen_brief.exists():
+                    step(f"Generating brief for Ch {ch_num}...")
+                    run_tool(f"uv run python gen_brief.py --panel {ch_num}", timeout=300)
+                    # gen_brief.py may write to briefs/ — find the most recent brief
+                    brief_candidates = sorted(
+                        briefs_dir.glob(f"ch{ch_num:02d}*.md"),
+                        key=lambda p: p.stat().st_mtime, reverse=True)
+                    if brief_candidates:
+                        brief_file = brief_candidates[0]
+                else:
+                    # Create a minimal brief from the panel data
+                    step(f"gen_brief.py not found, creating minimal brief for Ch {ch_num}...")
+                    brief_content = (
+                        f"# Revision Brief: Chapter {ch_num}\n\n"
+                        f"## Issue: {question}\n\n"
+                        f"Panel consensus identified this chapter for revision.\n"
+                        f"Focus: address the {question.replace('_', ' ')} issue.\n"
+                        f"Preserve existing voice, character work, and essential beats.\n"
+                    )
+                    brief_file.write_text(brief_content)
+
+                if not brief_file.exists():
+                    step(f"No brief file found for Ch {ch_num}, skipping")
+                    continue
+
+                # Run revision
+                step(f"Revising Ch {ch_num} with brief {brief_file.name}...")
+                uv_run(f"gen_revision.py {ch_num} {brief_file}", timeout=600)
+
+                # Evaluate revised chapter
+                post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                post_score = parse_score(post_eval.stdout, "overall_score")
+
+                ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
+
+                # Compare against historical best
+                hist_best_score, hist_best_commit = get_historical_best_for_chapter(ch_num)
+                baseline = max(pre_score, hist_best_score)
+
+                step(f"Ch {ch_num}: {pre_score} -> {post_score} (Historical best: {hist_best_score}, Baseline: {baseline})")
+
+                if post_score >= (baseline - tolerance):
+                    # Stage specifically
+                    run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                    commit_hash = git_commit_staged(
+                        f"revision cycle {cycle}: ch{ch_num:02d} "
+                        f"{question} {pre_score}->{post_score}")
+                    log_result(commit_hash, f"rev-ch{ch_num:02d}", post_score,
+                               word_count, "keep",
+                               f"Cycle {cycle}: {question} improved {pre_score}->{post_score}")
+                else:
+                    step(f"Revision made it worse ({post_score} < {baseline - tolerance}), reverting ch_{ch_num:02d} to best commit: {hist_best_commit}")
+                    # Revert specifically
+                    if hist_best_commit == "HEAD":
+                        tracked_res = run_tool(
+                            f"git ls-files --error-unmatch chapters/ch_{ch_num:02d}.md",
+                            cwd=str(utils.get_project_dir())
+                        )
+                        if tracked_res.returncode == 0:
+                            run_tool(f"git checkout HEAD -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                        else:
+                            ch_file.unlink(missing_ok=True)
+                    else:
+                        run_tool(f"git checkout {hist_best_commit} -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                    log_result("reverted", f"rev-ch{ch_num:02d}", post_score,
+                               word_count, "discard",
+                               f"Cycle {cycle}: {question} regressed {pre_score}->{post_score}")
+        elif not skip_targeted_revisions:
             step("No strong consensus items found from panel")
-
-        # -- Step 5: Targeted revisions for consensus items --
-        for idx, item in enumerate(consensus_items):
-            ch_num = item["chapter"]
-            question = item["question"]
-            banner(f"  Revising Ch {ch_num} ({question}) [{idx+1}/{len(consensus_items)}]", ".")
-
-            # Snapshot the current chapter score for comparison
-            pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
-            pre_score = parse_score(pre_eval.stdout, "overall_score")
-
-            # Generate revision brief
-            brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
-            gen_brief = utils.get_root_dir() / "gen_brief.py"
-            if gen_brief.exists():
-                step(f"Generating brief for Ch {ch_num}...")
-                run_tool(f"uv run python gen_brief.py --panel {ch_num}", timeout=300)
-                # gen_brief.py may write to briefs/ — find the most recent brief
-                brief_candidates = sorted(
-                    briefs_dir.glob(f"ch{ch_num:02d}*.md"),
-                    key=lambda p: p.stat().st_mtime, reverse=True)
-                if brief_candidates:
-                    brief_file = brief_candidates[0]
-            else:
-                # Create a minimal brief from the panel data
-                step(f"gen_brief.py not found, creating minimal brief for Ch {ch_num}...")
-                brief_content = (
-                    f"# Revision Brief: Chapter {ch_num}\n\n"
-                    f"## Issue: {question}\n\n"
-                    f"Panel consensus identified this chapter for revision.\n"
-                    f"Focus: address the {question.replace('_', ' ')} issue.\n"
-                    f"Preserve existing voice, character work, and essential beats.\n"
-                )
-                brief_file.write_text(brief_content)
-
-            if not brief_file.exists():
-                step(f"No brief file found for Ch {ch_num}, skipping")
-                continue
-
-            # Run revision
-            step(f"Revising Ch {ch_num} with brief {brief_file.name}...")
-            uv_run(f"gen_revision.py {ch_num} {brief_file}", timeout=600)
-
-            # Evaluate revised chapter
-            post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
-            post_score = parse_score(post_eval.stdout, "overall_score")
-
-            ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
-            word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
-
-            step(f"Ch {ch_num}: {pre_score} -> {post_score}")
-
-            if post_score >= pre_score:
-                commit_hash = git_add_commit(
-                    f"revision cycle {cycle}: ch{ch_num:02d} "
-                    f"{question} {pre_score}->{post_score}")
-                log_result(commit_hash, f"rev-ch{ch_num:02d}", post_score,
-                           word_count, "keep",
-                           f"Cycle {cycle}: {question} improved {pre_score}->{post_score}")
-            else:
-                step(f"Revision made it worse ({post_score} < {pre_score}), reverting")
-                git_reset_hard("HEAD")
-                log_result("reverted", f"rev-ch{ch_num:02d}", post_score,
-                           word_count, "discard",
-                           f"Cycle {cycle}: {question} regressed {pre_score}->{post_score}")
+        else:
+            step("Skipping targeted revisions as requested")
 
         # -- Step 6: Full novel evaluation --
-        step("Running full novel evaluation...")
-        full_eval = uv_run("evaluate.py --full", timeout=600)
-        novel_score = parse_score(full_eval.stdout, "novel_score")
+        if not skip_full_novel_eval:
+            step("Running full novel evaluation...")
+            full_eval = uv_run("evaluate.py --full", timeout=600)
+            novel_score = parse_score(full_eval.stdout, "novel_score")
 
-        if novel_score < 0:
-            # Fallback: try overall_score
-            novel_score = parse_score(full_eval.stdout, "overall_score")
+            if novel_score < 0:
+                # Fallback: try overall_score
+                novel_score = parse_score(full_eval.stdout, "overall_score")
+        else:
+            step("Skipping full novel evaluation as requested")
+            novel_score = prev_score
 
         total_words = count_words_in_chapters()
         step(f"Novel score: {novel_score}  (prev: {prev_score}, words: {total_words})")
@@ -758,10 +925,11 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
         save_state(state)
 
         # -- Step 7: Plateau detection --
-        if cycle >= MIN_REVISION_CYCLES and abs(novel_score - prev_score) < PLATEAU_DELTA:
-            step(f"Plateau detected (delta {abs(novel_score - prev_score):.2f} "
-                 f"< {PLATEAU_DELTA}) after {cycle} cycles — stopping")
-            break
+        if not skip_full_novel_eval:
+            if cycle >= MIN_REVISION_CYCLES and abs(novel_score - prev_score) < PLATEAU_DELTA:
+                step(f"Plateau detected (delta {abs(novel_score - prev_score):.2f} "
+                     f"< {PLATEAU_DELTA}) after {cycle} cycles — stopping")
+                break
 
         prev_score = novel_score
 
@@ -769,7 +937,7 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
     # PHASE 3b: OPUS REVIEW LOOP (deep, prose-level refinement)
     # =========================================================
     review_py = utils.get_root_dir() / "review.py"
-    if review_py.exists():
+    if not skip_opus_review and review_py.exists():
         banner("PHASE 3b: OPUS REVIEW LOOP", "=")
         
         max_review_rounds = 4
@@ -826,10 +994,54 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
                     ch_match = re.search(r'ch(\d+)', brief.name)
                     if ch_match:
                         ch_num = int(ch_match.group(1))
+                        
+                        # Evaluate pre-revision score
+                        step(f"Evaluating Ch {ch_num} before revision...")
+                        pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                        pre_score = parse_score(pre_eval.stdout, "overall_score")
+                        
                         step(f"Revising Ch {ch_num} from review brief...")
                         uv_run(f"gen_revision.py {ch_num} {brief}", timeout=600)
-                        git_add_commit(
-                            f"review round {rnd}: revise ch{ch_num:02d} from Opus feedback")
+                        
+                        # Evaluate post-revision score
+                        step(f"Evaluating Ch {ch_num} after revision...")
+                        post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                        post_score = parse_score(post_eval.stdout, "overall_score")
+                        
+                        # Compare against historical best
+                        hist_best_score, hist_best_commit = get_historical_best_for_chapter(ch_num)
+                        baseline = max(pre_score, hist_best_score)
+                        
+                        step(f"Ch {ch_num} Review Revision: {pre_score} -> {post_score} (Historical best: {hist_best_score}, Baseline: {baseline})")
+                        
+                        ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                        word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
+                        
+                        if post_score >= (baseline - tolerance):
+                            # Stage specifically
+                            run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                            commit_hash = git_commit_staged(
+                                f"review round {rnd}: revise ch{ch_num:02d} from Opus feedback {pre_score}->{post_score}")
+                            log_result(commit_hash, f"rev-ch{ch_num:02d}-review", post_score,
+                                       word_count, "keep",
+                                       f"Round {rnd}: {brief.name} score {pre_score}->{post_score}")
+                        else:
+                            step(f"Review revision made it worse ({post_score} < {baseline - tolerance}). Reverting ch_{ch_num:02d} to best commit: {hist_best_commit}")
+                            # Revert specifically
+                            if hist_best_commit == "HEAD":
+                                tracked_res = run_tool(
+                                    f"git ls-files --error-unmatch chapters/ch_{ch_num:02d}.md",
+                                    cwd=str(utils.get_project_dir())
+                                )
+                                if tracked_res.returncode == 0:
+                                    run_tool(f"git checkout HEAD -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                                else:
+                                    ch_file.unlink(missing_ok=True)
+                            else:
+                                run_tool(f"git checkout {hist_best_commit} -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                            log_result("reverted", f"rev-ch{ch_num:02d}-review", post_score,
+                                       word_count, "discard",
+                                       f"Round {rnd}: {brief.name} regressed {pre_score}->{post_score}")
             
             # Step 5: Mechanical fixes from review
             # Run slop pass on any mentioned patterns
@@ -844,6 +1056,10 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
             step(f"Review round {rnd} complete.")
         
         banner("OPUS REVIEW LOOP COMPLETE")
+    elif skip_opus_review:
+        step("Skipping Opus review loop as requested")
+    else:
+        step("review.py not found, skipping Opus review loop")
     
     state["phase"] = "export"
     state["current_focus"] = "export"
@@ -857,6 +1073,257 @@ def run_revision(state: dict, max_cycles: int = MAX_REVISION_CYCLES) -> dict:
 # ---------------------------------------------------------------------------
 # PHASE 4 — EXPORT
 # ---------------------------------------------------------------------------
+
+def generate_default_novel_tex(dest_path: Path):
+    """Generate a default novel.tex wrapper template for LaTeX typesetting."""
+    # Try to extract title from seed.txt
+    title = "A Novel"
+    seed_path = utils.get_seed_path()
+    if seed_path.exists():
+        try:
+            with open(seed_path, encoding="utf-8") as f:
+                first_line = f.readline()
+                if first_line.startswith("#"):
+                    title = first_line.lstrip("#").strip()
+        except Exception:
+            pass
+
+    # Try to resolve author name from git config
+    author = "Author Name"
+    try:
+        import subprocess
+        author = subprocess.check_output(["git", "config", "user.name"], text=True).strip()
+    except Exception:
+        pass
+
+    # Basic clean formatting
+    title_escaped = title.replace("_", "\\_").replace("&", "\\&").replace("%", "\\%")
+    author_escaped = author.replace("_", "\\_").replace("&", "\\&").replace("%", "\\%")
+
+    # Load epigraph if theme exists
+    epigraph_block = ""
+    if seed_path.exists():
+        try:
+            content = seed_path.read_text(encoding="utf-8")
+            # Look for thematic core paragraph
+            match = re.search(r"##\s*Thematic\s*Core\s*\n\n(.*?)(?:\n\n|\Z)", content, re.DOTALL | re.IGNORECASE)
+            if match:
+                theme_text = match.group(1).strip()
+                # Split lines for poetry-like typesetting in epigraph
+                theme_lines = theme_text.split(". ")
+                theme_lines_tex = "\\\\\n  ".join(line.strip() + "." if not line.endswith(".") else line.strip() for line in theme_lines if line.strip())
+                epigraph_block = f"""% === EPIGRAPH ===
+\\newcommand{{\\makeepigraph}}{{%
+  \\thispagestyle{{empty}}
+  \\vspace*{{2.5in}}
+  \\begin{{center}}
+  \\begin{{minipage}}{{3in}}
+  \\begin{{center}}
+  \\itshape
+  {theme_lines_tex}\\\\[12pt]
+  \\end{{center}}
+  \\end{{minipage}}
+  \\end{{center}}
+  \\clearpage
+}}"""
+        except Exception:
+            pass
+
+    # If no epigraph was extracted, create a simple empty one
+    if not epigraph_block:
+        epigraph_block = """% === EPIGRAPH ===
+\\newcommand{\\makeepigraph}{%
+  \\thispagestyle{empty}
+  \\clearpage
+}"""
+
+    # Generate standard template content
+    template = f"""\\documentclass[11pt, openany]{{book}}
+
+% === GEOMETRY: Trade paperback (5.5 x 8.5 inches) ===
+\\usepackage[
+  paperwidth=5.5in,
+  paperheight=8.5in,
+  inner=0.85in,
+  outer=0.65in,
+  top=0.75in,
+  bottom=0.85in,
+  headheight=14pt
+]{{geometry}}
+
+% === FONTS ===
+\\usepackage{{ebgaramond}}
+
+% === TYPOGRAPHY ===
+\\usepackage{{microtype}}
+\\usepackage{{setspace}}
+\\setstretch{{1.12}}
+\\usepackage{{parskip}}
+\\setlength{{\\parindent}}{{1.5em}}
+\\setlength{{\\parskip}}{{0pt}}
+
+% === GRAPHICS ===
+\\usepackage{{graphicx}}
+
+% === DROP CAPS ===
+\\usepackage{{lettrine}}
+\\setcounter{{DefaultLines}}{{2}}
+
+% === HEADERS AND FOOTERS ===
+\\usepackage{{fancyhdr}}
+\\pagestyle{{fancy}}
+\\fancyhf{{}}
+\\fancyhead[LE]{{\\small\\textsc{{{title_escaped.lower()}}}}}
+\\fancyhead[RO]{{\\small\\textit{{\\leftmark}}}}
+\\fancyfoot[C]{{\\thepage}}
+\\renewcommand{{\\headrulewidth}}{{0pt}}
+
+\\fancypagestyle{{plain}}{{
+  \\fancyhf{{}}
+  \\fancyfoot[C]{{\\thepage}}
+  \\renewcommand{{\\headrulewidth}}{{0pt}}
+}}
+
+% === CHAPTER STYLE ===
+\\usepackage{{titlesec}}
+
+% Ornamental bell motif (using dingbats)
+\\newcommand{{\\bellornament}}{{%
+  \\par\\noindent\\vspace{{6pt}}%
+  \\hfill{{\\large\\symbol{{"2756}}}}\\hfill\\null%
+  \\vspace{{6pt}}\\par%
+}}
+
+% Scene break ornament
+\\newcommand{{\\scenebreak}}{{%
+  \\par\\vspace{{0.6\\baselineskip}}%
+  \\noindent\\hfil%
+  \\IfFileExists{{../art/pdf/scene_break.pdf}}{{%
+    \\includegraphics[width=1.2in]{{../art/pdf/scene_break.pdf}}%
+  }}{{%
+  \\IfFileExists{{../art/scene_break.png}}{{%
+    \\includegraphics[width=1.2in]{{../art/scene_break.png}}%
+  }}{{%
+    {{\\small\\symbol{{"2022}}\\quad\\symbol{{"2022}}\\quad\\symbol{{"2022}}}}%
+  }}}}%
+  \\hfil%
+  \\par\\vspace{{0.6\\baselineskip}}%
+}}
+
+\\renewcommand{{\\thechapter}}{{\\Roman{{chapter}}}}
+\\titleformat{{\\chapter}}[display]
+  {{\\normalfont\\centering}}
+  {{\\vspace*{{1.5in}}\\footnotesize\\textsc{{chapter \\thechapter}}}}
+  {{4pt}}
+  {{\\Large\\itshape}}
+  [\\vspace{{8pt}}{{\\small--- $\\diamond$ ---}}\\vspace{{0.5in}}]
+
+\\titlespacing*{{\\chapter}}{{0pt}}{{0pt}}{{0pt}}
+
+% Lowercase chapter name in header
+\\renewcommand{{\\chaptermark}}[1]{{\\markboth{{#1}}{{}}}}
+
+% === TITLE PAGE DESIGN ===
+\\newcommand{{\\makenoveltitle}}{{%
+  \\thispagestyle{{empty}}
+  \\begin{{center}}
+  \\vspace*{{2in}}
+  
+  {{\\Huge\\textsc{{{title_escaped}}}}}\\\\[0.4in]
+  
+  {{\\small------\\quad$\\diamond$\\quad------}}\\\\[0.5in]
+  
+  {{\\large\\textit{{A Novel}}}}\\\\[1in]
+  
+  {{\\Large\\textsc{{{author_escaped}}}}}\\\\[1.5in]
+  
+  \\end{{center}}
+  \\clearpage
+}}
+
+{epigraph_block}
+
+% === HALF TITLE ===
+\\newcommand{{\\makehalftitle}}{{%
+  \\thispagestyle{{empty}}
+  \\vspace*{{3in}}
+  \\begin{{center}}
+  {{\\large\\textsc{{{title_escaped}}}}}
+  \\end{{center}}
+  \\clearpage
+}}
+
+% === PDF METADATA ===
+\\usepackage{{hyperref}}
+\\hypersetup{{
+  pdftitle={{{title_escaped}}},
+  pdfauthor={{{author_escaped}}},
+  hidelinks
+}}
+
+% === BEGIN DOCUMENT ===
+\\begin{{document}}
+
+\\frontmatter
+
+% Full-bleed cover image (if exists)
+\\IfFileExists{{../art/cover.png}}{{%
+  \\thispagestyle{{empty}}
+  \\newgeometry{{margin=0pt}}
+  \\noindent\\includegraphics[width=\\paperwidth, height=\\paperheight, keepaspectratio]{{../art/cover.png}}%
+  \\restoregeometry%
+  \\clearpage%
+}}{{}}
+
+% Half title
+\\makehalftitle
+
+% Blank verso
+\\thispagestyle{{empty}}
+\\mbox{{}}
+\\clearpage
+
+% Title page
+\\makenoveltitle
+
+% Copyright / colophon
+\\thispagestyle{{empty}}
+\\vspace*{{\\fill}}
+\\begin{{center}}
+
+{{\\small This is a work of fiction.}}\\\\[18pt]
+
+\\end{{center}}
+\\vspace*{{\\fill}}
+\\clearpage
+
+% Epigraph
+\\makeepigraph
+
+% Blank verso before main text
+\\thispagestyle{{empty}}
+\\mbox{{}}
+\\clearpage
+
+\\mainmatter
+
+% === CHAPTERS ===
+\\input{{chapters_content.tex}}
+
+% === END MATTER ===
+\\backmatter
+
+\\thispagestyle{{empty}}
+\\vspace*{{3in}}
+\\begin{{center}}
+{{\\small------\\quad$\\diamond$\\quad------}}\\\\[0.3in]
+{{\\small\\textit{{The page turned.}}}}
+\\end{{center}}
+
+\\end{{document}}
+"""
+    dest_path.write_text(template, encoding="utf-8")
+
 
 def run_export(state: dict) -> dict:
     """
@@ -907,11 +1374,17 @@ def run_export(state: dict) -> dict:
 
         # 5. Typeset with tectonic (if available)
         novel_tex = typeset_dir / "novel.tex"
+        if not novel_tex.exists():
+            step("novel.tex not found in project, generating default template...")
+            generate_default_novel_tex(novel_tex)
+
         if novel_tex.exists():
             import shutil
             if shutil.which("tectonic"):
                 step("Typesetting PDF with tectonic...")
-                result = run_tool(f"tectonic {novel_tex.name}", timeout=300, cwd=str(utils.get_typeset_dir()))
+                # Use explicit bundle to avoid DNS/network connection failure
+                cmd = f"tectonic --bundle https://archive.org/services/purl/net/pkgwpub/tectonic-default {novel_tex.name}"
+                result = run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
                 if result.returncode == 0:
                     step(f"PDF generated: {typeset_dir / 'novel.pdf'}")
                 else:
@@ -920,6 +1393,7 @@ def run_export(state: dict) -> dict:
                 step("tectonic not found, skipping PDF generation")
     else:
         step("typeset/build_tex.py not found, skipping LaTeX")
+
 
     # 6. Final commit
     commit_hash = git_add_commit("export: manuscript, outline, arc summary, PDF")
@@ -1059,9 +1533,6 @@ def run_pipeline(args):
                 else:
                     print("ERROR: No seed.txt found in project directory or repository root, and no --notes provided.", file=sys.stderr)
                     sys.exit(1)
-        elif not utils.get_seed_path().exists() and not (root_dir / "seed.txt").exists():
-            print("ERROR: No seed.txt found in project directory or repository root, and no --notes provided.", file=sys.stderr)
-            sys.exit(1)
 
         state = default_state()
         # Write user-provided chapter count into state before banner
@@ -1086,8 +1557,8 @@ def run_pipeline(args):
     utils.get_edit_logs_dir()
     utils.get_eval_logs_dir()
 
-    # Apply max_cycles override
-    max_cycles = args.max_cycles if args.max_cycles else MAX_REVISION_CYCLES
+    # Apply revision_cycles override (with legacy support for max_cycles)
+    revision_cycles = args.max_cycles if args.max_cycles is not None else args.revision_cycles
 
     # Determine which phases to run
     if args.phase:
@@ -1140,6 +1611,8 @@ def run_pipeline(args):
                         cmd += ["--genre", args.genre]
                     if args.chapters:
                         cmd += ["--chapters", args.chapters]
+                    if args.words_per_chapter:
+                        cmd += ["--words-per-chapter", str(args.words_per_chapter)]
                     if notes_for_genre:
                         cmd += ["--notes", notes_for_genre]
                     subprocess.run(cmd, check=True)
@@ -1156,7 +1629,16 @@ def run_pipeline(args):
             elif phase == "drafting":
                 state = run_drafting(state)
             elif phase == "revision":
-                state = run_revision(state, max_cycles=max_cycles)
+                state = run_revision(
+                    state,
+                    max_cycles=revision_cycles,
+                    skip_adversarial_editing=args.skip_adversarial_editing,
+                    skip_mechanical_cuts=args.skip_mechanical_cuts,
+                    skip_reader_panel=args.skip_reader_panel,
+                    skip_targeted_revisions=args.skip_targeted_revisions,
+                    skip_full_novel_eval=args.skip_full_novel_eval,
+                    skip_opus_review=args.skip_opus_review
+                )
             elif phase == "export":
                 state = run_export(state)
             else:
@@ -1222,11 +1704,34 @@ Examples:
         help="Run only a specific phase")
     parser.add_argument(
         "--max-cycles", type=int, default=None,
-        help=f"Maximum revision cycles (default: {MAX_REVISION_CYCLES})")
+        help=f"Maximum revision cycles (deprecated synonym for --revision-cycles)")
+    parser.add_argument(
+        "--revision-cycles", type=int, default=6,
+        help="Number of revision cycles (default: 6)")
+    parser.add_argument(
+        "--skip-adversarial-editing", action="store_true",
+        help="Skip adversarial editing phase inside revision cycle")
+    parser.add_argument(
+        "--skip-mechanical-cuts", action="store_true",
+        help="Skip mechanical cuts phase inside revision cycle")
+    parser.add_argument(
+        "--skip-reader-panel", action="store_true",
+        help="Skip reader panel phase inside revision cycle")
+    parser.add_argument(
+        "--skip-targeted-revisions", action="store_true",
+        help="Skip targeted revisions phase inside revision cycle")
+    parser.add_argument(
+        "--skip-full-novel-eval", action="store_true",
+        help="Skip full novel evaluation phase inside revision cycle")
+    parser.add_argument(
+        "--skip-opus-review", action="store_true",
+        help="Skip Opus review loop phase")
     parser.add_argument("--genre", default=os.environ.get("AUTONOVEL_GENRE", ""),
                         help="Genre description (e.g., 'Cyberpunk Noir')")
     parser.add_argument("--chapters", default=os.environ.get("AUTONOVEL_CHAPTERS", "24"),
                         help="Number of chapters (or 'short story', 'novella', etc.)")
+    parser.add_argument("--words-per-chapter", type=int, default=3200,
+                        help="Target word count per chapter (default: 3200)")
     parser.add_argument("--notes", default=os.environ.get("AUTONOVEL_NOTES", ""),
                         help="Story premise or file path (e.g., --notes my_ideas.txt). "
                              "Auto-expands if <300 words, auto-summarizes if >1500.")

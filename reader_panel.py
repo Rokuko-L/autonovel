@@ -118,27 +118,7 @@ def call_reader(reader_key, arc_summary):
     raw = call_anthropic(prompt=prompt, system=reader["system"], model_key="judge", max_tokens=4000, timeout=300, temperature=0.7)
     
     # Parse JSON
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r'^```\w*\n?', '', raw)
-        raw = re.sub(r'\n?```$', '', raw)
-    start = raw.find('{')
-    if start >= 0:
-        depth = 0
-        in_string = False
-        escape = False
-        for i in range(start, len(raw)):
-            c = raw[i]
-            if escape: escape = False; continue
-            if c == '\\' and in_string: escape = True; continue
-            if c == '"' and not escape: in_string = not in_string; continue
-            if in_string: continue
-            if c == '{': depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    return json.loads(raw[start:i+1], strict=False)
-    return json.loads(raw, strict=False)
+    return utils.parse_json_response(raw)
 
 def find_disagreements(results):
     """Find where readers disagree -- that's where the editorial decisions live."""

@@ -181,6 +181,13 @@ def build_panel_brief(ch: int) -> str:
     voice_rules = extract_voice_rules()
 
     # Determine brief type from dominant issue
+    from genre import load_genre
+    genre_cfg = load_genre()
+    outline_cfg = genre_cfg.get("generation", {}).get("outline", {})
+    estimated_words = outline_cfg.get("estimated_words", 32000)
+    estimated_chapters = outline_cfg.get("estimated_chapters", 10)
+    target_average = estimated_words // estimated_chapters
+
     negative_keys = ["momentum_loss", "worst_scene", "cut_candidate"]
     neg_count = sum(len(mentions[k]) for k in negative_keys)
     if len(mentions["cut_candidate"]) > 0:
@@ -191,6 +198,15 @@ def build_panel_brief(ch: int) -> str:
         brief_type = "TIGHTEN"
     else:
         brief_type = "REVISE"
+
+    if brief_type == "COMPRESS" and wc < target_average:
+        # Override COMPRESS if wc is already below target average
+        if len(mentions["worst_scene"]) > 0:
+            brief_type = "DRAMATIZE"
+        elif len(mentions["momentum_loss"]) > 0:
+            brief_type = "TIGHTEN"
+        else:
+            brief_type = "DRAMATIZE"
 
     # Build PROBLEM section
     problem_parts: list[str] = []
@@ -321,7 +337,14 @@ def build_panel_brief(ch: int) -> str:
         target_wc = int(wc * 0.85)
         target_note = f"~{target_wc} words (tighten from current {wc})"
     else:
+        target_wc = wc
         target_note = f"~{wc} words (current length, unless changes dictate otherwise)"
+
+    # Enforce hard floor of 60% of per-chapter target (average)
+    floor_wc = int(target_average * 0.60)
+    if target_wc < floor_wc:
+        target_wc = floor_wc
+        target_note = f"~{target_wc} words (expand from current {wc} to meet minimum length of {floor_wc})"
 
     # Assemble
     brief = f"# Revision Brief: Chapter {ch} — {title} ({brief_type})\n\n"

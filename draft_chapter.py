@@ -14,7 +14,13 @@ from genre import load_genre
 load_dotenv()
 
 def call_writer(prompt, max_tokens=16000):
-    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["chapter_system"], model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8)
+    genre_cfg = load_genre()
+    chapter_system = genre_cfg["identity"]["chapter_system"]
+    estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
+    chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
+    target_words = estimated_words // chapter_count
+    system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {target_words} words. Write fully and completely to hit this target."
+    return call_anthropic(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8)
 
 def load_file(path):
     try:

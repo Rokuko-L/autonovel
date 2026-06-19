@@ -230,11 +230,24 @@ def slop_score(text):
 
 
 def load_file(path):
-    """Load a text file, return empty string if missing."""
-    try:
-        return Path(path).read_text(encoding="utf-8")
-    except FileNotFoundError:
+    """Load a text file, return empty string if missing, with robust encoding recovery and self-healing."""
+    path = Path(path)
+    if not path.is_file():
         return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raw = path.read_bytes()
+        for enc in ("utf-16", "utf-16-le", "utf-16-be", "latin-1"):
+            try:
+                text = raw.decode(enc).lstrip("\ufeff")
+                # Self-heal: rewrite as clean UTF-8
+                path.write_text(text, encoding="utf-8")
+                print(f"[ENCODING] Repaired {path.name}: was {enc}, now UTF-8", file=sys.stderr)
+                return text
+            except UnicodeDecodeError:
+                continue
+        raise ValueError(f"Could not decode {path} with any known encoding")
 
 
 def load_layer_files():
@@ -259,7 +272,10 @@ def load_all_chapters():
     chapters = {}
     for f in sorted(glob.glob(str(chapters_dir / "ch_*.md"))):
         num = int(re.search(r'ch_(\d+)', f).group(1))
-        chapters[num] = Path(f).read_text(encoding="utf-8")
+        try:
+            chapters[num] = load_file(Path(f))
+        except ValueError as e:
+            raise RuntimeError(f"FATAL: chapter file {f} (ch {num}) is unreadable: {e}")
     return chapters
 
 
@@ -268,56 +284,39 @@ def call_judge(prompt, max_tokens=2000):
 
 
 def parse_json_response(text):
-    """Extract JSON from a response that might have markdown fences or trailing text."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r'^```\w*\n?', '', text)
-        text = re.sub(r'\n?```$', '', text)
-    # Find the outermost JSON object
-    start = text.find('{')
-    if start == -1:
-        raise ValueError("No JSON object found in response")
-    # Walk forward to find the matching closing brace
-    depth = 0
-    in_string = False
-    escape = False
-    for i in range(start, len(text)):
-        c = text[i]
-        if escape:
-            escape = False
-            continue
-        if c == '\\' and in_string:
-            escape = True
-            continue
-        if c == '"' and not escape:
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if c == '{':
-            depth += 1
-        elif c == '}':
-            depth -= 1
-            if depth == 0:
-                return json.loads(text[start:i+1], strict=False)
-    # Fallback: try loading as-is, with strict=False to handle control chars
-    try:
-        return json.loads(text, strict=False)
-    except json.JSONDecodeError:
-        # Last resort: fix common issues (literal newlines in strings)
-        fixed = re.sub(r'(?<!\\)\n', '\\n', text)
-        return json.loads(fixed, strict=False)
+    return utils.parse_json_response(text)
 
 
-def call_judge_json(prompt, max_tokens=2000, retries=3):
+def call_judge_json(prompt, max_tokens=8000, retries=3):
+    last_raw = None
+    last_error = None
     for attempt in range(1, retries + 1):
         try:
-            raw = call_judge(prompt, max_tokens)
+            if attempt == 1:
+                raw = call_judge(prompt, max_tokens)
+            else:
+                # Ask the model to fix its previous response (using a cheap, lightweight context prompt)
+                fix_prompt = f"""You previously returned a response that had invalid JSON syntax.
+The parser returned this error: {last_error}
+
+YOUR PREVIOUS RESPONSE:
+{last_raw}
+
+TASK:
+Correct the JSON syntax errors in your previous response. Respond ONLY with the corrected, valid JSON object. Do not include any explanation or conversational text outside the JSON. Ensure all quotes inside string values are properly escaped (e.g. use \\" instead of ")."""
+                # Dynamically calculate a token limit for the fix call
+                tokens_needed = max(2000, (len(last_raw) // 3) + 200)
+                max_tokens_fix = min(max_tokens, tokens_needed)
+                
+                raw = call_judge(fix_prompt, max_tokens_fix)
+            
+            last_raw = raw
             return parse_json_response(raw)
         except (json.JSONDecodeError, ValueError) as e:
+            last_error = str(e)
             if attempt == retries:
                 raise e
-            print(f"JSON decode failed on attempt {attempt}/{retries}: {e}. Retrying LLM call...", file=sys.stderr)
+            print(f"JSON decode failed on attempt {attempt}/{retries}: {e}. Retrying LLM self-correction...", file=sys.stderr)
 
 
 # --- Foundation Evaluation ---
@@ -365,6 +364,11 @@ Respond with JSON:
   "weakest_dimension": "...",
   "top_3_improvements": ["ranked list of improvements"]
 }}
+
+CRITICAL FORMATTING GUIDELINES:
+1. Output ONLY valid JSON matching the exact schema above.
+2. Escape any double quotes within your JSON string values with a backslash (e.g., use \\" instead of " when referencing characters, quotes, or dialogue).
+3. Do not include any preamble, introduction, or conversation outside the JSON object.
 
 WEIGHTING: {" + ".join(f'{dim["key"].replace("_"," ").title()} {dim["weight"]*100:.0f}%' for dim in ecfg["dimensions"])}.
 
@@ -437,6 +441,11 @@ Respond with JSON:
   "new_canon_entries": ["any new facts established"]
 }}
 
+CRITICAL FORMATTING GUIDELINES:
+1. Output ONLY valid JSON matching the exact schema above.
+2. Escape any double quotes within your JSON string values with a backslash (e.g., use \\" instead of " when referencing characters, quotes, or dialogue).
+3. Do not include any preamble, introduction, or conversation outside the JSON object.
+
 FINAL CHECK: If your overall_score is above 7, re-read your weakest_moment
 quotes. If any describe a problem an editor would flag, your score is too high.
 """
@@ -476,6 +485,21 @@ def evaluate_chapter(chapter_num):
     result["slop"] = slop
     if "overall_score" in result:
         adjusted = max(0, result["overall_score"] - slop["slop_penalty"])
+        
+        # Word count penalty
+        genre_cfg = load_genre()
+        estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
+        chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
+        target_words = estimated_words // chapter_count
+        actual_words = len(chapter_text.split())
+        
+        length_penalty = 0.0
+        if actual_words < target_words:
+            length_penalty = max(0, (1 - actual_words / target_words)) * 3.0
+            adjusted = max(0, adjusted - length_penalty)
+            
+        print(f"  [LENGTH] {actual_words}/{target_words} words — penalty: -{length_penalty:.2f}", file=sys.stderr)
+        result["length_penalty"] = length_penalty
         result["raw_judge_score"] = result["overall_score"]
         result["overall_score"] = round(adjusted, 2)
 
@@ -569,7 +593,11 @@ def main():
                        help="Evaluate a specific chapter number")
     group.add_argument("--full", action="store_true",
                        help="Evaluate the entire novel")
+    parser.add_argument("--project", default=None, help="Project name (under projects/)")
     args = parser.parse_args()
+
+    if args.project:
+        utils.set_project_name(args.project)
 
     if args.phase == "foundation":
         result = evaluate_foundation()

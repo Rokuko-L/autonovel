@@ -73,7 +73,6 @@ class GenConfig:
     gen_outline_prompt: str
     gen_outline_part2_prompt: str
     gen_canon_prompt: str
-    gen_revision_prompt: str
     draft_chapter_instructions: str
     anti_pattern_rules: str
     canon_categories: list[str]

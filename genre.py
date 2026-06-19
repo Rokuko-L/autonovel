@@ -29,7 +29,7 @@ REQUIRED_KEYS = [
     "generation.seed_generate_prompt", "generation.seed_riff_prompt",
     "generation.gen_world_prompt", "generation.gen_characters_prompt",
     "generation.gen_outline_prompt", "generation.gen_outline_part2_prompt",
-    "generation.gen_canon_prompt", "generation.gen_revision_prompt",
+    "generation.gen_canon_prompt",
     "generation.draft_chapter_instructions", "generation.anti_pattern_rules",
     "generation.canon_categories", "generation.arc_summary_premise",
     "evaluation.foundation", "evaluation.foundation.overall_calibration",
@@ -70,7 +70,7 @@ def validate(config):
         "generation.seed_generate_prompt", "generation.seed_riff_prompt",
         "generation.gen_world_prompt", "generation.gen_characters_prompt",
         "generation.gen_outline_prompt", "generation.gen_outline_part2_prompt",
-        "generation.gen_canon_prompt", "generation.gen_revision_prompt",
+        "generation.gen_canon_prompt",
     ]
     for key in prompt_keys:
         val = _get_nested(config, key)

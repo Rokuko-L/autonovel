@@ -24,31 +24,7 @@ def call_judge(prompt, max_tokens=4000):
     return call_anthropic(prompt=prompt, system="You are a literary editor comparing two chapters of the same novel. You pick the better one. You are not allowed to call it a tie. You quote specific passages to justify your choice. Respond with valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.2, timeout=300)
 
 def parse_json(text):
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r'^```\w*\n?', '', text)
-        text = re.sub(r'\n?```$', '', text)
-    start = text.find('{')
-    if start == -1:
-        raise ValueError("No JSON found")
-    try:
-        return json.loads(text[start:], strict=False)
-    except json.JSONDecodeError:
-        depth = 0
-        in_string = False
-        escape = False
-        for i in range(start, len(text)):
-            c = text[i]
-            if escape: escape = False; continue
-            if c == '\\' and in_string: escape = True; continue
-            if c == '"' and not escape: in_string = not in_string; continue
-            if in_string: continue
-            if c == '{': depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    return json.loads(text[start:i+1], strict=False)
-        return json.loads(text[start:], strict=False)
+    return utils.parse_json_response(text)
 
 COMPARE_PROMPT = """Compare these two chapters from the same fantasy novel.
 Both are first drafts. Pick the BETTER one. You MUST pick a winner -- no ties.

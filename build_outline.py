@@ -16,65 +16,14 @@ from utils import extract_text_from_response, get_max_tokens_with_thinking, call
 load_dotenv()
 
 def parse_json(text):
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r'^```\w*\n?', '', text)
-        text = re.sub(r'\n?```$', '', text)
-    start = text.find('{')
-    if start == -1:
-        raise ValueError("No JSON object found in response")
-    depth = 0
-    in_string = False
-    escape = False
-    for i in range(start, len(text)):
-        c = text[i]
-        if escape:
-            escape = False
-            continue
-        if c == '\\' and in_string:
-            escape = True
-            continue
-        if c == '"' and not escape:
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if c == '{':
-            depth += 1
-        elif c == '}':
-            depth -= 1
-            if depth == 0:
-                return json.loads(text[start:i+1], strict=False)
-    return json.loads(text[start:], strict=False)
+    return utils.parse_json_response(text)
 
 
 def call_model(prompt, max_tokens=1500):
     return call_anthropic(prompt=prompt, system="You produce structured outline entries for novel chapters. Be precise about what HAPPENS, what CHANGES, and what threads are planted/harvested. Output valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.1, timeout=120)
 
-def main():
-    # Load supporting docs for context
-    characters = utils.get_characters_path().read_text(encoding="utf-8")[:3000]
-    
-    chapters_dir = utils.get_chapters_dir()
-    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
-    if not chapter_files:
-        print("No chapter files found!")
-        return
-
-    entries = []
-    
-    for path in chapter_files:
-        m = re.search(r"ch_(\d+)\.md", path.name)
-        if not m:
-            continue
-        ch = int(m.group(1))
-        
-        text = path.read_text(encoding="utf-8")
-        wc = len(text.split())
-        
-        title_line = text.strip().split('\n')[0].lstrip('# ').strip()
-        
-        prompt = f"""Analyze this chapter and produce a structured outline entry.
+def process_chapter_outline(path, ch, text, wc, title_line):
+    prompt = f"""Analyze this chapter and produce a structured outline entry.
 
 CHAPTER {ch}: "{title_line}" ({wc} words)
 
@@ -94,12 +43,58 @@ Return JSON with these fields:
 
 JSON only, no other text."""
 
-        raw_data = call_model(prompt)
-        data = parse_json(raw_data)
-        data["num"] = ch
-        data["words"] = wc
-        entries.append(data)
-        print(f"  {ch:2d}. {title_line} ({wc}w)")
+    raw_data = call_model(prompt)
+    data = parse_json(raw_data)
+    data["num"] = ch
+    data["words"] = wc
+    
+    # Extract title cleanly from the first line of the file, bypassing LLM parsing inconsistency
+    if ': ' in title_line:
+        _, subtitle = title_line.split(': ', 1)
+        data["title"] = subtitle.strip()
+    else:
+        data["title"] = title_line
+        
+    print(f"  {ch:2d}. {data['title']} ({wc}w)")
+    return data
+
+def main():
+    # Load supporting docs for context
+    characters = utils.get_characters_path().read_text(encoding="utf-8")[:3000]
+    
+    chapters_dir = utils.get_chapters_dir()
+    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
+    if not chapter_files:
+        print("No chapter files found!")
+        return
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    futures = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+
+        for path in chapter_files:
+            m = re.search(r"ch_(\d+)\.md", path.name)
+            if not m:
+                continue
+            ch = int(m.group(1))
+            
+            text = path.read_text(encoding="utf-8")
+            wc = len(text.split())
+            
+            title_line = text.strip().split('\n')[0].lstrip('# ').strip()
+            
+            futures.append(executor.submit(process_chapter_outline, path, ch, text, wc, title_line))
+            
+    entries = []
+    for future in as_completed(futures):
+        try:
+            entries.append(future.result())
+        except Exception as e:
+            print(f"Error processing chapter: {e}")
+            
+    # Sort entries by chapter number so outline is in order
+    entries.sort(key=lambda x: x["num"])
     
     # Load existing outline header info
     try:
@@ -196,3 +191,4 @@ JSON only, no other text."""
 
 if __name__ == "__main__":
     main()
+
