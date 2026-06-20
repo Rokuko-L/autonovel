@@ -1396,8 +1396,14 @@ def run_export(state: dict) -> dict:
         # 5. Typeset with tectonic (if available)
         novel_tex = typeset_dir / "novel.tex"
         if not novel_tex.exists():
-            step("novel.tex not found in project, generating default template...")
-            generate_default_novel_tex(novel_tex)
+            step("novel.tex not found in project, generating via LLM...")
+            try:
+                uv_run("gen_novel_tex.py", timeout=120)
+            except Exception as e:
+                step(f"LLM tex generation failed ({e}), using default template...")
+            if not novel_tex.exists() or novel_tex.stat().st_size < 100:
+                step("Falling back to default template...")
+                generate_default_novel_tex(novel_tex)
 
         if novel_tex.exists():
             import shutil
