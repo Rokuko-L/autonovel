@@ -85,9 +85,13 @@ def make_drop_cap(latex_body):
     
     first_letter = para_text[0]
     after_first = para_text[1:]
-    
+
+    # Skip drop cap if first character is not a plain ASCII letter
+    # (e.g. quote marks, backslash, digits — these all break \lettrine)
+    if not first_letter.isalpha() or not first_letter.isascii():
+        return latex_body
+
     # Find the rest of the first word to put in the lettrine second arg
-    # e.g. "Cass was awake" -> lettrine{C}{ass} was awake
     space_idx = after_first.find(' ')
     if space_idx > 0:
         word_rest = after_first[:space_idx]
@@ -95,6 +99,11 @@ def make_drop_cap(latex_body):
     else:
         word_rest = after_first
         para_rest = ""
+
+    # Skip drop cap if word_rest contains LaTeX special characters
+    UNSAFE = set('\\{}$&#^_~%')
+    if any(c in UNSAFE for c in word_rest):
+        return latex_body
     
     drop = f"\\lettrine[lines=2, lhang=0.1, nindent=0.2em]{{{first_letter}}}{{{word_rest}}}{para_rest}"
     return drop + '\n\n' + rest
@@ -146,7 +155,7 @@ for path in chapter_files:
 
 content = '\n\\clearpage\n\n'.join(chapters_tex)
 
-with open(os.path.join(OUT_DIR, "chapters_content.tex"), 'w') as f:
+with open(os.path.join(OUT_DIR, "chapters_content.tex"), 'w', encoding='utf-8') as f:
     f.write(content)
 
 print(f"\nWrote {len(chapters_tex)} chapters to typeset/chapters_content.tex")

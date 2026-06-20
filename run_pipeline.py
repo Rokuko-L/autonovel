@@ -1152,7 +1152,13 @@ def generate_default_novel_tex(dest_path: Path):
 ]{{geometry}}
 
 % === FONTS ===
-\\usepackage{{ebgaramond}}
+\\usepackage{{fontspec}}
+\\setmainfont{{EBGaramond}}[
+  UprightFont = EBGaramond-Regular,
+  ItalicFont  = EBGaramond-Italic,
+  BoldFont    = EBGaramond-Regular,
+  BoldItalicFont = EBGaramond-Italic,
+]
 
 % === TYPOGRAPHY ===
 \\usepackage{{microtype}}
@@ -1381,14 +1387,21 @@ def run_export(state: dict) -> dict:
         if novel_tex.exists():
             import shutil
             if shutil.which("tectonic"):
+                # Ensure required fonts are installed before typesetting
+                install_fonts_script = root_dir / "install_fonts.py"
+                if install_fonts_script.exists():
+                    step("Ensuring fonts are installed...")
+                    uv_run("install_fonts.py", timeout=120)
+
                 step("Typesetting PDF with tectonic...")
                 # Use explicit bundle to avoid DNS/network connection failure
                 cmd = f"tectonic --bundle https://archive.org/services/purl/net/pkgwpub/tectonic-default {novel_tex.name}"
-                result = run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
-                if result.returncode == 0:
-                    step(f"PDF generated: {typeset_dir / 'novel.pdf'}")
+                run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
+                pdf_out = typeset_dir / "novel.pdf"
+                if pdf_out.exists() and pdf_out.stat().st_size > 1000:
+                    step(f"PDF generated: {pdf_out} ({pdf_out.stat().st_size // 1024} KB)")
                 else:
-                    step("WARNING: tectonic typesetting failed")
+                    step("WARNING: tectonic typesetting failed — novel.pdf not produced")
             else:
                 step("tectonic not found, skipping PDF generation")
     else:
