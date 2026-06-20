@@ -28,6 +28,10 @@ The `--notes` flag is the single source of truth. It accepts a raw string or a f
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (package manager)
 - An API key for [Anthropic](https://console.anthropic.com/) or any Anthropic-compatible provider (DeepSeek, OpenRouter, etc.)
+- **(Optional) [Tectonic](https://tectonic-typesetting.github.io/)**: Required if you want to automatically compile the generated novel into a beautiful typeset PDF.
+  - *Windows*: `scoop install tectonic` (or download from GitHub Releases)
+  - *macOS*: `brew install tectonic`
+  - *Linux*: `sudo apt install tectonic` (or package manager equivalent)
 
 ---
 
