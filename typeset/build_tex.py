@@ -32,9 +32,12 @@ def md_to_latex(body):
         elif s == '':
             result.append('')
         else:
+            # Bold before italic (order matters for regex)
+            s = re.sub(r'\*\*([^*]+)\*\*', r'\\textbf{\1}', s)
             s = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\\textit{\1}', s)
             s = latex_escape(s)
-            s = s.replace('\u2014', '---')
+            # Em dash: replace with comma-space (reads more naturally than a raw dash)
+            s = s.replace('\u2014', ', ')
             s = s.replace('\u2013', '--')
             s = s.replace('\u201c', '``')
             s = s.replace('\u201d', "''")
@@ -48,7 +51,7 @@ def md_to_latex(body):
             s = re.sub(r'^"(?=\w)', '``', s)            # line-start "word
             s = re.sub(r'(?<=\w)"(?=[\s.,;:!?\-])', "''", s)  # word" then punct/space
             s = re.sub(r'(?<=\w)"$', "''", s)           # word" at line-end
-            s = re.sub(r'(?<=[\.\?\!])"', "''", s)      # punctuation" 
+            s = re.sub(r'(?<=[.?!])"', "''", s)         # punctuation" 
             # Catch any remaining straight quotes (open if after space, close otherwise)
             s = re.sub(r'(?<=\s)"', '``', s)
             s = re.sub(r'"(?=\s)', "''", s)

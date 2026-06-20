@@ -1353,7 +1353,22 @@ def run_export(state: dict) -> dict:
         step("Building arc summary...")
         uv_run("build_arc_summary.py", timeout=300)
 
-    # 3. Concatenate chapters into manuscript.md (written into project dir)
+    # 3. Pre-export cleanup: deterministically strip AI-tell formatting patterns
+    step("Cleaning chapters (em dashes, markdown bold)...")
+    _EM_DASH_RE = re.compile(r'\u2014')                          # unicode em dash
+    _BOLD_RE    = re.compile(r'\*\*(.+?)\*\*')                   # **bold** → plain
+    cleaned_count = 0
+    for ch_file in sorted(chapters_dir.glob("ch_*.md")):
+        original = ch_file.read_text(encoding="utf-8")
+        cleaned  = _EM_DASH_RE.sub(', ', original)               # em dash → comma
+        cleaned  = _BOLD_RE.sub(r'\1', cleaned)                  # **text** → text
+        if cleaned != original:
+            ch_file.write_text(cleaned, encoding="utf-8")
+            cleaned_count += 1
+    if cleaned_count:
+        step(f"  Cleaned {cleaned_count} chapter(s)")
+
+    # 4. Concatenate chapters into manuscript.md (written into project dir)
     step("Building manuscript.md...")
     manuscript = utils.get_manuscript_path()
     chapter_files = sorted(chapters_dir.glob("ch_*.md"))
