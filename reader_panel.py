@@ -18,7 +18,7 @@ from genre import load_genre
 
 load_dotenv()
 
-READERS = {
+_HARDCODED_READERS = {
     "editor": {
         "name": "The Editor",
         "system": (
@@ -63,6 +63,35 @@ READERS = {
         ),
     },
 }
+
+
+def _load_readers():
+    """Load reader personas from config if available, else use hardcoded defaults."""
+    try:
+        cfg = load_genre()
+        readers_raw = (
+            cfg
+            .get("evaluation", {})
+            .get("reader_panel", {})
+            .get("readers", None)
+        )
+        if readers_raw and isinstance(readers_raw, list) and len(readers_raw) >= 4:
+            result = {}
+            for r in readers_raw[:4]:
+                key = r.get("key", "")
+                if key:
+                    result[key] = {
+                        "name": r.get("name", key),
+                        "system": r.get("persona", ""),
+                    }
+            if len(result) >= 4:
+                return result
+    except Exception:
+        pass
+    return dict(_HARDCODED_READERS)
+
+
+READERS = _load_readers()
 
 def build_reader_prompt():
     cfg = load_genre()

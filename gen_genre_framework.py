@@ -84,13 +84,35 @@ Generate the structural genre configuration as valid JSON. Do not write any gene
          {{"key": "continuity", "weight": 0.1, "criteria": "str"}}
        ]
      }},
-     "reader_panel": {{
-       "genre_reader_identity": "str — system prompt for reader panel",
-       "prompt_modifications": {{
-         "earned_ending_hint": "str",
-         "extra_questions": {{}}
-       }}
-     }}
+      "reader_panel": {{
+        "genre_reader_identity": "str — system prompt for reader panel",
+        "prompt_modifications": {{
+          "earned_ending_hint": "str",
+          "extra_questions": {{}}
+        }},
+        "title_judges": [
+          {{
+            "key": "editor",
+            "name": "The Editor",
+            "persona": "str — 2-3 sentence persona for title evaluation"
+          }},
+          {{
+            "key": "genre_reader",
+            "name": "The Genre Reader",
+            "persona": "str — 2-3 sentence persona for title evaluation"
+          }},
+          {{
+            "key": "writer",
+            "name": "The Writer",
+            "persona": "str — 2-3 sentence persona for title evaluation"
+          }},
+          {{
+            "key": "first_reader",
+            "name": "The First Reader",
+            "persona": "str — 2-3 sentence persona for title evaluation"
+          }}
+        ]
+      }}
    }}
 4. "framework": {{
      "lore_priorities": "str",
@@ -144,6 +166,11 @@ Generate the complete content generation configuration block ("generation") as v
   * "gen_outline_part2_prompt" MUST contain: {{part1}}
   * "gen_canon_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}}
 - "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a unique, evocative, and thematic chapter title for every single chapter (e.g., in the format "Chapter N: Title") instead of using generic titles like "Chapter N".
+  * Recommend style guidelines and examples for chapter titles that match the tone/genre of the novel. Show that chapter titles can be:
+    - Witty, self-aware meta-commentary (e.g., "In Which Things Go Wrong Immediately")
+    - Character-driven recaps (e.g., "The Dinner Party Disaster")
+    - Stylistic logs (e.g., diary records, or at most ONE system diagnostic log like `priority_override_failed` if the genre features technology/systems)
+    Give the writer model the flexibility to choose or blend these styles creatively.
 - "draft_chapter_instructions" MUST instruct the writer to start the chapter markdown file with a top-level header including both the chapter number and the specific title from the outline (e.g., "# Chapter N: [Title]").
 - "draft_chapter_instructions" must weave in a firm requirement that each chapter is approximately {words_per_chapter} words.
 - All section headers and focus areas must align directly with what the prompt templates require.

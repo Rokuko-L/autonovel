@@ -1,7 +1,7 @@
 """
 genre.py — Genre configuration loader.
 All pipeline scripts call load_genre() to get active genre config.
-Fallback: genres/default_fantasy.json if no active_genre.json exists.
+Configs are per-project in projects/{name}/active_genre.json.
 """
 import json
 import math
@@ -11,8 +11,6 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 ACTIVE_PATH = BASE_DIR / "active_genre.json"
-DEFAULT_PATH = BASE_DIR / "genres" / "default_fantasy.json"
-GENRE_ENV_VAR = "AUTONOVEL_GENRE"
 
 _cache = None
 
@@ -133,24 +131,21 @@ def load_genre():
     if _cache is not None:
         return _cache
     
-    # Priority: 1) project active_genre.json 2) global active_genre.json 3) AUTONOVEL_GENRE env pointing to file 4) default_fantasy.json
     import utils
     project_active_path = utils.get_active_genre_path()
-    genre_env = os.environ.get(GENRE_ENV_VAR, "")
     
     if project_active_path.exists():
         path = project_active_path
     elif ACTIVE_PATH.exists():
         path = ACTIVE_PATH
-    elif genre_env:
-        genre_path = BASE_DIR / "genres" / f"{genre_env}.json"
-        if genre_path.exists():
-            path = genre_path
-        else:
-            print(f"WARNING: Genre '{genre_env}' not found at {genre_path}, using default", file=sys.stderr)
-            path = DEFAULT_PATH
     else:
-        path = DEFAULT_PATH
+        raise FileNotFoundError(
+            "No genre config found. "
+            f"Checked:\n"
+            f"  1. {project_active_path} (project active_genre.json)\n"
+            f"  2. {ACTIVE_PATH} (root active_genre.json)\n\n"
+            "Run gen_genre_framework.py or set --project."
+        )
     
     if not path.exists():
         raise FileNotFoundError(f"Genre config not found: {path}")
