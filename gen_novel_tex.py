@@ -177,7 +177,7 @@ RULES (non-negotiable — must follow exactly):
 10. Use \\leftmark for chapter titles in headers (fancyhdr), NOT \\thechapter.
 11. Use \\MakeUppercase or plain text in chapter headings. Do NOT use \\MakeTextUppercase.
 12. Colophon must include: author name, "Created by Antigravity Agent.", and the repo URL from the context.
-13. When using decorative symbols (stars, arrows, etc.) in chapter headings or ornaments, only use symbols from amssymb or standard LaTeX. Do NOT use non-standard symbols.
+13. When using decorative symbols (stars, arrows, card suits, etc.) in chapter headings or ornaments, only use standard symbols from amssymb or basic LaTeX (e.g. \spadesuit, \clubsuit, \diamondsuit, \heartsuit, \star, \bullet). Do NOT use non-standard variations or prefixes (e.g. do NOT use \varspadesuit, \varclubsuit, \vardiamondsuit, \varheartsuit).
 
 CREATIVE FREEDOM (you decide):
 - Title page layout: multi-line, decorative, thematic — match the novel's tone
@@ -272,6 +272,12 @@ def main():
     if not latex or len(latex) < 200:
         print("ERROR: LLM returned invalid or empty LaTeX", file=sys.stderr)
         sys.exit(1)
+
+    # Sanitize known LLM LaTeX symbol hallucinations
+    latex = latex.replace(r"\varspadesuit", r"\spadesuit")
+    latex = latex.replace(r"\varclubsuit", r"\clubsuit")
+    latex = latex.replace(r"\vardiamondsuit", r"\diamondsuit")
+    latex = latex.replace(r"\varheartsuit", r"\heartsuit")
 
     # Write to typeset directory
     typeset_dir = utils.get_typeset_dir()

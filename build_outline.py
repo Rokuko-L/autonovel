@@ -71,7 +71,7 @@ def main():
     from concurrent.futures import ThreadPoolExecutor, as_completed
     
     futures = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=12) as executor:
 
         for path in chapter_files:
             m = re.search(r"ch_(\d+)\.md", path.name)

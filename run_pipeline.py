@@ -543,6 +543,10 @@ def run_drafting(state: dict) -> dict:
     for ch in range(start_chapter, total + 1):
         banner(f"Drafting Chapter {ch}/{total}", "-")
         drafted = False
+        best_score = -1.0
+        best_draft_content = None
+        best_word_count = 0
+        best_attempt_num = 0
 
         for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
             step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
@@ -577,6 +581,13 @@ def run_drafting(state: dict) -> dict:
                 drafted = True
                 break
             else:
+                if score > best_score:
+                    best_score = score
+                    best_draft_content = ch_file.read_text(encoding="utf-8")
+                    best_word_count = word_count
+                    best_attempt_num = attempt
+                    step(f"New best fallback score for Ch {ch}: {score}")
+
                 step(f"Score {score} < {CHAPTER_THRESHOLD}, discarding attempt")
                 log_result("discarded", f"ch{ch:02d}", score, word_count,
                            "discard", f"Chapter {ch} attempt {attempt}")
@@ -596,18 +607,19 @@ def run_drafting(state: dict) -> dict:
                         ch_file.unlink(missing_ok=True)
 
         if not drafted:
-            step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
-                 f"keeping last attempt and moving on")
-            # Keep whatever we have and commit it
-            ch_file = chapters_dir / f"ch_{ch:02d}.md"
-            if ch_file.exists():
-                word_count = len(ch_file.read_text(encoding="utf-8").split())
+            if best_draft_content is not None:
+                step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
+                     f"keeping best attempt {best_attempt_num} (score {best_score}) and moving on")
+                ch_file = chapters_dir / f"ch_{ch:02d}.md"
+                ch_file.write_text(best_draft_content, encoding="utf-8")
                 commit_hash = git_add_commit(
-                    f"ch{ch:02d}: best-effort after {MAX_CHAPTER_ATTEMPTS} attempts")
-                log_result(commit_hash, f"ch{ch:02d}", "?", word_count,
-                           "forced", f"Chapter {ch}: kept after max attempts")
+                    f"ch{ch:02d}: best-effort (score {best_score}, attempt {best_attempt_num}) after {MAX_CHAPTER_ATTEMPTS} attempts")
+                log_result(commit_hash, f"ch{ch:02d}", best_score, best_word_count,
+                           "forced", f"Chapter {ch}: kept best-effort after max attempts")
                 state["chapters_drafted"] = ch
                 save_state(state)
+            else:
+                step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts and no valid drafts were generated.")
 
     # All chapters drafted
     state["phase"] = "revision"
@@ -1345,7 +1357,7 @@ def run_export(state: dict) -> dict:
     build_outline = root_dir / "build_outline.py"
     if build_outline.exists():
         step("Rebuilding outline from chapters...")
-        uv_run("build_outline.py", timeout=300)
+        uv_run("build_outline.py", timeout=1200)
 
     # 2. Build arc summary
     build_arc = root_dir / "build_arc_summary.py"
