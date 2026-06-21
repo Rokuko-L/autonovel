@@ -177,8 +177,9 @@ RULES (non-negotiable — must follow exactly):
 10. Use \\leftmark for chapter titles in headers (fancyhdr), NOT \\thechapter.
 11. Use \\MakeUppercase or plain text in chapter headings. Do NOT use \\MakeTextUppercase.
 12. Colophon must include only the author name (nothing else).
-13. When using decorative symbols (stars, arrows, card suits, etc.) in chapter headings or ornaments, only use standard symbols from amssymb or basic LaTeX (e.g. \spadesuit, \clubsuit, \diamondsuit, \heartsuit, \star, \bullet). Do NOT use non-standard variations or prefixes (e.g. do NOT use \varspadesuit, \varclubsuit, \vardiamondsuit, \varheartsuit).
+13. When using decorative math symbols (stars, arrows, card suits like \spadesuit, \clubsuit, \diamondsuit, \heartsuit, etc.) in chapter headings, ornaments, or text, they MUST be wrapped in math mode (e.g., \(\spadesuit\) or \(\diamondsuit\) or $\clubsuit$). Do NOT use them in raw text mode. Only use standard symbols from amssymb or basic LaTeX, and do NOT use non-standard variations or prefixes (e.g. do NOT use \varspadesuit, \varclubsuit, \vardiamondsuit, \varheartsuit).
 14. The title from context is the EXACT novel title — use it as the primary heading on the title page and half-title page. Never replace it with "A Novel", "A NOVEL", or any placeholder text. Never relegate it to a subtitle.
+15. Do NOT invoke the standard LaTeX `\maketitle` command anywhere in the document body. Since custom commands are defined and used for the title pages, calling `\maketitle` will crash compilation due to missing standard title declarations.
 
 CREATIVE FREEDOM (you decide):
 - Title page layout: multi-line, decorative, thematic — match the novel's tone
@@ -249,36 +250,41 @@ def main():
     print(f"  Author: {author}", file=sys.stderr)
     print(f"  Context size: {len(context)} chars", file=sys.stderr)
 
-    # Call LLM
-    raw = call_anthropic(
-        prompt=prompt,
-        system=SYSTEM_PROMPT,
-        model_key="writer",
-        max_tokens=16000,
-        temperature=0.7,
-        timeout=300,
-    )
-
-    # Extract LaTeX from code fences
-    latex = raw.strip()
-    m = re.search(r"```(?:latex|tex)?\s*\n(.*?)```", raw, re.DOTALL)
-    if m:
-        latex = m.group(1).strip()
-    else:
-        # Try to find \documentclass as anchor
-        m2 = re.search(r"(\\documentclass[^]*?\\end\{document\})", raw, re.DOTALL)
-        if m2:
-            latex = m2.group(1).strip()
-
-    if not latex or len(latex) < 200:
-        print("ERROR: LLM returned invalid or empty LaTeX", file=sys.stderr)
-        sys.exit(1)
-
     # Write to typeset directory
     typeset_dir = utils.get_typeset_dir()
     dest = typeset_dir / "novel.tex"
-    dest.write_text(latex, encoding="utf-8")
-    print(f"Wrote novel.tex ({len(latex)} bytes) to {dest}", file=sys.stderr)
+
+    # Call LLM
+    try:
+        raw = call_anthropic(
+            prompt=prompt,
+            system=SYSTEM_PROMPT,
+            model_key="writer",
+            max_tokens=16000,
+            temperature=0.7,
+            timeout=300,
+        )
+
+        # Extract LaTeX from code fences
+        latex = raw.strip()
+        m = re.search(r"```(?:latex|tex)?\s*\n(.*?)```", raw, re.DOTALL)
+        if m:
+            latex = m.group(1).strip()
+        else:
+            # Try to find \documentclass as anchor
+            m2 = re.search(r"(\\documentclass[^]*?\\end\{document\})", raw, re.DOTALL)
+            if m2:
+                latex = m2.group(1).strip()
+
+        if not latex or len(latex) < 200:
+            raise ValueError("LLM returned invalid or empty LaTeX")
+
+        dest.write_text(latex, encoding="utf-8")
+        print(f"Wrote novel.tex ({len(latex)} bytes) to {dest}", file=sys.stderr)
+    except Exception as e:
+        print(f"WARNING: LLM novel.tex generation failed: {e}. Falling back to default template.", file=sys.stderr)
+        utils.generate_default_novel_tex(dest)
+        print(f"Wrote default fallback novel.tex to {dest}", file=sys.stderr)
 
 
 if __name__ == "__main__":
