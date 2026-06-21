@@ -273,12 +273,6 @@ def main():
         print("ERROR: LLM returned invalid or empty LaTeX", file=sys.stderr)
         sys.exit(1)
 
-    # Sanitize known LLM LaTeX symbol hallucinations
-    latex = latex.replace(r"\varspadesuit", r"\spadesuit")
-    latex = latex.replace(r"\varclubsuit", r"\clubsuit")
-    latex = latex.replace(r"\vardiamondsuit", r"\diamondsuit")
-    latex = latex.replace(r"\varheartsuit", r"\heartsuit")
-
     # Write to typeset directory
     typeset_dir = utils.get_typeset_dir()
     dest = typeset_dir / "novel.tex"

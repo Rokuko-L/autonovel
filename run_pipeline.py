@@ -1426,14 +1426,78 @@ def run_export(state: dict) -> dict:
                     step("Ensuring fonts are installed...")
                     uv_run("install_fonts.py", timeout=120)
 
-                step("Typesetting PDF with tectonic...")
-                # Use explicit bundle to avoid DNS/network connection failure
-                cmd = f"tectonic --bundle https://archive.org/services/purl/net/pkgwpub/tectonic-default {novel_tex.name}"
-                run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
-                pdf_out = typeset_dir / "novel.pdf"
-                if pdf_out.exists() and pdf_out.stat().st_size > 1000:
-                    step(f"PDF generated: {pdf_out} ({pdf_out.stat().st_size // 1024} KB)")
-                else:
+                # Retry loop for tectonic compilation with LLM debugging
+                max_latex_fixes = 3
+                compiled = False
+                for fix_attempt in range(max_latex_fixes + 1):
+                    if fix_attempt > 0:
+                        step(f"Retrying typesetting PDF (attempt {fix_attempt + 1}/{max_latex_fixes + 1})...")
+                    else:
+                        step("Typesetting PDF with tectonic...")
+
+                    # Use explicit bundle to avoid DNS/network connection failure
+                    cmd = f"tectonic --bundle https://archive.org/services/purl/net/pkgwpub/tectonic-default {novel_tex.name}"
+                    res = run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
+                    
+                    pdf_out = typeset_dir / "novel.pdf"
+                    if res.returncode == 0 and pdf_out.exists() and pdf_out.stat().st_size > 1000:
+                        step(f"PDF generated: {pdf_out} ({pdf_out.stat().st_size // 1024} KB)")
+                        compiled = True
+                        break
+                    
+                    if fix_attempt >= max_latex_fixes:
+                        break
+                        
+                    step(f"LaTeX compilation failed (exit code {res.returncode}).")
+                    step("Attempting to auto-debug novel.tex using LLM with error logs...")
+                    
+                    # Call LLM to fix the LaTeX template
+                    tex_code = novel_tex.read_text(encoding="utf-8")
+                    
+                    prompt = f"""The LaTeX file 'novel.tex' failed to compile using Tectonic.
+                    
+COMPILE LOGS / STDERR:
+---
+{res.stderr or '(no stderr)'}
+---
+
+CURRENT CONTENT OF 'novel.tex':
+---
+{tex_code}
+---
+
+Please analyze the compile log, identify the error (such as undefined control sequences, missing packages, syntax errors, or unescaped characters), and output the fully corrected, compile-ready version of 'novel.tex'. 
+
+Rules:
+1. Do NOT load fontspec. Use \\usepackage{{ebgaramond}} as defined.
+2. Return ONLY the valid LaTeX code inside ```latex ... ``` fences. No conversational filler or explanations.
+"""
+                    try:
+                        fixed_tex = call_anthropic(
+                            prompt=prompt,
+                            system="You are an expert LaTeX troubleshooter. You fix compilation errors and return only compile-ready corrected LaTeX code.",
+                            model_key="review",
+                            max_tokens=8000,
+                            temperature=0.2,
+                        )
+                        # Extract from fences
+                        m = re.search(r"```(?:latex|tex)?\s*\n(.*?)```", fixed_tex, re.DOTALL)
+                        if m:
+                            fixed_tex = m.group(1).strip()
+                        else:
+                            m2 = re.search(r"(\\documentclass[^]*?\\end\{document\})", fixed_tex, re.DOTALL)
+                            if m2:
+                                fixed_tex = m2.group(1).strip()
+                        
+                        if fixed_tex and len(fixed_tex) > 200:
+                            novel_tex.write_text(fixed_tex, encoding="utf-8")
+                            step("Wrote corrected novel.tex from LLM debugging.")
+                        else:
+                            step("WARNING: LLM returned invalid or empty LaTeX for fix.")
+                    except Exception as e:
+                        step(f"WARNING: LLM auto-debug API call failed: {e}")
+
+                if not compiled:
                     step("WARNING: tectonic typesetting failed — novel.pdf not produced")
             else:
                 step("tectonic not found, skipping PDF generation")
