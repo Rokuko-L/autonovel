@@ -128,6 +128,7 @@ def default_state() -> dict:
         "phase": "foundation",
         "current_focus": "planning",
         "iteration": 0,
+        "title": "Untitled",
         "foundation_score": 0.0,
         "lore_score": 0.0,
         "chapters_drafted": 0,
@@ -469,6 +470,12 @@ def run_foundation(state: dict) -> dict:
 
         step("Generating characters...")
         uv_run("gen_characters.py", timeout=600)
+
+        step("Generating title tournament...")
+        state = load_state()
+        if not state.get("title"):
+            uv_run("gen_title.py", timeout=600)
+            state = load_state()
 
         step("Generating outline (part 1)...")
         uv_run("gen_outline.py", timeout=900)

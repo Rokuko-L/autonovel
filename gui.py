@@ -118,7 +118,7 @@ class AutonovelApp(ctk.CTk):
             self.settings["skip_reader_panel"] = bool(self.cb_skip_panel.get())
             self.settings["skip_targeted_revisions"] = bool(self.cb_skip_targeted.get())
             self.settings["skip_full_novel_eval"] = bool(self.cb_skip_eval.get())
-            self.settings["skip_opus_review"] = bool(self.cb_skip_opus.get())
+            self.settings["skip_opus_review"] = bool(self.cb_skip_opus_review.get())
 
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2)
@@ -554,7 +554,7 @@ class AutonovelApp(ctk.CTk):
         self.cb_skip_panel = self.add_skip_checkbox(fr_check, 2, "Skip Reader Panel (--skip-reader-panel)", "Skips running reader_panel.py and the arc summary generation.", self.settings["skip_reader_panel"])
         self.cb_skip_targeted = self.add_skip_checkbox(fr_check, 3, "Skip Targeted Revisions (--skip-targeted-revisions)", "Prevents applying automated chapter revisions from reader panel consensus.", self.settings["skip_targeted_revisions"])
         self.cb_skip_eval = self.add_skip_checkbox(fr_check, 4, "Skip Full Novel Evaluation (--skip-full-novel-eval)", "Skips generating full novel quality metrics and skips plateau validation.", self.settings["skip_full_novel_eval"])
-        self.cb_skip_opus = self.add_skip_checkbox(fr_check, 5, "Skip Opus Review Loop (--skip-opus-review)", "Skips the deep prose-level Opus evaluation rounds (Phase 3b) completely.", self.settings["skip_opus_review"])
+        self.cb_skip_opus_review = self.add_skip_checkbox(fr_check, 5, "Skip Opus Review Loop (--skip-opus-review)", "Skips the deep prose-level Opus evaluation rounds (Phase 3b) completely.", self.settings["skip_opus_review"])
 
     def add_skip_checkbox(self, parent, row, title, desc, default_val):
         fr = ctk.CTkFrame(parent, fg_color="transparent")
@@ -730,38 +730,22 @@ class AutonovelApp(ctk.CTk):
         if not self.process:
             return
         
-        self.write_log("\n[SYSTEM] Stopping process...\n")
+        self.write_log("\n[SYSTEM] Stopping process, sending SIGTERM...\n")
+        self.process.terminate()
         self.set_status("Stopping...", "#F59E0B")
 
-        import platform
-        if platform.system() == "Windows":
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(self.process.pid)],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=False
-                )
-                self.write_log("[SYSTEM] Process tree terminated using taskkill.\n")
-            except Exception as e:
-                self.write_log(f"[SYSTEM] Failed to run taskkill: {e}. Falling back to terminate().\n")
-                self.process.terminate()
-        else:
-            self.process.terminate()
+        # Background thread to monitor process and send SIGKILL if still active after 3s
+        def poll_and_kill():
+            for _ in range(30):  # 3 seconds max polling
+                if self.process is None or self.process.poll() is not None:
+                    return
+                threading.Event().wait(0.1)
+            
+            if self.process and self.process.poll() is None:
+                self.write_log("\n[SYSTEM] Process still alive after 3s. Force killing (SIGKILL)...\n")
+                self.process.kill()
 
-            # Background thread to monitor process and send SIGKILL if still active after 3s
-            def poll_and_kill():
-                for _ in range(30):  # 3 seconds max polling
-                    if self.process is None or self.process.poll() is not None:
-                        return
-                    threading.Event().wait(0.1)
-                
-                if self.process and self.process.poll() is None:
-                    self.write_log("\n[SYSTEM] Process still alive after 3s. Force killing (SIGKILL)...\n")
-                    self.process.kill()
-
-            threading.Thread(target=poll_and_kill, daemon=True).start()
+        threading.Thread(target=poll_and_kill, daemon=True).start()
 
     def poll_queue(self):
         try:
@@ -835,6 +819,8 @@ class AutonovelApp(ctk.CTk):
         chapters = self.entry_chapters.get().strip()
         words = self.entry_words.get().strip()
 
+        notes = self.txt_notes.get("1.0", "end-1c").strip()
+
         # Validate inputs
         if not project:
             self.write_log("[VALIDATION ERROR] Project name is required.\n")
@@ -851,8 +837,6 @@ class AutonovelApp(ctk.CTk):
             cmd += ["--genre", genre]
         if chapters:
             cmd += ["--chapters", chapters]
-
-        notes = self.txt_notes.get("1.0", "end-1c").strip()
         if notes:
             cmd += ["--notes", notes]
         
@@ -881,7 +865,7 @@ class AutonovelApp(ctk.CTk):
             cmd.append("--skip-targeted-revisions")
         if self.cb_skip_eval.get():
             cmd.append("--skip-full-novel-eval")
-        if self.cb_skip_opus.get():
+        if self.cb_skip_opus_review.get():
             cmd.append("--skip-opus-review")
 
         # Execute

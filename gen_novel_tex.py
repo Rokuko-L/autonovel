@@ -53,7 +53,7 @@ def extract_title(seed_text: str, state: dict) -> str:
     first_line = seed_text.strip().split('\n')[0] if seed_text.strip() else ""
     if first_line.startswith("#"):
         return first_line.lstrip("#").strip()
-    return "A Novel"
+    return utils.get_project_name().replace("_", " ").title()
 
 
 def get_author() -> str:
@@ -176,8 +176,9 @@ RULES (non-negotiable — must follow exactly):
 9. Backmatter: end ornament + closing line
 10. Use \\leftmark for chapter titles in headers (fancyhdr), NOT \\thechapter.
 11. Use \\MakeUppercase or plain text in chapter headings. Do NOT use \\MakeTextUppercase.
-12. Colophon must include: author name, "Created by Antigravity Agent.", and the repo URL from the context.
+12. Colophon must include only the author name (nothing else).
 13. When using decorative symbols (stars, arrows, card suits, etc.) in chapter headings or ornaments, only use standard symbols from amssymb or basic LaTeX (e.g. \spadesuit, \clubsuit, \diamondsuit, \heartsuit, \star, \bullet). Do NOT use non-standard variations or prefixes (e.g. do NOT use \varspadesuit, \varclubsuit, \vardiamondsuit, \varheartsuit).
+14. The title from context is the EXACT novel title — use it as the primary heading on the title page and half-title page. Never replace it with "A Novel", "A NOVEL", or any placeholder text. Never relegate it to a subtitle.
 
 CREATIVE FREEDOM (you decide):
 - Title page layout: multi-line, decorative, thematic — match the novel's tone
