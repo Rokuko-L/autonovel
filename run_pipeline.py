@@ -1414,6 +1414,18 @@ def run_pipeline(args):
     else:
         state = load_state()
 
+    # Sync chapters_total from genre config on every entry (not just foundation)
+    # This prevents stale state.json values from persisting across resume runs.
+    try:
+        genre_cfg = load_genre()
+        genre_total = genre_cfg["generation"]["outline"]["estimated_chapters"]
+        current_total = state.get("chapters_total", 0)
+        if genre_total != current_total:
+            state["chapters_total"] = genre_total
+            save_state(state)
+    except (FileNotFoundError, KeyError):
+        pass  # pre-foundation — no genre config yet, use default or --chapters
+
     # Ensure directories exist (helpers create them)
     utils.get_chapters_dir()
     utils.get_briefs_dir()
@@ -1482,11 +1494,6 @@ def run_pipeline(args):
                     from genre import reload_genre
                     reload_genre()
                     print("Genre config ready.\n")
-
-                # Load genre config for chapter count
-                genre_cfg = load_genre()
-                CHAPTERS_TOTAL = genre_cfg["generation"]["outline"]["estimated_chapters"]
-                state["chapters_total"] = CHAPTERS_TOTAL
 
                 state = run_foundation(state)
             elif phase == "drafting":
