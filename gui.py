@@ -65,6 +65,9 @@ class AutonovelApp(ctk.CTk):
         self.log_queue = queue.Queue()
         self.is_running = False
 
+        # Log text zoom state
+        self.log_font_size = 11
+
         # Load settings
         self.settings = self.load_settings()
 
@@ -344,7 +347,7 @@ class AutonovelApp(ctk.CTk):
             border_color=THEME["border_color"],
             border_width=1,
             corner_radius=THEME["corner_radius"],
-            font=self.font_mono
+            font=(MONO_FONT_FAMILY, self.log_font_size)
         )
         self.log_textbox.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
         self.log_textbox.configure(state="disabled")
@@ -353,6 +356,11 @@ class AutonovelApp(ctk.CTk):
         self.log_textbox.tag_config("error", foreground=THEME["error"])
         self.log_textbox.tag_config("success", foreground=THEME["success"])
         self.log_textbox.tag_config("warning", foreground="#F59E0B")
+
+        # Bind scroll-to-zoom on output log
+        self.log_textbox.bind("<Control-MouseWheel>", self._on_log_zoom_windows)
+        self.log_textbox.bind("<Control-Button-4>", self._on_log_zoom_up)
+        self.log_textbox.bind("<Control-Button-5>", self._on_log_zoom_down)
 
     # --- Tab 2: Tools ---
     def build_tab_tools(self):
@@ -707,14 +715,16 @@ class AutonovelApp(ctk.CTk):
         env["PYTHONUNBUFFERED"] = "1"  # Real-time stdout buffering
 
         try:
-            self.process = subprocess.Popen(
-                cmd_args,
+            kwargs = dict(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace",
                 bufsize=1,
                 env=env
             )
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            self.process = subprocess.Popen(cmd_args, **kwargs)
 
             # Stream stdout/stderr outputs to UI queue
             for line in iter(self.process.stdout.readline, ''):
@@ -806,6 +816,24 @@ class AutonovelApp(ctk.CTk):
 
         self.log_textbox.see("end")
         self.log_textbox.configure(state="disabled")
+
+    # ---------------------------------------------------------------------------
+    # Log Text Zoom (scroll-to-zoom on output logs)
+    # ---------------------------------------------------------------------------
+    def _change_log_font_size(self, delta):
+        new_size = max(8, min(36, self.log_font_size + delta))
+        if new_size != self.log_font_size:
+            self.log_font_size = new_size
+            self.log_textbox.configure(font=(MONO_FONT_FAMILY, self.log_font_size))
+
+    def _on_log_zoom_windows(self, event):
+        self._change_log_font_size(1 if event.delta > 0 else -1)
+
+    def _on_log_zoom_up(self, event):
+        self._change_log_font_size(1)
+
+    def _on_log_zoom_down(self, event):
+        self._change_log_font_size(-1)
 
     # ---------------------------------------------------------------------------
     # Action Handlers: Tab 1 Pipeline Run
