@@ -824,80 +824,101 @@ def run_revision(
             else:
                 consensus_items = []
 
-        # -- Step 5: Targeted revisions for consensus items --
+        # -- Step 5: Targeted revisions for consensus items (parallel) --
         if not skip_targeted_revisions and consensus_items:
             step(f"Found {len(consensus_items)} consensus items:")
             for item in consensus_items:
                 print(f"    Ch {item['chapter']}: {item['question']} "
                       f"(flagged by {item['count']} readers)")
 
-            for idx, item in enumerate(consensus_items):
+            def _revise_one(item):
+                """Revise one chapter (brief + revision + eval). No git ops."""
                 ch_num = item["chapter"]
                 question = item["question"]
-                banner(f"  Revising Ch {ch_num} ({question}) [{idx+1}/{len(consensus_items)}]", ".")
+                try:
+                    pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                    pre_score = parse_score(pre_eval.stdout, "overall_score")
 
-                # Snapshot the current chapter score for comparison
-                pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
-                pre_score = parse_score(pre_eval.stdout, "overall_score")
+                    brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
+                    gen_brief_py = utils.get_root_dir() / "gen_brief.py"
+                    if gen_brief_py.exists():
+                        run_tool(f"uv run python gen_brief.py --panel {ch_num}", timeout=300)
+                        brief_candidates = sorted(
+                            briefs_dir.glob(f"ch{ch_num:02d}*.md"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+                        if brief_candidates:
+                            brief_file = brief_candidates[0]
+                    else:
+                        brief_content = (
+                            f"# Revision Brief: Chapter {ch_num}\n\n"
+                            f"## Issue: {question}\n\n"
+                            f"Panel consensus identified this chapter for revision.\n"
+                            f"Focus: address the {question.replace('_', ' ')} issue.\n"
+                            f"Preserve existing voice, character work, and essential beats.\n"
+                        )
+                        brief_file.write_text(brief_content)
 
-                # Generate revision brief
-                brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
-                gen_brief = utils.get_root_dir() / "gen_brief.py"
-                if gen_brief.exists():
-                    step(f"Generating brief for Ch {ch_num}...")
-                    run_tool(f"uv run python gen_brief.py --panel {ch_num}", timeout=300)
-                    # gen_brief.py may write to briefs/ — find the most recent brief
-                    brief_candidates = sorted(
-                        briefs_dir.glob(f"ch{ch_num:02d}*.md"),
-                        key=lambda p: p.stat().st_mtime, reverse=True)
-                    if brief_candidates:
-                        brief_file = brief_candidates[0]
-                else:
-                    # Create a minimal brief from the panel data
-                    step(f"gen_brief.py not found, creating minimal brief for Ch {ch_num}...")
-                    brief_content = (
-                        f"# Revision Brief: Chapter {ch_num}\n\n"
-                        f"## Issue: {question}\n\n"
-                        f"Panel consensus identified this chapter for revision.\n"
-                        f"Focus: address the {question.replace('_', ' ')} issue.\n"
-                        f"Preserve existing voice, character work, and essential beats.\n"
-                    )
-                    brief_file.write_text(brief_content)
+                    if not brief_file.exists():
+                        return {"ch_num": ch_num, "error": "no brief file",
+                                "pre_score": pre_score, "post_score": pre_score}
 
-                if not brief_file.exists():
-                    step(f"No brief file found for Ch {ch_num}, skipping")
+                    step(f"Revising Ch {ch_num} with brief {brief_file.name}...")
+                    uv_run(f"gen_revision.py {ch_num} {brief_file}", timeout=600)
+
+                    post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                    post_score = parse_score(post_eval.stdout, "overall_score")
+
+                    ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                    word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
+
+                    hist_best_score, hist_best_commit = get_historical_best_for_chapter(ch_num)
+                    baseline = max(pre_score, hist_best_score)
+
+                    return {
+                        "ch_num": ch_num,
+                        "question": question,
+                        "pre_score": pre_score,
+                        "post_score": post_score,
+                        "word_count": word_count,
+                        "baseline": baseline,
+                        "hist_best_commit": hist_best_commit,
+                        "brief_name": brief_file.name,
+                    }
+                except Exception as e:
+                    return {"ch_num": ch_num, "error": str(e)}
+
+            with ThreadPoolExecutor(max_workers=len(consensus_items)) as pool:
+                futures = {pool.submit(_revise_one, item): item for item in consensus_items}
+                results = []
+                for future in as_completed(futures):
+                    item = futures[future]
+                    try:
+                        r = future.result()
+                        results.append(r)
+                        if r.get("error"):
+                            step(f"  Ch {r['ch_num']}: revision failed — {r['error']}")
+                        else:
+                            step(f"  Ch {r['ch_num']}: {r['pre_score']} -> {r['post_score']}")
+                    except Exception as e:
+                        step(f"  Ch {item['chapter']}: unexpected error — {e}")
+
+            # Serialized: git add/commit or revert per chapter
+            for r in sorted(results, key=lambda x: x["ch_num"]):
+                if r.get("error"):
                     continue
-
-                # Run revision
-                step(f"Revising Ch {ch_num} with brief {brief_file.name}...")
-                uv_run(f"gen_revision.py {ch_num} {brief_file}", timeout=600)
-
-                # Evaluate revised chapter
-                post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
-                post_score = parse_score(post_eval.stdout, "overall_score")
-
-                ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
-                word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
-
-                # Compare against historical best
-                hist_best_score, hist_best_commit = get_historical_best_for_chapter(ch_num)
-                baseline = max(pre_score, hist_best_score)
-
-                step(f"Ch {ch_num}: {pre_score} -> {post_score} (Historical best: {hist_best_score}, Baseline: {baseline})")
-
-                if post_score >= (baseline - tolerance):
-                    # Stage specifically
+                ch_num = r["ch_num"]
+                if r["post_score"] >= (r["baseline"] - tolerance):
                     run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
                     commit_hash = git_commit_staged(
                         f"revision cycle {cycle}: ch{ch_num:02d} "
-                        f"{question} {pre_score}->{post_score}")
-                    log_result(commit_hash, f"rev-ch{ch_num:02d}", post_score,
-                               word_count, "keep",
-                               f"Cycle {cycle}: {question} improved {pre_score}->{post_score}")
+                        f"{r['question']} {r['pre_score']}->{r['post_score']}")
+                    log_result(commit_hash, f"rev-ch{ch_num:02d}", r["post_score"],
+                               r["word_count"], "keep",
+                               f"Cycle {cycle}: {r['question']} improved {r['pre_score']}->{r['post_score']}")
                 else:
-                    step(f"Revision made it worse ({post_score} < {baseline - tolerance}), reverting ch_{ch_num:02d} to best commit: {hist_best_commit}")
-                    # Revert specifically
-                    if hist_best_commit == "HEAD":
+                    step(f"Ch {ch_num}: score dropped ({r['post_score']} < {r['baseline'] - tolerance}), reverting")
+                    ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                    if r["hist_best_commit"] == "HEAD":
                         tracked_res = run_tool(
                             f"git ls-files --error-unmatch chapters/ch_{ch_num:02d}.md",
                             cwd=str(utils.get_project_dir())
@@ -907,10 +928,10 @@ def run_revision(
                         else:
                             ch_file.unlink(missing_ok=True)
                     else:
-                        run_tool(f"git checkout {hist_best_commit} -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
-                    log_result("reverted", f"rev-ch{ch_num:02d}", post_score,
-                               word_count, "discard",
-                               f"Cycle {cycle}: {question} regressed {pre_score}->{post_score}")
+                        run_tool(f"git checkout {r['hist_best_commit']} -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                    log_result("reverted", f"rev-ch{ch_num:02d}", r["post_score"],
+                               r["word_count"], "discard",
+                               f"Cycle {cycle}: {r['question']} regressed {r['pre_score']}->{r['post_score']}")
         elif not skip_targeted_revisions:
             step("No strong consensus items found from panel")
         else:
