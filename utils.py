@@ -794,16 +794,86 @@ def validate_generator_output(content: str, name: str, min_len: int = 100, expec
     return content
 
 
+def _normalize_beat_label(label: str) -> str:
+    """Normalize a beat label for fuzzy matching — remove bold, POV, numbering."""
+    label = re.sub(r'\*\*', '', label)
+    label = re.sub(r'\([^)]*\)', '', label)
+    label = re.sub(r'^\d+[\.\)]\s*', '', label)
+    label = label.replace('_', ' ').replace('/', ' ').replace('-', ' ')
+    label = re.sub(r'\s+', ' ', label).strip()
+    return label.lower()
+
+
+def _beats_match(required: str, present: str) -> bool:
+    """Token-set containment check: all required words appear in present label."""
+    r_tokens = set(_normalize_beat_label(required).split())
+    p_tokens = set(_normalize_beat_label(present).split())
+    return r_tokens.issubset(p_tokens) and len(r_tokens) > 0
+
+
+def _parse_bold_numbered_beats(outline_text: str) -> list[dict]:
+    """Fallback — extract beats from bold-numbered header format.
+
+    Handles:
+      **1. beat_label (POV info)**
+      Paragraph text accumulates as scene_summary until next beat header.
+      *1. beat_label* (single-asterisk variant)
+    """
+    lines = outline_text.split('\n')
+    in_section = False
+    beats = []
+    current_beat = None
+    current_summary: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        header_match = re.match(
+            r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
+        )
+        if header_match:
+            in_section = True
+            continue
+
+        if not in_section:
+            continue
+
+        end_match = re.match(
+            r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
+        )
+        if end_match:
+            if current_beat is not None:
+                beats.append({"beat": current_beat, "scene_summary": ' '.join(current_summary).strip()})
+            break
+
+        beat_header_match = re.match(
+            r'^\s*\*+\s*\d+[\.\)]\s+(.+?)\s*\*+\s*$', stripped
+        )
+        if beat_header_match:
+            if current_beat is not None:
+                beats.append({"beat": current_beat, "scene_summary": ' '.join(current_summary).strip()})
+            current_beat = beat_header_match.group(1).strip()
+            current_summary = []
+            continue
+
+        if current_beat is not None and stripped:
+            current_summary.append(stripped)
+
+    if in_section and current_beat is not None:
+        beats.append({"beat": current_beat, "scene_summary": ' '.join(current_summary).strip()})
+
+    return beats
+
+
 def parse_premise_beats(outline_text: str) -> list[dict]:
     """
     Extract premise beats from Chapter 1's PREMISE BEATS section in the outline.
     Returns list of {"beat": str, "scene_summary": str} in order found.
     Returns empty list if no PREMISE BEATS section is found.
 
-    Handles:
-      - Bullet chars: -, *, +
-      - Maxsplit=1 on colon to avoid breaking on colons in scene_summary
-      - Case-insensitive section header matching with optional markdown decoration
+    Tries two formats in order:
+      1. Bullet lines:  - beat_label: scene summary
+      2. Bold-numbered: **N. beat_label (POV info)** then paragraph
     """
     lines = outline_text.split('\n')
     in_section = False
@@ -812,7 +882,6 @@ def parse_premise_beats(outline_text: str) -> list[dict]:
     for line in lines:
         stripped = line.strip()
 
-        # Detect PREMISE BEATS header (case-insensitive, optional markdown decoration)
         header_match = re.match(
             r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
         )
@@ -820,7 +889,6 @@ def parse_premise_beats(outline_text: str) -> list[dict]:
             in_section = True
             continue
 
-        # Detect section end: another heading or MAIN PLOT
         end_match = re.match(
             r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
         )
@@ -828,12 +896,10 @@ def parse_premise_beats(outline_text: str) -> list[dict]:
             break
 
         if in_section:
-            # Match bullet lines: -, *, or +
             bullet_match = re.match(r'^[-*+]\s+(.+)$', stripped)
             if not bullet_match:
                 continue
             content = bullet_match.group(1).strip()
-            # Split on first colon only
             colon_idx = content.find(':')
             if colon_idx == -1:
                 beats.append({"beat": content.strip(), "scene_summary": ""})
@@ -842,6 +908,9 @@ def parse_premise_beats(outline_text: str) -> list[dict]:
                 scene_summary = content[colon_idx + 1:].strip()
                 beats.append({"beat": beat_label, "scene_summary": scene_summary})
 
+    if not beats:
+        beats = _parse_bold_numbered_beats(outline_text)
+
     return beats
 
 
@@ -849,7 +918,9 @@ def validate_premise_beats(required_beats: list[str], outline_text: str) -> tupl
     """
     Validate that Chapter 1's PREMISE BEATS section contains all required beats
     in relative order (subsequence match, not exact match — extra unlisted beats
-    between required ones are allowed).
+    between required ones are allowed).  Uses token-set matching so human-readable
+    labels like "Ordinary World / Otaku Life" match slug keys like
+    "ordinary_world_otaku_life".
 
     Returns (passed: bool, error_message: str).
     """
@@ -859,13 +930,12 @@ def validate_premise_beats(required_beats: list[str], outline_text: str) -> tupl
     if not present_labels:
         return False, "No PREMISE BEATS section found in Chapter 1 outline"
 
-    # Subsequence check: all required beats must appear in present_labels, in order
     missing = []
     it = iter(present_labels)
     for required in required_beats:
         found = False
         for p in it:
-            if p == required:
+            if _beats_match(required, p):
                 found = True
                 break
         if not found:

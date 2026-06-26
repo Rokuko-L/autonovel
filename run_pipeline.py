@@ -500,7 +500,11 @@ def run_foundation(state: dict) -> dict:
                 step("REPEATED FAILURE — check genre framework premise_arc_beats, not just regen")
                 break
             step("Regenerating outline with targeted retry feedback...")
-            uv_run(f'gen_outline.py --retry-feedback "{error}"', timeout=900)
+            format_hint = (
+                " Use bold-numbered format: **N. beat_label (POV: Character)**"
+                " on its own line, then a scene description paragraph."
+            )
+            uv_run(f'gen_outline.py --retry-feedback "{error}.{format_hint}"', timeout=900)
 
         # Write premise validation sidecar
         prem_val_path = utils.get_project_dir() / "premise_validation.json"
