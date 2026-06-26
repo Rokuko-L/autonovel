@@ -169,7 +169,7 @@ with dialogue and action). Summary is for time compression only.
 
 ---
 
-## 10. META-VOCABULARY CONTAMINATION
+## 13. META-VOCABULARY CONTAMINATION
 
 **POV characters use real-world publishing/genre vocabulary to describe their own
 situation.** This is a dead giveaway that the writer (or LLM) stopped thinking
@@ -193,6 +193,87 @@ a structural element of fiction (genre name, narrative role, publishing term,
 writing process), rewrite it in in-world terms. "This is exactly what my book
 predicted" instead of "This is exactly like my genre." "I feel like a pawn in
 someone's scheme" instead of "I feel like a side character."
+
+---
+
+## 14. COPULA AVOIDANCE
+
+**AI replaces "is/was/has" with fancier verbs:** "serves as," "stands as,"
+"acts as," "functions as," "features," "boasts." The effect is stiff and
+indirect — the sentence takes a detour when it could state the thing.
+
+Examples:
+- "His voice serves as a warning" → "His voice warns"
+- "The room features a carved oak table" → "A carved oak table filled the room"
+- "The system stands as a testament to..." → "The system proves..."
+
+**Detection:** Search for "serves as," "stands as," "acts as," "functions as,"
+"features," "boasts." Each one is a sentence that could be tightened.
+
+**Rule:** Replace every copula-avoidance verb with a direct verb or "is."
+The fancier word never adds information — it only adds distance.
+
+---
+
+## 15. SYNONYM CYCLING
+
+**AI avoids repeating a name by cycling through epithets:** "Bob walked in.
+The tall man sat down. The engineer pulled out a chair." Each variant is
+grammatically correct but the cumulative effect is evasive — the narrator
+won't commit to a single identity for the character.
+
+Real narration picks one name/title and uses it consistently, with "he/she"
+in between. Cycling epithets to avoid repetition reads as AI-hesitant.
+
+**The exception:** deliberate POV shifts where the epithet reflects how
+the viewpoint character sees the person in that moment (e.g., "Father"
+vs "the old man" depending on mood).
+
+**Detection:** In any scene with 2+ named characters, count distinct
+references to the same character (name, pronoun, epithet). If 3+ different
+epithets are used for one character in a single scene, flag it.
+
+**Rule:** Pick one name or title per character per scene. Use it and
+pronouns. Only switch epithets when the POV character's relationship to
+them changes.
+
+---
+
+## 16. GENERIC CAPSTONE
+
+**A sentence that sounds meaningful but says nothing specific.** Almost
+always the last sentence of a paragraph or scene: "The future looked
+bright." "Everything had changed." "Nothing would ever be the same."
+
+These aren't wrong — they're just empty. They could end any chapter in
+any novel. A good ending sentence belongs to THAT chapter specifically.
+
+**Detection:** Highlight any sentence that could close a Wikipedia article.
+Test: swap the ending between two chapters — if neither loses anything,
+both are generic capstones.
+
+**Fix:** Replace with either (a) a specific image that embodies the change,
+(b) a character action that proves the change, or (c) just cut it — let
+the scene's last beat land without commentary.
+
+---
+
+## 17. AUTHORITY FRAMING
+
+**A rhetorical throat-clear before the actual claim:** "At its core, what
+the artifact represented was..." "The truth is, she had always known."
+"What matters is whether he trusts you." "The fact remains that..."
+
+These are verbal crutches — they tell the reader "this next part is
+important" instead of letting the content speak. The framed claim is
+always weaker than the direct version.
+
+**Detection:** Search for paragraph-initial "At its core,", "The truth
+is,", "What matters is,", "The fact is/remains,". Each one can be deleted
+without changing the meaning.
+
+**Fix:** Cut the framing and start with the claim. "The artifact
+represented..." "She had always known." "Whether he trusts you."
 
 ---
 

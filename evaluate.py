@@ -67,6 +67,10 @@ TIER3_FILLER = [
     r"when it comes to",
     r"one might argue that",
     r"not just .+, but",
+    # Conversational rhetoric openers (Humanizer #33)
+    r"^Honestly\?[\s,]",
+    r"^Truthfully[?,]\s",
+    r"^Look,?\s",
 ]
 
 TRANSITION_OPENERS = [
@@ -91,6 +95,10 @@ FICTION_AI_TELLS = [
     r"the silence (?:was|hung|stretched|grew) (?:heavy|thick|oppressive|deafening)",
     r"let out a breath (?:he|she|they) didn'?t (?:know|realize)",
     r"something (?:dark|ancient|primal|unnamed) stirred",
+    # Copula avoidance -- "serves as" instead of "is" (Humanizer #8)
+    r"\b(?:serves as|serves to|stands as|acts as|functions as)\b",
+    # Generic capstone conclusions (Humanizer #25)
+    r"the future (?:looked|seemed|promised|appeared)",
 ]
 
 # Structural AI tics -- rhetorical formulas that betray AI composition
@@ -101,6 +109,13 @@ STRUCTURAL_AI_TICS = [
     r"[Tt]hose are (?:different|not the same) things\.",  # formula capper
     r"[Nn]ot (?:just|merely|simply) .{3,40}, but ",  # "not just X, but Y"
     r"[Nn]ot (?:from|by|because of) .{3,40}, but (?:from|by|because)",  # "not from X, but from Y" in narration
+    # Authority framing (Humanizer #27)
+    r"^At its core,?",
+    r"^The truth is,?",
+    r"^What matters is,?",
+    r"^The fact (?:is|remains),?",
+    # Aphorism formulas (Humanizer #32)
+    r"\b(?:is|was) the (?:language|art|science|essence|foundation|soul|hallmark|bedrock|currency) of\b",
 ]
 
 # Show-don't-tell detectors: emotion TELLING patterns
@@ -197,6 +212,19 @@ def slop_score(text):
             structural_tics.append((pattern[:40], len(matches)))
     structural_tic_count = sum(c for _, c in structural_tics)
 
+    # Staccato punchline detector (Humanizer #31) — 3+ consecutive sentences ≤4 words
+    staccato_runs = 0
+    for para in paragraphs:
+        para_sents = [s.strip() for s in re.split(r'[.!?]+', para) if len(s.strip().split()) > 0]
+        run = 0
+        for s in para_sents:
+            if len(s.split()) <= 4:
+                run += 1
+                if run == 3:
+                    staccato_runs += 1
+            else:
+                run = 0
+
     # Composite penalty (0 = clean, 10 = disaster)
     penalty = 0.0
     penalty += min(len(tier1_hits) * 1.5, 4.0)       # tier1: up to 4 pts
@@ -211,6 +239,7 @@ def slop_score(text):
     penalty += min(fiction_tell_count * 0.3, 2.0)     # fiction AI tells: up to 2 pts
     penalty += min(telling_count * 0.2, 1.5)          # show-don't-tell: up to 1.5 pts
     penalty += min(structural_tic_count * 0.5, 2.0)   # structural AI tics: up to 2 pts
+    penalty += min(staccato_runs * 0.5, 1.0)          # staccato punchlines: up to 1 pt
 
     penalty = min(penalty, 10.0)
 
@@ -221,6 +250,7 @@ def slop_score(text):
         "tier3_hits": tier3_hits,
         "fiction_ai_tells": fiction_tells,
         "structural_ai_tics": structural_tics,
+        "staccato_runs": staccato_runs,
         "telling_violations": telling_count,
         "em_dash_density": round(em_dash_density, 2),
         "sentence_length_cv": round(sentence_length_cv, 3),

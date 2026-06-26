@@ -69,6 +69,12 @@ Fine in isolation. Three in one paragraph = rewrite.
 | galvanize | motivate, push, rally |
 | cornerstone | foundation, basis, core |
 | game-changer | (be specific about what changed) |
+| serves as / serves to | is, acts as (or just cut) |
+| stands as | is |
+| acts as | is |
+| functions as | is |
+| features | has, (just describe the thing) |
+| boasts | has |
 
 ### Tier 3: Filler phrases that add zero information
 
@@ -182,6 +188,13 @@ LLMs simulate depth by:
 3. Concluding with a vague call to action or "it depends"
 
 None of this adds information. Real depth comes from specific details, data, edge cases, and hard-won experience.
+
+### The generic capstone
+
+LLMs end sentences with placeholder conclusions that sound meaningful but say nothing: "The future looked bright." "Everything had changed." "Nothing would ever be the same." These are filler — they could end any article, chapter, or scene. Real conclusions are specific facts, images, or decisions that belong to THAT piece of writing.
+
+**Slop:** "The future looked bright for the company."
+**Human:** "They shipped the update. Two thousand users signed up overnight."
 
 ---
 

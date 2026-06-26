@@ -80,6 +80,59 @@ def extract_voice_rules() -> list[str]:
     return rules
 
 
+def analyze_writing_sample(sample_text: str) -> list[str]:
+    """
+    Analyze a user-supplied writing sample to calibrate voice rules.
+    Measures sentence rhythm, verb choice, and dialogue patterns
+    to generate personalized rules that supplement the defaults.
+
+    Returns a list of rule strings (empty if sample is too short).
+    """
+    words = sample_text.split()
+    if len(words) < 50:
+        return []
+
+    rules: list[str] = []
+
+    # Sentence rhythm profile
+    sentences = [s.strip() for s in re.split(r'[.!?]+', sample_text) if len(s.strip().split()) > 2]
+    if len(sentences) > 3:
+        lengths = [len(s.split()) for s in sentences]
+        mean_len = sum(lengths) / len(lengths)
+        cv = (sum((l - mean_len) ** 2 for l in lengths) / len(lengths)) ** 0.5 / mean_len if mean_len > 0 else 0
+        rhythm_note = "highly varied, maintain that" if cv > 0.6 else "moderately varied, aim for more mixing" if cv > 0.4 else "too uniform, introduce more short/long contrast"
+        rules.append(f"Calibrated rhythm: sentence length CV {cv:.2f} ({rhythm_note})")
+
+    # Verb profile — check for copula avoidance
+    copula_avoid = re.findall(r'\b(?:serves as|serves to|stands as|acts as|functions as|features|boasts)\b', sample_text, re.IGNORECASE)
+    if len(copula_avoid) > len(words) * 0.005:  # more than 0.5% of words
+        rules.append("Calibrated verb style: sample avoids copula-avoidance verbs (serves as, features, boasts) naturally — keep doing this")
+
+    # Dialogue profile — tag preferences
+    said_tags = len(re.findall(r'\bsaid\b', sample_text, re.IGNORECASE))
+    fancy_tags = len(re.findall(r'\b(snarled|breathed|hissed|growled|purred|spat|huffed|scoffed|retorted|whispered|murmured|muttered|drawled|rasped|croaked)\b', sample_text, re.IGNORECASE))
+    if said_tags + fancy_tags > 3:
+        ratio = fancy_tags / (said_tags + fancy_tags)
+        if ratio < 0.2:
+            rules.append("Calibrated dialogue: sample uses 'said' almost exclusively — maintain this restraint")
+        elif ratio > 0.5:
+            pct = f"{ratio:.0%}"
+            rules.append(f"Calibrated dialogue: sample favors fancy tags ({pct} non-'said') — consider reducing if characters sound samey")
+
+    # Fragment frequency
+    all_sents = [s.strip() for s in re.split(r'[.!?]+', sample_text) if s.strip()]
+    fragments = sum(1 for s in all_sents if len(s.split()) <= 4)
+    frag_pct = fragments / len(all_sents) if all_sents else 0
+    if frag_pct > 0.15:
+        fp = f"{frag_pct:.0%}"
+        rules.append(f"Calibrated fragment usage: sample uses {fp} sentence fragments — good for punch, don't overdo it")
+    elif frag_pct < 0.03 and len(all_sents) > 20:
+        fp = f"{frag_pct:.0%}"
+        rules.append(f"Calibrated fragment usage: sample uses only {fp} fragments — consider adding 1-2 short punch sentences per page")
+
+    return rules
+
+
 def latest_full_eval() -> Path | None:
     """Find the most recent *_full.json in eval_logs/."""
     eval_logs_dir = utils.get_eval_logs_dir()
@@ -167,7 +220,7 @@ def panel_mentions_for_chapter(panel: dict, ch: int) -> dict:
 # brief generators
 # ---------------------------------------------------------------------------
 
-def build_panel_brief(ch: int) -> str:
+def build_panel_brief(ch: int, extra_rules: list[str] | None = None) -> str:
     panel = load_panel()
     if panel is None:
         sys.exit("ERROR: edit_logs/reader_panel.json not found")
@@ -178,7 +231,7 @@ def build_panel_brief(ch: int) -> str:
     info = panel_mentions_for_chapter(panel, ch)
     mentions = info["mentions"]
     flagged = info["flagged_issues"]
-    voice_rules = extract_voice_rules()
+    voice_rules = extract_voice_rules() + (extra_rules or [])
 
     # Determine brief type from dominant issue
     from genre import load_genre
@@ -362,7 +415,7 @@ def build_panel_brief(ch: int) -> str:
     return brief
 
 
-def build_eval_brief(ch: int) -> str:
+def build_eval_brief(ch: int, extra_rules: list[str] | None = None) -> str:
     # Try per-chapter eval first, fall back to full eval
     ch_eval_path = latest_chapter_eval(ch)
     full_eval_path = latest_full_eval()
@@ -373,7 +426,7 @@ def build_eval_brief(ch: int) -> str:
     text = chapter_text(ch)
     title = chapter_title(text)
     wc = word_count(text)
-    voice_rules = extract_voice_rules()
+    voice_rules = extract_voice_rules() + (extra_rules or [])
 
     problem_parts: list[str] = []
     keep_parts: list[str] = []
@@ -508,7 +561,7 @@ def build_eval_brief(ch: int) -> str:
     return brief
 
 
-def build_cuts_brief(ch: int) -> str:
+def build_cuts_brief(ch: int, extra_rules: list[str] | None = None) -> str:
     cuts_data = load_cuts(ch)
     if cuts_data is None:
         sys.exit(f"ERROR: edit_logs/ch{ch:02d}_cuts.json not found")
@@ -516,7 +569,7 @@ def build_cuts_brief(ch: int) -> str:
     text = chapter_text(ch)
     title = chapter_title(text)
     wc = word_count(text)
-    voice_rules = extract_voice_rules()
+    voice_rules = extract_voice_rules() + (extra_rules or [])
 
     cuts = cuts_data.get("cuts", [])
     total_cuttable = cuts_data.get("total_cuttable_words", 0)
@@ -623,7 +676,7 @@ def build_cuts_brief(ch: int) -> str:
     return brief
 
 
-def build_auto_brief() -> tuple[int, str]:
+def build_auto_brief(extra_rules: list[str] | None = None) -> tuple[int, str]:
     """Auto-detect weakest chapter and build a combined brief."""
     full_eval_path = latest_full_eval()
     if full_eval_path is None:
@@ -649,7 +702,7 @@ def build_auto_brief() -> tuple[int, str]:
     text = chapter_text(ch)
     title = chapter_title(text)
     wc = word_count(text)
-    voice_rules = extract_voice_rules()
+    voice_rules = extract_voice_rules() + (extra_rules or [])
 
     problem_parts: list[str] = []
     keep_parts: list[str] = []
@@ -825,10 +878,25 @@ def main():
                         help="Generate brief from adversarial cuts for chapter CH")
     parser.add_argument("--auto", action="store_true",
                         help="Auto-detect weakest chapter and generate combined brief")
+    parser.add_argument("--sample", metavar="FILE",
+                        help="Writing sample file for voice calibration (analyzes rhythm, verb choice, dialogue style)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print brief to stdout without saving")
 
     args = parser.parse_args()
+
+    # Load voice calibration sample if provided
+    calibrated_rules = []
+    if args.sample:
+        sample_path = Path(args.sample)
+        if not sample_path.exists():
+            sys.exit(f"ERROR: sample file not found: {args.sample}")
+        sample_text = sample_path.read_text(encoding="utf-8")
+        calibrated_rules = analyze_writing_sample(sample_text)
+        if calibrated_rules:
+            print(f"Voice calibration: {len(calibrated_rules)} rules derived from sample ({len(sample_text.split())} words)", file=sys.stderr)
+        else:
+            print("Voice calibration: sample too short (<50 words)", file=sys.stderr)
 
     # Validate: exactly one mode
     modes = sum([
@@ -846,18 +914,18 @@ def main():
     # Generate
     if args.panel is not None:
         ch = args.panel
-        brief_text = build_panel_brief(ch)
+        brief_text = build_panel_brief(ch, extra_rules=calibrated_rules)
         suffix = "panel"
     elif args.eval is not None:
         ch = args.eval
-        brief_text = build_eval_brief(ch)
+        brief_text = build_eval_brief(ch, extra_rules=calibrated_rules)
         suffix = "eval"
     elif args.cuts is not None:
         ch = args.cuts
-        brief_text = build_cuts_brief(ch)
+        brief_text = build_cuts_brief(ch, extra_rules=calibrated_rules)
         suffix = "cuts"
     else:  # --auto
-        ch, brief_text = build_auto_brief()
+        ch, brief_text = build_auto_brief(extra_rules=calibrated_rules)
         suffix = "auto"
 
     if args.dry_run:

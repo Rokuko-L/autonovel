@@ -41,8 +41,13 @@ YOUR TASK:
    - FAT: adds nothing, could be removed with no loss
    - REDUNDANT: restates what a previous sentence/scene already showed
    - OVER-EXPLAIN: narrator explaining what the scene already demonstrated
-   - GENERIC: could appear in any novel, not specific to this world/character
-   - TELL: names an emotion or state instead of showing it
+    - GENERIC: could appear in any novel, not specific to this world/character.
+      Includes aphorism formulas ("X is the language of Y"), authority framings
+      ("At its core, what matters is..."), and generic capstone sentences
+      ("The future looked bright.")
+    - TELL: names an emotion or state instead of showing it
+    - STACCATO: manufactured punchlines — 3+ consecutive ultra-short sentences
+      for artificial dramatic effect ("It had no preference. No prior. No nostalgia.")
    - STRUCTURAL: paragraph/section that disrupts pacing or rhythm
    - UNGROUNDED: uses a name, title, term, or concept without it having been
      established in the disclosure ceiling above. Example: a character is addressed
@@ -70,6 +75,11 @@ Respond with JSON:
   "overall_fat_percentage": N,
   "one_sentence_verdict": "what this chapter does well and what drags it down, in one sentence"
 }}
+
+IMPORTANT: After you finish your first pass, do a second read.
+Ask yourself: "Does any sentence here still feel like an LLM wrote it?"
+If yes, flag those too. Trust the instinct — if it sounds clean, generic,
+or too perfectly balanced, it's probably AI-slop.
 """
 
 def edit_chapter(ch_num):
