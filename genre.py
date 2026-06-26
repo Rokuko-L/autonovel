@@ -37,6 +37,7 @@ REQUIRED_KEYS = [
     "evaluation.reader_panel", "evaluation.reader_panel.genre_reader_identity",
     "framework.lore_priorities", "framework.character_framework", "framework.plot_framework",
     "framework.disclosure_framework",
+    "framework.premise_arc", "framework.premise_arc_beats",
 ]
 
 FOUNDATION_DIM_KEYS = {"world_depth", "character_depth", "plot_structure",
@@ -119,10 +120,14 @@ def validate(config):
         errors.append("evaluator_system must start with 'You are a literary critic...'")
     
     # Check framework fields
-    for fkey in ["lore_priorities", "character_framework", "plot_framework", "disclosure_framework"]:
+    for fkey in ["lore_priorities", "character_framework", "plot_framework", "disclosure_framework", "premise_arc"]:
         val = _get_nested(config, f"framework.{fkey}")
         if val and len(str(val).strip()) < 20:
             errors.append(f"framework.{fkey} too short ({len(str(val).strip())} chars)")
+    
+    pbeats = _get_nested(config, "framework.premise_arc_beats")
+    if not isinstance(pbeats, list) or len(pbeats) < 3 or len(pbeats) > 6:
+        errors.append(f"framework.premise_arc_beats must be a list of 3-6 beat labels, got: {type(pbeats).__name__} ({len(pbeats) if isinstance(pbeats, list) else 'N/A'})")
     
     if errors:
         raise ValueError("Genre config validation failed:\n  " + "\n  ".join(errors))

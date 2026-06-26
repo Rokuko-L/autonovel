@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate outline.md from seed + world + characters + mystery + craft."""
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -14,6 +15,11 @@ def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
     return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600)
 
 def main():
+    parser = argparse.ArgumentParser(description="Generate chapter outline.")
+    parser.add_argument("--retry-feedback", default="",
+                        help="Error feedback from previous attempt (missing/out-of-order premise beats)")
+    args = parser.parse_args()
+
     root = utils.get_root_dir()
     required = {
         "seed.txt": utils.get_seed_path(),
@@ -40,11 +46,26 @@ def main():
     voice_part2 = '\n'.join(voice_lines[part2_start:])
 
     genre_cfg = load_genre()
+
+    # Format premise_arc_beats as a numbered list for the prompt template
+    beats = genre_cfg.get("framework", {}).get("premise_arc_beats", [])
+    numbered_beats = "\n".join(f"{i+1}. {b}" for i, b in enumerate(beats))
+
     prompt = format_prompt(
         genre_cfg["generation"]["gen_outline_prompt"],
         seed=seed, world=world, characters=characters,
-        mystery=mystery, voice_part2=voice_part2, craft=craft
+        mystery=mystery, voice_part2=voice_part2, craft=craft,
+        premise_arc_beats=numbered_beats
     )
+
+    # Append retry feedback for targeted chapter 1 regen if this is a retry
+    if args.retry_feedback:
+        prompt += (
+            f"\n\nYOUR PREVIOUS ATTEMPT HAD THESE ERRORS:\n{args.retry_feedback}\n\n"
+            "IMPORTANT: Keep every chapter's outline identical to the previous attempt "
+            "except Chapter 1's PREMISE BEATS section — regenerate only that section "
+            "to fix the errors listed above. Do not change any other chapter."
+        )
 
     print("Calling writer model...", file=sys.stderr)
     for attempt in range(2):

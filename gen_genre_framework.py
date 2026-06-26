@@ -76,13 +76,13 @@ Generate the structural genre configuration as valid JSON. Do not write any gene
       "chapter": {{
         "overall_calibration": "str — overall chapter calibration",
         "dimensions": [
-          {{"key": "voice_adherence", "weight": 0.175, "criteria": "str"}},
-          {{"key": "beat_coverage", "weight": 0.15, "criteria": "str"}},
+          {{"key": "voice_adherence", "weight": 0.15, "criteria": "str"}},
+          {{"key": "beat_coverage", "weight": 0.125, "criteria": "str"}},
           {{"key": "character_voice", "weight": 0.175, "criteria": "str"}},
-          {{"key": "prose_quality", "weight": 0.175, "criteria": "str"}},
+          {{"key": "prose_quality", "weight": 0.15, "criteria": "str"}},
           {{"key": "engagement", "weight": 0.15, "criteria": "str"}},
           {{"key": "continuity", "weight": 0.1, "criteria": "str"}},
-          {{"key": "reader_grounding", "weight": 0.075, "criteria": "str — evaluate whether this chapter assumes knowledge that has not yet been put on the page, or uses names/titles/terms without introducing them. Low score = the chapter expects the reader to know something that canon-through-previous-chapters doesn't establish. Cite the specific offending phrase."}}
+          {{"key": "reader_grounding", "weight": 0.15, "criteria": "str — evaluate whether this chapter assumes knowledge that has not yet been put on the page, or uses names/titles/terms without introducing them. Low score = the chapter expects the reader to know something that canon-through-previous-chapters doesn't establish. Cite the specific offending phrase."}}
         ]
       }},
       "reader_panel": {{
@@ -120,7 +120,11 @@ Generate the structural genre configuration as valid JSON. Do not write any gene
       "stability_trap_applies": true,
       "character_framework": "str",
       "plot_framework": "str",
-      "disclosure_framework": "str — per-genre description of how this genre orients new readers. Examples: 'drops readers into the middle and backfills through context'; 'slow, deliberate setup with heavy orientation beats in ch1-3'; 'genre-savvy opening that assumes reader knows the tropes and plays with subversion immediately'; 'procedural, establishes physical and social rules before introducing conflict'. State how many chapters typically pass before the reader has a complete picture of the world/genre premise."
+      "disclosure_framework": "str — per-genre description of how this genre orients new readers. Examples: 'drops readers into the middle and backfills through context'; 'slow, deliberate setup with heavy orientation beats in ch1-3'; 'genre-savvy opening that assumes reader knows the tropes and plays with subversion immediately'; 'procedural, establishes physical and social rules before introducing conflict'. State how many chapters typically pass before the reader has a complete picture of the world/genre premise.",
+      "premise_arc": "str — narrative description of how premise is established before the main plot begins. Example for isekai: 'cold open in the game/ordinary world — reader attaches to the setting first; then reveals the MC as an observer commenting on it; inciting incident (isekai/reincarnation); arrival in the new world; reaction and rules exposition; THEN chapter 1 proper.' Example for mystery: 'open on the discovery (the body, the crime scene); establish the investigator's presence and relationship to the event; backfill just enough context to make the investigation matter; then proceed.'",
+      "premise_arc_beats": [
+        "str — snake_case beat labels in required order for chapter 1's premise-establishment phase. 3-6 beats. Each beat is one required scene-slot in the outline. Examples: Isekai: ['ordinary_world', 'observer_reveal', 'inciting_incident', 'arrival', 'reaction_rules']; Mystery: ['discovery', 'investigator_intro', 'context_backfill']; Political comedy: ['power_dynamic', 'inciting_disruption', 'flawed_response', 'consequences']; Literary: ['ordinary_world', 'crack', 'descent', 'new_equilibrium']."
+      ]
     }}
 
 === RULES ===
@@ -164,7 +168,7 @@ Generate the complete content generation configuration block ("generation") as v
 - Prompts MUST use the template parameters as required (using either single braces like {{placeholder}} or double braces like {{{{placeholder}}}}). Specifically:
   * "gen_world_prompt" MUST contain: {{seed}} AND {{voice_part2}}
   * "gen_characters_prompt" MUST contain: {{seed}} AND {{world}} AND {{voice_part2}}
-  * "gen_outline_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}} AND {{voice_part2}}
+  * "gen_outline_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}} AND {{voice_part2}} AND {{premise_arc_beats}}
   * "gen_outline_part2_prompt" MUST contain: {{part1}}
   * "gen_canon_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}}. Frame it as extracting baseline canon facts from the seed/world/characters themselves (not from a chapter), marking them as "true from the start but not yet revealed to readers."
 - "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a unique, evocative, and thematic chapter title for every single chapter (e.g., in the format "Chapter N: Title") instead of using generic titles like "Chapter N".
@@ -174,11 +178,20 @@ Generate the complete content generation configuration block ("generation") as v
     - Stylistic logs (e.g., diary records, or at most ONE system diagnostic log like `priority_override_failed` if the genre features technology/systems)
     Give the writer model the flexibility to choose or blend these styles creatively.
     * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An".
+- "gen_outline_prompt" MUST instruct the outline writer that Chapter 1's entry MUST include a parseable "PREMISE BEATS" section containing one bullet per beat from the premise_arc_beats list (passed as {{premise_arc_beats}}, formatted as a numbered list). Required format:
+    PREMISE BEATS:
+    - {beat_label}: {scene summary}
+    - {beat_label}: {scene summary}
+    ...
+  All beats must appear, in order. Each beat gets a real scene description (not a single sentence — a real summary of what happens in that scene). After the premise beats, include a "MAIN PLOT:" section for Chapter 1's post-premise content.
+  Also instruct that Chapter 1 must be comprehensible to a reader who knows NOTHING about the story. Every location, person, and concept must be introduced through the chapter's events — not assumed. The inciting incident should NOT occur in the first premise beat; the reader needs to orient to the ordinary world first.
 - "draft_chapter_instructions" MUST instruct the writer to start the chapter markdown file with a top-level header including both the chapter number and the specific title from the outline (e.g., "# Chapter N: [Title]").
 - "draft_chapter_instructions" must weave in a firm requirement that each chapter is approximately {words_per_chapter} words.
+- "draft_chapter_instructions" MUST instruct the chapter writer: Chapter 1's outline contains a "PREMISE BEATS" section. The writer MUST draft prose for each beat in order before moving to the MAIN PLOT scenes. Each beat gets real scene treatment — do not compress or skip beats. The reader knows nothing about this world at the start of Chapter 1.
 - The "framework" section from PASS1 contains "disclosure_framework" — a per-genre description of how this genre orients new readers. You MUST thread this into:
     * "gen_outline_prompt": instruct the outline writer to schedule heavier setup/orientation beats early when the genre calls for it, and to pace revelation according to the disclosure convention.
     * "draft_chapter_instructions": instruct the chapter writer about the expected pacing of reader orientation and disclosure for this genre.
+- The "framework" section from PASS1 contains "premise_arc_beats" — a list of required beat labels in order for chapter 1's premise-establishment phase. Format {{premise_arc_beats}} as a numbered list when injecting into the gen_outline_prompt template (so the writer model sees "1. beat_name\n2. beat_name\n..." instead of a raw list or comma-separated string).
 - "anti_pattern_rules" MUST include: 'POV characters never use real-world publishing/genre vocabulary ("isekai," "protagonist," "trope," "genre," "plot armor," "chapter," "narrator") to describe their own situation, unless the work is explicitly metafictional. Characters should think and speak as people in their world, not as writers or readers.'
 - All section headers and focus areas must align directly with what the prompt templates require.
 

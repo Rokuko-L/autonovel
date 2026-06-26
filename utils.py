@@ -1,6 +1,7 @@
 import _utf8
 import os
 import json
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 import httpx
@@ -791,4 +792,87 @@ def validate_generator_output(content: str, name: str, min_len: int = 100, expec
             if h not in content:
                 raise RuntimeError(f"{name}: output missing expected header '{h}'")
     return content
+
+
+def parse_premise_beats(outline_text: str) -> list[dict]:
+    """
+    Extract premise beats from Chapter 1's PREMISE BEATS section in the outline.
+    Returns list of {"beat": str, "scene_summary": str} in order found.
+    Returns empty list if no PREMISE BEATS section is found.
+
+    Handles:
+      - Bullet chars: -, *, +
+      - Maxsplit=1 on colon to avoid breaking on colons in scene_summary
+      - Case-insensitive section header matching with optional markdown decoration
+    """
+    lines = outline_text.split('\n')
+    in_section = False
+    beats = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect PREMISE BEATS header (case-insensitive, optional markdown decoration)
+        header_match = re.match(
+            r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
+        )
+        if header_match:
+            in_section = True
+            continue
+
+        # Detect section end: another heading or MAIN PLOT
+        end_match = re.match(
+            r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
+        )
+        if in_section and end_match:
+            break
+
+        if in_section:
+            # Match bullet lines: -, *, or +
+            bullet_match = re.match(r'^[-*+]\s+(.+)$', stripped)
+            if not bullet_match:
+                continue
+            content = bullet_match.group(1).strip()
+            # Split on first colon only
+            colon_idx = content.find(':')
+            if colon_idx == -1:
+                beats.append({"beat": content.strip(), "scene_summary": ""})
+            else:
+                beat_label = content[:colon_idx].strip()
+                scene_summary = content[colon_idx + 1:].strip()
+                beats.append({"beat": beat_label, "scene_summary": scene_summary})
+
+    return beats
+
+
+def validate_premise_beats(required_beats: list[str], outline_text: str) -> tuple[bool, str]:
+    """
+    Validate that Chapter 1's PREMISE BEATS section contains all required beats
+    in relative order (subsequence match, not exact match — extra unlisted beats
+    between required ones are allowed).
+
+    Returns (passed: bool, error_message: str).
+    """
+    present = parse_premise_beats(outline_text)
+    present_labels = [b["beat"] for b in present]
+
+    if not present_labels:
+        return False, "No PREMISE BEATS section found in Chapter 1 outline"
+
+    # Subsequence check: all required beats must appear in present_labels, in order
+    missing = []
+    it = iter(present_labels)
+    for required in required_beats:
+        found = False
+        for p in it:
+            if p == required:
+                found = True
+                break
+        if not found:
+            missing.append(required)
+
+    if missing:
+        return False, f"Missing premise beat(s): {', '.join(missing)}"
+
+    return True, ""
 

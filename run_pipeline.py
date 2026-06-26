@@ -32,7 +32,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from genre import load_genre
-from utils import call_anthropic
+from utils import call_anthropic, validate_premise_beats
 import utils
 
 load_dotenv()
@@ -45,6 +45,7 @@ FOUNDATION_THRESHOLD = 7.5
 CHAPTER_THRESHOLD = 7.0
 MAX_FOUNDATION_ITERS = 20
 MAX_CHAPTER_ATTEMPTS = 5
+MAX_OUTLINE_ATTEMPTS = 5
 MIN_REVISION_CYCLES = 3
 MAX_REVISION_CYCLES = 6
 PLATEAU_DELTA = 0.3
@@ -479,6 +480,35 @@ def run_foundation(state: dict) -> dict:
 
         step("Generating outline (part 1)...")
         uv_run("gen_outline.py", timeout=900)
+
+        # Validate Chapter 1 premise beats (pre-draft gate)
+        outline_path = utils.get_outline_path()
+        genre_cfg = load_genre()
+        required_beats = genre_cfg.get("framework", {}).get("premise_arc_beats", [])
+        premise_passed = False
+        premise_last_error = ""
+        for oa in range(1, MAX_OUTLINE_ATTEMPTS + 1):
+            outline_text = outline_path.read_text(encoding="utf-8")
+            passed, error = validate_premise_beats(required_beats, outline_text)
+            if passed:
+                premise_passed = True
+                step(f"Chapter 1 premise beats validated (attempt {oa})")
+                break
+            premise_last_error = error
+            step(f"Chapter 1 premise beat validation FAILED (attempt {oa}/{MAX_OUTLINE_ATTEMPTS}): {error}")
+            if oa == MAX_OUTLINE_ATTEMPTS:
+                step("REPEATED FAILURE — check genre framework premise_arc_beats, not just regen")
+                break
+            step("Regenerating outline with targeted retry feedback...")
+            uv_run(f'gen_outline.py --retry-feedback "{error}"', timeout=900)
+
+        # Write premise validation sidecar
+        prem_val_path = utils.get_project_dir() / "premise_validation.json"
+        prem_val_path.write_text(json.dumps({
+            "passed": premise_passed,
+            "attempts": oa if premise_passed else MAX_OUTLINE_ATTEMPTS,
+            "last_error": "" if premise_passed else premise_last_error,
+        }, indent=2), encoding="utf-8")
 
         step("Generating outline (part 2 — foreshadowing)...")
         uv_run("gen_outline_part2.py", timeout=600)

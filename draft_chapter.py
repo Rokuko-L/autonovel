@@ -3,12 +3,13 @@
 Draft a single chapter using the writer model.
 Usage: python draft_chapter.py 1
 """
+import json
 import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_novel_title
+from utils import call_anthropic, get_novel_title, parse_premise_beats
 from genre import load_genre
 
 load_dotenv()
@@ -93,8 +94,44 @@ def main():
         prev_tail = prev_text[-2000:] if len(prev_text) > 2000 else prev_text
     else:
         prev_tail = "(first chapter -- no previous)"
-    
+
     title = get_novel_title()
+
+    # Chapter 1 premise-beat guardrail — enumerate beats from the validated outline
+    premise_guardrail = ""
+    if chapter_num == 1:
+        beats = parse_premise_beats(outline)
+        if beats:
+            beat_lines = "\n".join(
+                f"  {i+1}. {b['beat']} — {b['scene_summary']}"
+                for i, b in enumerate(beats)
+            )
+            premise_guardrail = f"""
+CHAPTER 1 READER ORIENTATION:
+Your outline for this chapter contains these required premise-establishment
+beats, in order. You MUST draft prose for each beat before moving to the
+chapter's main plot scenes. Each beat gets real scene treatment — do not
+compress, skip, or summarize a beat in a single sentence.
+
+PREMISE BEATS:
+{beat_lines}
+
+The reader knows nothing about this world, these characters, or this story
+at the start of this chapter. Introduce everything through showing — not
+through assumed knowledge. Every name, title, location, and relationship
+must be established through the events of this chapter.
+"""
+        # Check premise validation flag
+        prem_val_path = utils.get_project_dir() / "premise_validation.json"
+        if prem_val_path.exists():
+            prem_val = json.loads(prem_val_path.read_text(encoding="utf-8"))
+            if not prem_val.get("passed"):
+                premise_guardrail += (
+                    "\nNOTE: This chapter's outline did not pass automated premise-beat "
+                    "validation. The beats listed above may be incomplete or out of order. "
+                    "Weigh reader-grounding with extra scrutiny — ensure every concept is "
+                    "properly introduced on the page.\n"
+                )
     prompt = f"""Write Chapter {chapter_num} of "{title}."
 
 VOICE DEFINITION (follow this exactly):
@@ -135,6 +172,7 @@ events — not assumed, not name-dropped):
 WRITING INSTRUCTIONS:
 {load_genre()["generation"]["draft_chapter_instructions"]}
 
+{premise_guardrail}
 Write the chapter now. Full text, beginning to end.
 """
 
