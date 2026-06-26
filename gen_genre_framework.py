@@ -150,7 +150,7 @@ Generate the complete content generation configuration block ("generation") as v
      "gen_characters_prompt": "...",
      "gen_outline_prompt": "...",
      "gen_outline_part2_prompt": "...",
-     "gen_canon_prompt": "...",
+      "gen_canon_prompt": "Extract baseline canon facts from the seed {{seed}}, world bible {{world}}, and character registry {{characters}} — these are true from the start of the story but have not yet been revealed to any reader. Output structured facts only; do not repeat world-building verbatim.",
      "draft_chapter_instructions": "...",
      "anti_pattern_rules": "...",
      "canon_categories": ["list of category headers"],
@@ -164,7 +164,7 @@ Generate the complete content generation configuration block ("generation") as v
   * "gen_characters_prompt" MUST contain: {{seed}} AND {{world}} AND {{voice_part2}}
   * "gen_outline_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}} AND {{voice_part2}}
   * "gen_outline_part2_prompt" MUST contain: {{part1}}
-  * "gen_canon_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}}
+  * "gen_canon_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}}. Frame it as extracting baseline canon facts from the seed/world/characters themselves (not from a chapter), marking them as "true from the start but not yet revealed to readers."
 - "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a unique, evocative, and thematic chapter title for every single chapter (e.g., in the format "Chapter N: Title") instead of using generic titles like "Chapter N".
   * Recommend style guidelines and examples for chapter titles that match the tone/genre of the novel. Show that chapter titles can be:
     - Witty, self-aware meta-commentary (e.g., "In Which Things Go Wrong Immediately")

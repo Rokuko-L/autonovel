@@ -585,6 +585,29 @@ def run_drafting(state: dict) -> dict:
                            "keep", f"Chapter {ch} (attempt {attempt})")
                 state["chapters_drafted"] = ch
                 save_state(state)
+
+                # Append canon entries from the kept evaluation's output
+                try:
+                    eval_json = json.loads(eval_result.stdout)
+                    canon_entries = eval_json.get("new_canon_entries", [])
+                    unexplained = eval_json.get("unexplained_references", [])
+                    if canon_entries or unexplained:
+                        canon_path = utils.get_canon_path()
+                        canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
+                        header = f"## As of Chapter {ch}"
+                        if header not in canon_text:
+                            with canon_path.open("a", encoding="utf-8") as f:
+                                f.write(f"\n\n{header}\n\n")
+                                if canon_entries:
+                                    for entry in canon_entries:
+                                        f.write(f"- {entry}\n")
+                                if unexplained:
+                                    f.write("\n**Unexplained references:**\n")
+                                    for ref in unexplained:
+                                        f.write(f"- {ref}\n")
+                except (json.JSONDecodeError, KeyError, OSError) as e:
+                    step(f"WARN: Could not extract canon entries from eval output: {e}")
+
                 drafted = True
                 break
             else:
@@ -629,6 +652,9 @@ def run_drafting(state: dict) -> dict:
                 step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts and no valid drafts were generated.")
 
     # All chapters drafted
+    # TODO: revision phase may rewrite chapter text without re-syncing canon.md.
+    # Future work: after each revision cycle, re-run canon extraction from
+    # the revised chapters and replace the ## As of Chapter N sections.
     state["phase"] = "revision"
     state["current_focus"] = "full_novel"
     state["chapters_drafted"] = total

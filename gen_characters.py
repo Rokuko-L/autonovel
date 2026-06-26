@@ -38,7 +38,16 @@ def main():
     prompt = format_prompt(genre["generation"]["gen_characters_prompt"], seed=seed, world=world, voice_part2=voice_part2)
 
     print("Calling writer model...", file=sys.stderr)
-    result = call_writer(prompt)
+    for attempt in range(2):
+        result = call_writer(prompt)
+        try:
+            utils.validate_generator_output(result, "gen_characters.py", min_len=500, expected_headers=["# ", "## "])
+            break
+        except RuntimeError as e:
+            if attempt == 0:
+                print(f"  WARN: {e}, retrying...", file=sys.stderr)
+            else:
+                raise
     utils.get_characters_path().write_text(result, encoding="utf-8")
     print(result)
 

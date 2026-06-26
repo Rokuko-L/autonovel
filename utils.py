@@ -777,4 +777,18 @@ def generate_default_novel_tex(dest_path: Path):
     dest_path.write_text(template, encoding="utf-8")
 
 
+def validate_generator_output(content: str, name: str, min_len: int = 100, expected_headers: list[str] | None = None) -> str:
+    """Guardrail: check a foundation generator's output is non-empty, meets min length,
+    and has expected headers. Returns the stripped content on success.
+    Raises RuntimeError on failure."""
+    content = content.strip()
+    if not content:
+        raise RuntimeError(f"{name}: output is empty")
+    if len(content) < min_len:
+        raise RuntimeError(f"{name}: output too short ({len(content)} chars, minimum {min_len})")
+    if expected_headers:
+        for h in expected_headers:
+            if h not in content:
+                raise RuntimeError(f"{name}: output missing expected header '{h}'")
+    return content
 

@@ -415,6 +415,13 @@ PREVIOUS CHAPTER (last 1500 words):
 THE CHAPTER TO EVALUATE:
 {chapter_text}
 
+CANON-GROUNDING RULES (read before scoring):
+- new_canon_entries: Record only what was explicitly shown or stated in this chapter's text.
+  Never record background facts from the world/character bible that haven't been put on the page.
+- unexplained_references: Names, titles, or terms used in this chapter whose meaning
+  a first-time reader would not yet understand (e.g. if a character is addressed as "the Saint"
+  but the role hasn't been explained yet).
+
 CROSS-CHECKS (perform before scoring):
 1. QUOTE TEST: Find the 3 best sentences and 3 weakest sentences.
 2. DIALOGUE REALISM: Read all dialogue aloud (mentally).
@@ -438,7 +445,8 @@ Respond with JSON:
   "overall_score": N,
   "weakest_dimension": "...",
   "top_3_revisions": ["specific revision 1", "revision 2", "revision 3"],
-  "new_canon_entries": ["any new facts established"]
+  "new_canon_entries": ["any new facts established"],
+  "unexplained_references": ["names, titles, or terms used in this chapter that were not explained"]
 }}
 
 CRITICAL FORMATTING GUIDELINES:

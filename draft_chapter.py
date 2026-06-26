@@ -28,6 +28,34 @@ def load_file(path):
     except FileNotFoundError:
         return ""
 
+
+def parse_canon(canon_text: str):
+    """Split canon.md into Foundation section and cumulative As-of Chapter sections.
+    Returns (foundation_section, disclosure_ceiling) where disclosure_ceiling is
+    the most recent `## As of Chapter N` block, or None if none exist."""
+    foundation = ""
+    as_of_sections = []
+    current = ""
+    current_header = ""
+    for line in canon_text.splitlines(keepends=True):
+        if line.startswith("## "):
+            if current.strip() and current_header:
+                if current_header.startswith("## Foundation"):
+                    foundation = current
+                elif current_header.startswith("## As of Chapter"):
+                    as_of_sections.append(current)
+            current = ""
+            current_header = line.strip()
+        if current_header:
+            current += line
+    if current.strip() and current_header:
+        if current_header.startswith("## Foundation"):
+            foundation = current
+        elif current_header.startswith("## As of Chapter"):
+            as_of_sections.append(current)
+    disclosure = as_of_sections[-1] if as_of_sections else ""
+    return foundation, disclosure
+
 def extract_chapter_outline(outline_text, chapter_num):
     """Extract a specific chapter's outline entry."""
     pattern = rf'### Ch {chapter_num}:.*?(?=### Ch {chapter_num + 1}:|## Foreshadowing|$)'
@@ -50,7 +78,8 @@ def main():
     world = load_file(utils.get_world_path())
     characters = load_file(utils.get_characters_path())
     outline = load_file(utils.get_outline_path())
-    canon = load_file(utils.get_canon_path())
+    canon_text = load_file(utils.get_canon_path())
+    canon_foundation, canon_disclosure = parse_canon(canon_text)
     
     # Chapter-specific context
     chapter_outline = extract_chapter_outline(outline, chapter_num)
@@ -85,7 +114,24 @@ WORLD BIBLE (reference for worldbuilding details):
 
 CHARACTER REGISTRY (reference for speech patterns and behavior):
 {characters}
+"""
 
+    if canon_foundation:
+        prompt += f"""
+FOUNDATION CANON (private author truth — this shapes how characters think and act,
+but is NOT something they or the narration may state as already established):
+{canon_foundation}
+"""
+
+    if canon_disclosure:
+        prompt += f"""
+DISCLOSURE CEILING (everything that has been put on the page so far. Anything not listed here,
+including anything from the world/character bible, must be introduced through this chapter's
+events — not assumed, not name-dropped):
+{canon_disclosure}
+"""
+
+    prompt += f"""
 WRITING INSTRUCTIONS:
 {load_genre()["generation"]["draft_chapter_instructions"]}
 
