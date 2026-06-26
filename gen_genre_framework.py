@@ -168,9 +168,10 @@ Generate the complete content generation configuration block ("generation") as v
 - "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a unique, evocative, and thematic chapter title for every single chapter (e.g., in the format "Chapter N: Title") instead of using generic titles like "Chapter N".
   * Recommend style guidelines and examples for chapter titles that match the tone/genre of the novel. Show that chapter titles can be:
     - Witty, self-aware meta-commentary (e.g., "In Which Things Go Wrong Immediately")
-    - Character-driven recaps (e.g., "The Dinner Party Disaster")
+    - Character-driven recaps (e.g., "Dinner Party Disaster")
     - Stylistic logs (e.g., diary records, or at most ONE system diagnostic log like `priority_override_failed` if the genre features technology/systems)
     Give the writer model the flexibility to choose or blend these styles creatively.
+    * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An".
 - "draft_chapter_instructions" MUST instruct the writer to start the chapter markdown file with a top-level header including both the chapter number and the specific title from the outline (e.g., "# Chapter N: [Title]").
 - "draft_chapter_instructions" must weave in a firm requirement that each chapter is approximately {words_per_chapter} words.
 - All section headers and focus areas must align directly with what the prompt templates require.

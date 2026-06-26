@@ -473,7 +473,7 @@ def run_foundation(state: dict) -> dict:
 
         step("Generating title tournament...")
         state = load_state()
-        if not state.get("title"):
+        if not state.get("title") or state["title"] == "Untitled":
             uv_run("gen_title.py", timeout=600)
             state = load_state()
 

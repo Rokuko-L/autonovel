@@ -48,7 +48,7 @@ def extract_thematic_core(seed_text: str) -> str:
 def extract_title(seed_text: str, state: dict) -> str:
     """Extract title from seed.txt first line or state.json."""
     title = state.get("title", "")
-    if title and title.lower() != "the novel":
+    if title and title.lower() not in ("the novel", "untitled"):
         return title
     first_line = seed_text.strip().split('\n')[0] if seed_text.strip() else ""
     if first_line.startswith("#"):
