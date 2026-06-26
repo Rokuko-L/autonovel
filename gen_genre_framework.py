@@ -180,8 +180,8 @@ Generate the complete content generation configuration block ("generation") as v
     * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An".
 - "gen_outline_prompt" MUST instruct the outline writer that Chapter 1's entry MUST include a parseable "PREMISE BEATS" section containing one bullet per beat from the premise_arc_beats list (passed as {{premise_arc_beats}}, formatted as a numbered list). Required format:
     PREMISE BEATS:
-    - {beat_label}: {scene summary}
-    - {beat_label}: {scene summary}
+    - {{beat_label}}: {{scene summary}}
+    - {{beat_label}}: {{scene summary}}
     ...
   All beats must appear, in order. Each beat gets a real scene description (not a single sentence — a real summary of what happens in that scene). After the premise beats, include a "MAIN PLOT:" section for Chapter 1's post-premise content.
   Also instruct that Chapter 1 must be comprehensible to a reader who knows NOTHING about the story. Every location, person, and concept must be introduced through the chapter's events — not assumed. The inciting incident should NOT occur in the first premise beat; the reader needs to orient to the ordinary world first.
