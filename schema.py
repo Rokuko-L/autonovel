@@ -84,6 +84,7 @@ class Framework:
     stability_trap_applies: bool = True
     character_framework: str
     plot_framework: str
+    disclosure_framework: str = ""
 
 @dataclass
 class GenreConfig:

@@ -389,7 +389,7 @@ def evaluate_foundation():
 
 # --- Chapter Evaluation ---
 
-def build_chapter_prompt(voice, world, characters, canon, chapter_outline, prev_chapter_tail, chapter_text):
+def build_chapter_prompt(voice, world, characters, canon, chapter_outline, prev_chapter_tail, chapter_text, disclosure_ceiling=""):
     cfg = load_genre()
     ccfg = cfg["evaluation"]["chapter"]
     prompt = ccfg["overall_calibration"] + "\n\n"
@@ -414,6 +414,9 @@ PREVIOUS CHAPTER (last 1500 words):
 
 THE CHAPTER TO EVALUATE:
 {chapter_text}
+
+DISCLOSURE CEILING (everything that has been put on the page through the prior chapter):
+{disclosure_ceiling}
 
 CANON-GROUNDING RULES (read before scoring):
 - new_canon_entries: Record only what was explicitly shown or stated in this chapter's text.
@@ -477,6 +480,19 @@ def evaluate_chapter(chapter_num):
     prev_text = load_chapter(chapter_num - 1) if chapter_num > 1 else "(first chapter)"
     prev_tail = prev_text[-3000:] if len(prev_text) > 3000 else prev_text
 
+    # Extract disclosure ceiling from canon (everything revealed through chapter N-1)
+    disclosure_ceiling = ""
+    canon_text = layers["canon"]
+    if canon_text.strip():
+        as_of_sections = re.findall(r'(## As of Chapter \d+.*?)(?=\n## |\Z)', canon_text, re.DOTALL)
+        if as_of_sections:
+            # Filter to chapters before the current one
+            prior_sections = [s for s in as_of_sections
+                             if re.search(rf'## As of Chapter (\d+)', s)
+                             and int(re.search(r'## As of Chapter (\d+)', s).group(1)) < chapter_num]
+            if prior_sections:
+                disclosure_ceiling = prior_sections[-1]
+
     prompt = build_chapter_prompt(
         voice=layers["voice"],
         world=layers["world"][:4000],  # truncate world bible
@@ -485,6 +501,7 @@ def evaluate_chapter(chapter_num):
         chapter_outline=chapter_outline,
         prev_chapter_tail=prev_tail,
         chapter_text=chapter_text,
+        disclosure_ceiling=disclosure_ceiling,
     )
     result = call_judge_json(prompt, max_tokens=8000)
 

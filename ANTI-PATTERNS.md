@@ -167,6 +167,35 @@ with dialogue and action). Summary is for time compression only.
 
 ## EVALUATION NOTES
 
+---
+
+## 10. META-VOCABULARY CONTAMINATION
+
+**POV characters use real-world publishing/genre vocabulary to describe their own
+situation.** This is a dead giveaway that the writer (or LLM) stopped thinking
+in-character and started thinking in-structure.
+
+Examples:
+- "This feels like an isekai premise." — A character in a fantasy world should
+  not know what "isekai" means.
+- "I'm clearly the protagonist here." — Protagonist is a structural role, not an
+  in-world identity.
+- "This must be the inciting incident." / "There's too much plot armor." /
+  "The author really wants this scene to work."
+- "The chapter ended on a cliffhanger." — Characters don't know what chapters are.
+
+**The only exception:** works that are explicitly metafictional (a character who
+knows they're in a story, a novel about writing a novel, a fourth-wall-breaking
+comedy).
+
+**Rule:** If the character's thought or dialogue contains a word that refers to
+a structural element of fiction (genre name, narrative role, publishing term,
+writing process), rewrite it in in-world terms. "This is exactly what my book
+predicted" instead of "This is exactly like my genre." "I feel like a pawn in
+someone's scheme" instead of "I feel like a side character."
+
+---
+
 These patterns are invisible to standard slop detection (word lists,
 regex). They require either:
 

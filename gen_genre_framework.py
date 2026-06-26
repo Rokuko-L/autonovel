@@ -73,17 +73,18 @@ Generate the structural genre configuration as valid JSON. Do not write any gene
          {{"key": "canon_coverage", "weight": 0.1, "criteria": "str"}}
        ]
      }},
-     "chapter": {{
-       "overall_calibration": "str — overall chapter calibration",
-       "dimensions": [
-         {{"key": "voice_adherence", "weight": 0.2, "criteria": "str"}},
-         {{"key": "beat_coverage", "weight": 0.15, "criteria": "str"}},
-         {{"key": "character_voice", "weight": 0.2, "criteria": "str"}},
-         {{"key": "prose_quality", "weight": 0.2, "criteria": "str"}},
-         {{"key": "engagement", "weight": 0.15, "criteria": "str"}},
-         {{"key": "continuity", "weight": 0.1, "criteria": "str"}}
-       ]
-     }},
+      "chapter": {{
+        "overall_calibration": "str — overall chapter calibration",
+        "dimensions": [
+          {{"key": "voice_adherence", "weight": 0.175, "criteria": "str"}},
+          {{"key": "beat_coverage", "weight": 0.15, "criteria": "str"}},
+          {{"key": "character_voice", "weight": 0.175, "criteria": "str"}},
+          {{"key": "prose_quality", "weight": 0.175, "criteria": "str"}},
+          {{"key": "engagement", "weight": 0.15, "criteria": "str"}},
+          {{"key": "continuity", "weight": 0.1, "criteria": "str"}},
+          {{"key": "reader_grounding", "weight": 0.075, "criteria": "str — evaluate whether this chapter assumes knowledge that has not yet been put on the page, or uses names/titles/terms without introducing them. Low score = the chapter expects the reader to know something that canon-through-previous-chapters doesn't establish. Cite the specific offending phrase."}}
+        ]
+      }},
       "reader_panel": {{
         "genre_reader_identity": "str — system prompt for reader panel",
         "prompt_modifications": {{
@@ -115,14 +116,15 @@ Generate the structural genre configuration as valid JSON. Do not write any gene
       }}
    }}
 4. "framework": {{
-     "lore_priorities": "str",
-     "stability_trap_applies": true,
-     "character_framework": "str",
-     "plot_framework": "str"
-   }}
+      "lore_priorities": "str",
+      "stability_trap_applies": true,
+      "character_framework": "str",
+      "plot_framework": "str",
+      "disclosure_framework": "str — per-genre description of how this genre orients new readers. Examples: 'drops readers into the middle and backfills through context'; 'slow, deliberate setup with heavy orientation beats in ch1-3'; 'genre-savvy opening that assumes reader knows the tropes and plays with subversion immediately'; 'procedural, establishes physical and social rules before introducing conflict'. State how many chapters typically pass before the reader has a complete picture of the world/genre premise."
+    }}
 
 === RULES ===
-- Dimension KEYS in evaluation are FIXED (world_depth, character_depth, plot_structure, internal_consistency, voice_clarity, canon_coverage, and voice_adherence, beat_coverage, character_voice, prose_quality, engagement, continuity).
+- Dimension KEYS in evaluation are FIXED (world_depth, character_depth, plot_structure, internal_consistency, voice_clarity, canon_coverage, and voice_adherence, beat_coverage, character_voice, prose_quality, engagement, continuity, reader_grounding).
 - Dimension weights must sum to 1.0 (allow ±0.02).
 - Criteria strings must be specific and actionable (30+ characters).
 - evaluator_system must start with "You are a literary critic and novel editor."
@@ -174,6 +176,10 @@ Generate the complete content generation configuration block ("generation") as v
     * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An".
 - "draft_chapter_instructions" MUST instruct the writer to start the chapter markdown file with a top-level header including both the chapter number and the specific title from the outline (e.g., "# Chapter N: [Title]").
 - "draft_chapter_instructions" must weave in a firm requirement that each chapter is approximately {words_per_chapter} words.
+- The "framework" section from PASS1 contains "disclosure_framework" — a per-genre description of how this genre orients new readers. You MUST thread this into:
+    * "gen_outline_prompt": instruct the outline writer to schedule heavier setup/orientation beats early when the genre calls for it, and to pace revelation according to the disclosure convention.
+    * "draft_chapter_instructions": instruct the chapter writer about the expected pacing of reader orientation and disclosure for this genre.
+- "anti_pattern_rules" MUST include: 'POV characters never use real-world publishing/genre vocabulary ("isekai," "protagonist," "trope," "genre," "plot armor," "chapter," "narrator") to describe their own situation, unless the work is explicitly metafictional. Characters should think and speak as people in their world, not as writers or readers.'
 - All section headers and focus areas must align directly with what the prompt templates require.
 
 """

@@ -36,12 +36,14 @@ REQUIRED_KEYS = [
     "evaluation.chapter.dimensions",
     "evaluation.reader_panel", "evaluation.reader_panel.genre_reader_identity",
     "framework.lore_priorities", "framework.character_framework", "framework.plot_framework",
+    "framework.disclosure_framework",
 ]
 
 FOUNDATION_DIM_KEYS = {"world_depth", "character_depth", "plot_structure",
                         "internal_consistency", "voice_clarity", "canon_coverage"}
 CHAPTER_DIM_KEYS = {"voice_adherence", "beat_coverage", "character_voice",
-                     "prose_quality", "engagement", "continuity"}
+                     "prose_quality", "engagement", "continuity",
+                     "reader_grounding"}
 
 def _get_nested(d, key):
     """Get nested key like 'identity.seed_system' from dict."""
@@ -117,7 +119,7 @@ def validate(config):
         errors.append("evaluator_system must start with 'You are a literary critic...'")
     
     # Check framework fields
-    for fkey in ["lore_priorities", "character_framework", "plot_framework"]:
+    for fkey in ["lore_priorities", "character_framework", "plot_framework", "disclosure_framework"]:
         val = _get_nested(config, f"framework.{fkey}")
         if val and len(str(val).strip()) < 20:
             errors.append(f"framework.{fkey} too short ({len(str(val).strip())} chars)")

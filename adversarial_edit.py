@@ -29,6 +29,9 @@ what to cut or rewrite to make this chapter tighter, sharper, more alive.
 THE CHAPTER ({word_count} words):
 {chapter_text}
 
+DISCLOSURE CEILING (everything established on the page through prior chapters):
+{canon_context}
+
 YOUR TASK:
 1. Find 10-20 specific passages that should be CUT or REWRITTEN.
    For each, quote the EXACT text (minimum 10 words of the quote so
@@ -41,6 +44,9 @@ YOUR TASK:
    - GENERIC: could appear in any novel, not specific to this world/character
    - TELL: names an emotion or state instead of showing it
    - STRUCTURAL: paragraph/section that disrupts pacing or rhythm
+   - UNGROUNDED: uses a name, title, term, or concept without it having been
+     established in the disclosure ceiling above. Example: a character is addressed
+     as "the Saint" but no prior chapter has explained what a Saint is.
 
 3. For REWRITE candidates (not cuts), provide a specific revision.
 
@@ -72,8 +78,21 @@ def edit_chapter(ch_num):
     ch_path = chapters_dir / f"ch_{ch_num:02d}.md"
     text = ch_path.read_text(encoding="utf-8")
     word_count = len(text.split())
-    
-    prompt = EDIT_PROMPT.format(chapter_text=text, word_count=word_count)
+
+    # Load canon disclosure ceiling (everything revealed through prior chapters)
+    canon_text = ""
+    canon_path = utils.get_canon_path()
+    if canon_path.exists():
+        raw = canon_path.read_text(encoding="utf-8")
+        as_of_sections = re.findall(r'(## As of Chapter \d+.*?)(?=\n## |\Z)', raw, re.DOTALL)
+        if as_of_sections:
+            prior = [s for s in as_of_sections
+                     if re.search(r'## As of Chapter (\d+)', s)
+                     and int(re.search(r'## As of Chapter (\d+)', s).group(1)) < ch_num]
+            if prior:
+                canon_text = prior[-1]
+
+    prompt = EDIT_PROMPT.format(chapter_text=text, word_count=word_count, canon_context=canon_text or "(first chapter or no canon established yet)")
     raw = call_judge(prompt)
     result = parse_json(raw)
     
