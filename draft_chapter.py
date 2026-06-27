@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_novel_title, parse_premise_beats
+from utils import call_anthropic, get_novel_title, parse_premise_beats, check_structural_repetition
 from genre import load_genre
 
 load_dotenv()
@@ -116,6 +116,24 @@ compress, skip, or summarize a beat in a single sentence.
 PREMISE BEATS:
 {beat_lines}
 
+CRITICAL: These beat names (e.g. "ordinary_world", "observer_reveal") are
+internal labels for your planning only. Do NOT print them, bold them,
+reference them, or use them as section headers in the chapter output.
+Write continuous prose with no section breaks between beats — the transition
+between beats should be a natural prose transition, not a labeled divider.
+
+If a beat's summary contains a list (e.g. multiple rules, multiple
+observations, multiple items), present them together in one consolidated
+scene. Do not repeat the surrounding scene-setting (checking UI, looking at
+the calendar, etc.) for each sub-item. Weave the list items into a single
+continuous narrative moment.
+
+Each beat should introduce content that hasn't appeared in an earlier beat.
+Do not have the character re-discover, re-read, or re-react to the same
+object, document, or realization (e.g. a letter, a UI element, an escape
+plan) in more than one beat. If something was established in an earlier
+beat, reference it briefly rather than re-narrating the full discovery again.
+
 The reader knows nothing about this world, these characters, or this story
 at the start of this chapter. Introduce everything through showing — not
 through assumed knowledge. Every name, title, location, and relationship
@@ -176,9 +194,26 @@ WRITING INSTRUCTIONS:
 Write the chapter now. Full text, beginning to end.
 """
 
-    print(f"Drafting Chapter {chapter_num}...", file=sys.stderr)
-    result = call_writer(prompt)
-    
+    MAX_REP_ATTEMPTS = 2
+    repetition_feedback = ""
+
+    for attempt in range(1, MAX_REP_ATTEMPTS + 1):
+        print(f"Drafting Chapter {chapter_num} (attempt {attempt})...", file=sys.stderr)
+        result = call_writer(prompt + repetition_feedback)
+
+        rep_regen, rep_feedback, rep_sidecar = check_structural_repetition(result)
+
+        # Write sidecar
+        rep_path = chapters_dir / "repetition_check.json"
+        rep_path.write_text(json.dumps(rep_sidecar, indent=2), encoding="utf-8")
+
+        if not rep_regen or attempt == MAX_REP_ATTEMPTS:
+            break
+
+        # Build targeted feedback for regen
+        repetition_feedback = "\n\nREPETITION FIX REQUIRED:\n" + "\n".join(rep_feedback)
+        print(f"  Structural repetition detected — retrying...", file=sys.stderr)
+
     # Save
     out_path = chapters_dir / f"ch_{chapter_num:02d}.md"
     out_path.write_text(result, encoding="utf-8")
