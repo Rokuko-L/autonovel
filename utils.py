@@ -866,15 +866,60 @@ def _parse_bold_numbered_beats(outline_text: str) -> list[dict]:
     return beats
 
 
+def _parse_plain_numbered_beats(outline_text: str) -> list[dict]:
+    """Fallback — extract beats from plain numbered format:
+
+      1. beat_label: scene summary
+      2. beat_label: scene summary
+
+    Matches the style most models naturally produce when told a 'numbered list'.
+    """
+    lines = outline_text.split('\n')
+    in_section = False
+    beats = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        header_match = re.match(
+            r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
+        )
+        if header_match:
+            in_section = True
+            continue
+
+        end_match = re.match(
+            r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
+        )
+        if in_section and end_match:
+            break
+
+        if in_section:
+            numbered_match = re.match(r'^\s*\d+[\.\)]\s+(.+)$', stripped)
+            if not numbered_match:
+                continue
+            content = numbered_match.group(1).strip()
+            colon_idx = content.find(':')
+            if colon_idx == -1:
+                beats.append({"beat": content.strip(), "scene_summary": ""})
+            else:
+                beat_label = content[:colon_idx].strip()
+                scene_summary = content[colon_idx + 1:].strip()
+                beats.append({"beat": beat_label, "scene_summary": scene_summary})
+
+    return beats
+
+
 def parse_premise_beats(outline_text: str) -> list[dict]:
     """
     Extract premise beats from Chapter 1's PREMISE BEATS section in the outline.
     Returns list of {"beat": str, "scene_summary": str} in order found.
     Returns empty list if no PREMISE BEATS section is found.
 
-    Tries two formats in order:
+    Tries three formats in order:
       1. Bullet lines:  - beat_label: scene summary
-      2. Bold-numbered: **N. beat_label (POV info)** then paragraph
+      2. Plain numbered: N. beat_label: scene summary
+      3. Bold-numbered: **N. beat_label (POV info)** then paragraph
     """
     lines = outline_text.split('\n')
     in_section = False
@@ -909,6 +954,8 @@ def parse_premise_beats(outline_text: str) -> list[dict]:
                 scene_summary = content[colon_idx + 1:].strip()
                 beats.append({"beat": beat_label, "scene_summary": scene_summary})
 
+    if not beats:
+        beats = _parse_plain_numbered_beats(outline_text)
     if not beats:
         beats = _parse_bold_numbered_beats(outline_text)
 

@@ -501,8 +501,8 @@ def run_foundation(state: dict) -> dict:
                 break
             step("Regenerating outline with targeted retry feedback...")
             format_hint = (
-                " Use bold-numbered format: **N. beat_label (POV: Character)**"
-                " on its own line, then a scene description paragraph."
+                " Use bullet format: '- beat_label: scene description'"
+                " — one line per beat inside the PREMISE BEATS section."
             )
             uv_run(f'gen_outline.py --retry-feedback "{error}.{format_hint}"', timeout=900)
 

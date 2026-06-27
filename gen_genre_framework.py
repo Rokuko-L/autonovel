@@ -178,7 +178,7 @@ Generate the complete content generation configuration block ("generation") as v
     - Stylistic logs (e.g., diary records, or at most ONE system diagnostic log like `priority_override_failed` if the genre features technology/systems)
     Give the writer model the flexibility to choose or blend these styles creatively.
     * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An".
-- "gen_outline_prompt" MUST instruct the outline writer that Chapter 1's entry MUST include a parseable "PREMISE BEATS" section containing one bullet per beat from the premise_arc_beats list (passed as {{premise_arc_beats}}, formatted as a numbered list). Required format:
+- "gen_outline_prompt" MUST instruct the outline writer that Chapter 1's entry MUST include a parseable "PREMISE BEATS" section containing one bullet per beat from the premise_arc_beats list (passed as {{premise_arc_beats}}). Required format:
     PREMISE BEATS:
     - {{beat_label}}: {{scene summary}}
     - {{beat_label}}: {{scene summary}}
