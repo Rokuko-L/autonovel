@@ -214,7 +214,7 @@ Write the chapter now. Full text, beginning to end.
     repetition_feedback = ""
 
     for attempt in range(1, MAX_REP_ATTEMPTS + 1):
-        print(f"Drafting Chapter {chapter_num} (attempt {attempt})...", file=sys.stderr)
+        print(f"Drafting Chapter {chapter_num} (regen check {attempt}/{MAX_REP_ATTEMPTS})...", file=sys.stderr)
         try:
             result = call_writer(prompt + repetition_feedback)
         except TruncationError as e:
