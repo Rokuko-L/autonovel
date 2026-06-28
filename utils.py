@@ -581,17 +581,25 @@ def parse_json_response(text: str) -> dict | list:
 
 def generate_default_novel_tex(dest_path: Path):
     """Generate a default novel.tex wrapper template for LaTeX typesetting."""
-    # Try to extract title from seed.txt
+    # Try to extract title from state.json (pipeline stores the real title here)
     title = "A Novel"
-    seed_path = get_seed_path()
-    if seed_path.exists():
-        try:
-            with open(seed_path, encoding="utf-8") as f:
-                first_line = f.readline()
-                if first_line.startswith("#"):
-                    title = first_line.lstrip("#").strip()
-        except Exception:
-            pass
+    try:
+        state_title = get_novel_title()
+        if state_title and state_title.lower() not in ("a novel", "the novel", "untitled"):
+            title = state_title
+    except Exception:
+        pass
+    if title == "A Novel":
+        # Fallback to seed.txt first line
+        seed_path = get_seed_path()
+        if seed_path.exists():
+            try:
+                with open(seed_path, encoding="utf-8") as f:
+                    first_line = f.readline()
+                    if first_line.startswith("#"):
+                        title = first_line.lstrip("#").strip()
+            except Exception:
+                pass
 
     # Try to resolve author name from git config
     author = "Author Name"
