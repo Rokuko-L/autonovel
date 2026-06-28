@@ -199,9 +199,9 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False, cwd: str = None)
         )
         if result.returncode != 0:
             print(f"    WARN: exit code {result.returncode}")
-            stderr_preview = (result.stderr or "")[:2000]
-            if stderr_preview:
-                print(f"    stderr: {stderr_preview}")
+        stderr_preview = (result.stderr or "")[:2000]
+        if stderr_preview:
+            print(f"    stderr: {stderr_preview}")
         if check and result.returncode != 0:
             raise subprocess.CalledProcessError(
                 result.returncode, cmd, result.stdout, result.stderr)

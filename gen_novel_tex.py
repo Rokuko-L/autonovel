@@ -255,36 +255,32 @@ def main():
     dest = typeset_dir / "novel.tex"
 
     # Call LLM
-    try:
-        raw = call_anthropic(
-            prompt=prompt,
-            system=SYSTEM_PROMPT,
-            model_key="writer",
-            max_tokens=16000,
-            temperature=0.7,
-            timeout=300,
-        )
+    raw = call_anthropic(
+        prompt=prompt,
+        system=SYSTEM_PROMPT,
+        model_key="writer",
+        max_tokens=16000,
+        temperature=0.7,
+        timeout=300,
+    )
 
-        # Extract LaTeX from code fences
-        latex = raw.strip()
-        m = re.search(r"```(?:latex|tex)?\s*\n(.*?)```", raw, re.DOTALL)
-        if m:
-            latex = m.group(1).strip()
-        else:
-            # Try to find \documentclass as anchor
-            m2 = re.search(r"(\\documentclass[^]*?\\end\{document\})", raw, re.DOTALL)
-            if m2:
-                latex = m2.group(1).strip()
+    # Extract LaTeX from code fences
+    latex = raw.strip()
+    m = re.search(r"```(?:latex|tex)?\s*\n(.*?)```", raw, re.DOTALL)
+    if m:
+        latex = m.group(1).strip()
+    else:
+        # Try to find \documentclass as anchor
+        m2 = re.search(r"(\\documentclass[^]*?\\end\{document\})", raw, re.DOTALL)
+        if m2:
+            latex = m2.group(1).strip()
 
-        if not latex or len(latex) < 200:
-            raise ValueError("LLM returned invalid or empty LaTeX")
+    if not latex or len(latex) < 200:
+        print(f"ERROR: LLM returned invalid LaTeX (fence extraction produced {len(latex)} chars)", file=sys.stderr)
+        sys.exit(1)
 
-        dest.write_text(latex, encoding="utf-8")
-        print(f"Wrote novel.tex ({len(latex)} bytes) to {dest}", file=sys.stderr)
-    except Exception as e:
-        print(f"WARNING: LLM novel.tex generation failed: {e}. Falling back to default template.", file=sys.stderr)
-        utils.generate_default_novel_tex(dest)
-        print(f"Wrote default fallback novel.tex to {dest}", file=sys.stderr)
+    dest.write_text(latex, encoding="utf-8")
+    print(f"Wrote novel.tex ({len(latex)} bytes) to {dest}", file=sys.stderr)
 
 
 if __name__ == "__main__":
