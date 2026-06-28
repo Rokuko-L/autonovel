@@ -33,6 +33,7 @@ import httpx
 from dotenv import load_dotenv
 from genre import load_genre
 from utils import call_anthropic, validate_premise_beats
+from review import should_stop as review_should_stop
 import utils
 
 load_dotenv()
@@ -45,6 +46,7 @@ FOUNDATION_THRESHOLD = 7.5
 CHAPTER_THRESHOLD = 7.0
 MAX_FOUNDATION_ITERS = 20
 MAX_CHAPTER_ATTEMPTS = 5
+INFRA_MAX_ATTEMPTS = 3      # separate budget for timeouts / empty-file infra failures
 MAX_OUTLINE_ATTEMPTS = 5
 MIN_REVISION_CYCLES = 3
 MAX_REVISION_CYCLES = 6
@@ -294,7 +296,7 @@ def get_historical_best_for_chapter(ch_num: int) -> tuple[float, str]:
                 phase = parts[phase_idx]
                 status = parts[status_idx]
                 commit = parts[commit_idx]
-                if phase in target_phases and status == "keep" and commit != "reverted":
+                if phase in target_phases and status in ("keep", "forced") and commit != "reverted":
                     try:
                         score = float(parts[score_idx])
                         if score > best_score:
@@ -461,6 +463,9 @@ def run_foundation(state: dict) -> dict:
     best_score = state.get("foundation_score", 0.0)
     iteration = state.get("iteration", 0)
 
+    if iteration == 0:
+        git_add_commit("initial project setup (seed, config)")
+
     for i in range(iteration + 1, MAX_FOUNDATION_ITERS + 1):
         banner(f"Foundation Iteration {i}", "-")
         state["iteration"] = i
@@ -592,16 +597,24 @@ def run_drafting(state: dict) -> dict:
         for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
             step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
 
-            # Draft
-            draft_result = uv_run(f"draft_chapter.py {ch}", timeout=600)
-            if draft_result.returncode != 0:
-                step(f"Draft failed (exit {draft_result.returncode}), retrying...")
-                continue
+            # Inner infra-retry loop: timeouts and empty files don't burn quality attempts
+            quality_attempt = False
+            for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
+                draft_result = uv_run(f"draft_chapter.py {ch}", timeout=600)
+                if draft_result.returncode != 0:
+                    step(f"Draft failed (exit {draft_result.returncode}), retrying...")
+                    continue
 
-            # Check the chapter file exists and has content
-            ch_file = chapters_dir / f"ch_{ch:02d}.md"
-            if not ch_file.exists() or ch_file.stat().st_size < 100:
-                step("Chapter file missing or too short, retrying...")
+                ch_file = chapters_dir / f"ch_{ch:02d}.md"
+                if not ch_file.exists() or ch_file.stat().st_size < 100:
+                    step("Chapter file missing or too short, retrying...")
+                    continue
+
+                quality_attempt = True
+                break
+
+            if not quality_attempt:
+                step(f"Max infra retries ({INFRA_MAX_ATTEMPTS}) exceeded — quality attempt {attempt} counts as failed")
                 continue
 
             word_count = len(ch_file.read_text(encoding="utf-8").split())
@@ -620,27 +633,31 @@ def run_drafting(state: dict) -> dict:
                 state["chapters_drafted"] = ch
                 save_state(state)
 
-                # Append canon entries from the kept evaluation's output
+                # Append canon entries from the eval JSON LOG FILE (stdout is not JSON)
                 try:
-                    eval_json = json.loads(eval_result.stdout)
-                    canon_entries = eval_json.get("new_canon_entries", [])
-                    unexplained = eval_json.get("unexplained_references", [])
-                    if canon_entries or unexplained:
-                        canon_path = utils.get_canon_path()
-                        canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
-                        header = f"## As of Chapter {ch}"
-                        if header not in canon_text:
-                            with canon_path.open("a", encoding="utf-8") as f:
-                                f.write(f"\n\n{header}\n\n")
-                                if canon_entries:
-                                    for entry in canon_entries:
-                                        f.write(f"- {entry}\n")
-                                if unexplained:
-                                    f.write("\n**Unexplained references:**\n")
-                                    for ref in unexplained:
-                                        f.write(f"- {ref}\n")
+                    eval_log_pattern = f"*_ch{ch:02d}.json"
+                    eval_logs = sorted(utils.get_eval_logs_dir().glob(eval_log_pattern))
+                    if eval_logs:
+                        eval_path = eval_logs[-1]
+                        eval_data = json.loads(eval_path.read_text(encoding="utf-8"))
+                        canon_entries = eval_data.get("new_canon_entries", [])
+                        unexplained = eval_data.get("unexplained_references", [])
+                        if canon_entries or unexplained:
+                            canon_path = utils.get_canon_path()
+                            canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
+                            header = f"## As of Chapter {ch}"
+                            if header not in canon_text:
+                                with canon_path.open("a", encoding="utf-8") as f:
+                                    f.write(f"\n\n{header}\n\n")
+                                    if canon_entries:
+                                        for entry in canon_entries:
+                                            f.write(f"- {entry}\n")
+                                    if unexplained:
+                                        f.write("\n**Unexplained references:**\n")
+                                        for ref in unexplained:
+                                            f.write(f"- {ref}\n")
                 except (json.JSONDecodeError, KeyError, OSError) as e:
-                    step(f"WARN: Could not extract canon entries from eval output: {e}")
+                    step(f"WARN: Could not extract canon entries from eval log: {e}")
 
                 drafted = True
                 break
@@ -1027,9 +1044,24 @@ def run_revision(
         # -- Step 7: Plateau detection --
         if not skip_full_novel_eval:
             if cycle >= MIN_REVISION_CYCLES and abs(novel_score - prev_score) < PLATEAU_DELTA:
-                step(f"Plateau detected (delta {abs(novel_score - prev_score):.2f} "
-                     f"< {PLATEAU_DELTA}) after {cycle} cycles — stopping")
-                break
+                # Secondary gate: don't stop while >30% of chapters are below threshold
+                total_ch = get_total_chapters(state)
+                below = 0
+                with_history = 0
+                for cn in range(1, total_ch + 1):
+                    last_score, hist_commit = get_historical_best_for_chapter(cn)
+                    if hist_commit == "HEAD" and last_score == 0.0:
+                        continue  # no history yet, skip
+                    with_history += 1
+                    if last_score < CHAPTER_THRESHOLD:
+                        below += 1
+                pct_below = below / with_history * 100 if with_history > 0 else 0
+                if pct_below > 30:
+                    step(f"Plateau suppressed: {below}/{with_history} scored chapters below threshold ({pct_below:.0f}% > 30%) — continuing revision")
+                else:
+                    step(f"Plateau detected (delta {abs(novel_score - prev_score):.2f} "
+                         f"< {PLATEAU_DELTA}) after {cycle} cycles — stopping")
+                    break
 
         prev_score = novel_score
 
@@ -1055,12 +1087,14 @@ def run_revision(
                 "uv run python review.py --parse", timeout=60)
             print(parse_result.stdout if parse_result else "")
             
-            # Step 3: Check stopping condition
+            # Step 3: Check stopping condition (uses review.py's should_stop)
             review_logs = sorted(
                 utils.get_edit_logs_dir().glob("*_review.json"), reverse=True)
+            total_items = 0
             if review_logs:
 
                 review_data = json.loads(review_logs[0].read_text(encoding="utf-8"))
+                
                 stars = review_data.get("stars", 0) or 0
                 total_items = review_data.get("total_items", 0)
                 major_items = review_data.get("major_items", 0)
@@ -1069,20 +1103,19 @@ def run_revision(
                 step(f"Stars: {stars}, Items: {total_items} "
                      f"({major_items} major, {qualified} qualified)")
                 
-                # Stop if: ≥4★, no major unqualified items, or >half qualified
-                if stars >= 4.5 and major_items == 0:
-                    step("★★★★½ with no major items — novel is ready.")
-                    break
-                if stars >= 4 and total_items > 0 and qualified / total_items > 0.5:
-                    step(f"★{'★' * int(stars)} with majority qualified items — novel is ready.")
+                should_stop, reason = review_should_stop(review_data)
+                if should_stop:
+                    step(f"Stop revising? YES — {reason}")
                     break
             
-            # Step 4: Generate briefs from review items and fix
-            step("Generating revision briefs from review...")
-            gen_brief_py = utils.get_root_dir() / "gen_brief.py"
-            if gen_brief_py.exists():
-                # Auto mode: picks weakest chapter, cross-references all sources
-                run_tool("uv run python gen_brief.py --auto", timeout=300)
+            # Step 4: Generate briefs from review items and fix (skip if no items found)
+            if total_items == 0:
+                step("No actionable items from review — skipping revision, running mechanical cleanup only")
+            else:
+                step("Generating revision briefs from review...")
+                gen_brief_py = utils.get_root_dir() / "gen_brief.py"
+                if gen_brief_py.exists():
+                    run_tool("uv run python gen_brief.py --auto", timeout=300)
                 
                 # Find any generated briefs and apply the top one
                 recent_briefs = sorted(

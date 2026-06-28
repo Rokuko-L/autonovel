@@ -14,13 +14,16 @@ from genre import load_genre
 
 load_dotenv()
 
-def call_writer(prompt, max_tokens=16000):
+def call_writer(prompt, max_tokens=None):
     genre_cfg = load_genre()
     chapter_system = genre_cfg["identity"]["chapter_system"]
     estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
     chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
     target_words = estimated_words // chapter_count
-    system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {target_words} words. Write fully and completely to hit this target."
+    # Cap output tokens at ~3.25x target word count to prevent runaway generation
+    if max_tokens is None:
+        max_tokens = int(target_words * 3.25)
+    system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {target_words} words. Write fully, expansively, and completely to hit this target. Flesh out every scene with sensory details, full dialogues, and deep character interiority. Avoid summarizing events, skipping actions, or rushing through the narrative. Pacing should be slow, detailed, and immersive."
     return call_anthropic(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8)
 
 def load_file(path):
@@ -31,10 +34,15 @@ def load_file(path):
 
 
 def parse_canon(canon_text: str):
-    """Split canon.md into Foundation section and cumulative As-of Chapter sections.
-    Returns (foundation_section, disclosure_ceiling) where disclosure_ceiling is
-    the most recent `## As of Chapter N` block, or None if none exist."""
+    """Split canon.md into Foundation, Core Canon, and recent As-of Chapter sections.
+
+    Returns (foundation, core_canon, disclosure_ceiling):
+      - foundation:     `## Foundation` section (background truth, always included)
+      - core_canon:     `## Core Canon` section (permanent established facts, always included)
+      - disclosure:     last 5 `## As of Chapter N` sections (incremental reveals, trimmed)
+    """
     foundation = ""
+    core_canon = ""
     as_of_sections = []
     current = ""
     current_header = ""
@@ -43,6 +51,8 @@ def parse_canon(canon_text: str):
             if current.strip() and current_header:
                 if current_header.startswith("## Foundation"):
                     foundation = current
+                elif current_header.startswith("## Core Canon"):
+                    core_canon = current
                 elif current_header.startswith("## As of Chapter"):
                     as_of_sections.append(current)
             current = ""
@@ -52,10 +62,12 @@ def parse_canon(canon_text: str):
     if current.strip() and current_header:
         if current_header.startswith("## Foundation"):
             foundation = current
+        elif current_header.startswith("## Core Canon"):
+            core_canon = current
         elif current_header.startswith("## As of Chapter"):
             as_of_sections.append(current)
-    disclosure = as_of_sections[-1] if as_of_sections else ""
-    return foundation, disclosure
+    disclosure = "\n\n".join(as_of_sections[-5:]) if as_of_sections else ""
+    return foundation, core_canon, disclosure
 
 def extract_chapter_outline(outline_text, chapter_num):
     """Extract a specific chapter's outline entry."""
@@ -80,7 +92,7 @@ def main():
     characters = load_file(utils.get_characters_path())
     outline = load_file(utils.get_outline_path())
     canon_text = load_file(utils.get_canon_path())
-    canon_foundation, canon_disclosure = parse_canon(canon_text)
+    canon_foundation, canon_core, canon_disclosure = parse_canon(canon_text)
     
     # Chapter-specific context
     chapter_outline = extract_chapter_outline(outline, chapter_num)
@@ -96,6 +108,19 @@ def main():
         prev_tail = "(first chapter -- no previous)"
 
     title = get_novel_title()
+
+    # Build structural guardrails (applied to EVERY chapter)
+    structural_guardrails = """
+STRUCTURAL RULES (apply to every chapter):
+- If a scene involves a list (multiple rules, observations, items), present them
+  together in ONE consolidated scene. Do NOT repeat the surrounding scene-setting
+  (checking a UI, looking at a calendar, etc.) for each sub-item.
+- Each beat should introduce content that hasn't appeared in an earlier beat.
+  Do not have the character re-discover, re-read, or re-react to the same object,
+  document, or realization in more than one beat.
+- The reader must be grounded at the start of this chapter. Every name, title,
+  location, and relationship must be established through events — not assumed.
+"""
 
     # Chapter 1 premise-beat guardrail — enumerate beats from the validated outline
     premise_guardrail = ""
@@ -121,23 +146,6 @@ internal labels for your planning only. Do NOT print them, bold them,
 reference them, or use them as section headers in the chapter output.
 Write continuous prose with no section breaks between beats — the transition
 between beats should be a natural prose transition, not a labeled divider.
-
-If a beat's summary contains a list (e.g. multiple rules, multiple
-observations, multiple items), present them together in one consolidated
-scene. Do not repeat the surrounding scene-setting (checking UI, looking at
-the calendar, etc.) for each sub-item. Weave the list items into a single
-continuous narrative moment.
-
-Each beat should introduce content that hasn't appeared in an earlier beat.
-Do not have the character re-discover, re-read, or re-react to the same
-object, document, or realization (e.g. a letter, a UI element, an escape
-plan) in more than one beat. If something was established in an earlier
-beat, reference it briefly rather than re-narrating the full discovery again.
-
-The reader knows nothing about this world, these characters, or this story
-at the start of this chapter. Introduce everything through showing — not
-through assumed knowledge. Every name, title, location, and relationship
-must be established through the events of this chapter.
 """
         # Check premise validation flag
         prem_val_path = utils.get_project_dir() / "premise_validation.json"
@@ -178,6 +186,13 @@ but is NOT something they or the narration may state as already established):
 {canon_foundation}
 """
 
+    if canon_core:
+        prompt += f"""
+CORE CANON (permanent established facts — relationships, world rules, secrets
+that the reader already knows. Reference these naturally; do not re-introduce them):
+{canon_core}
+"""
+
     if canon_disclosure:
         prompt += f"""
 DISCLOSURE CEILING (everything that has been put on the page so far. Anything not listed here,
@@ -190,6 +205,7 @@ events — not assumed, not name-dropped):
 WRITING INSTRUCTIONS:
 {load_genre()["generation"]["draft_chapter_instructions"]}
 
+{structural_guardrails}
 {premise_guardrail}
 Write the chapter now. Full text, beginning to end.
 """

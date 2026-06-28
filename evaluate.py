@@ -172,7 +172,7 @@ def slop_score(text):
     em_dash_density = (em_dashes / word_count) * 1000
 
     # Sentence length variation (coefficient of variation)
-    sentences = re.split(r'[.!?]+', text)
+    sentences = re.split(r'[.!?]+', text.replace("...", " ").replace("..", " "))
     sentences = [s.strip() for s in sentences if len(s.strip().split()) > 2]
     if len(sentences) > 2:
         lengths = [len(s.split()) for s in sentences]
@@ -215,7 +215,8 @@ def slop_score(text):
     # Staccato punchline detector (Humanizer #31) — 3+ consecutive sentences ≤4 words
     staccato_runs = 0
     for para in paragraphs:
-        para_sents = [s.strip() for s in re.split(r'[.!?]+', para) if len(s.strip().split()) > 0]
+        para_clean = para.replace("...", " ").replace("..", " ")
+        para_sents = [s.strip() for s in re.split(r'[.!?]+', para_clean) if len(s.strip().split()) > 0]
         run = 0
         for s in para_sents:
             if len(s.split()) <= 4:
@@ -322,7 +323,7 @@ def call_judge_json(prompt, max_tokens=8000, retries=3):
     last_error = None
     for attempt in range(1, retries + 1):
         try:
-            if attempt == 1:
+            if attempt == 1 or not last_raw or not last_raw.strip():
                 raw = call_judge(prompt, max_tokens)
             else:
                 # Ask the model to fix its previous response (using a cheap, lightweight context prompt)
@@ -607,6 +608,20 @@ Respond with JSON:
 """
 
 
+def _latest_chapter_score(ch_num: int) -> float | None:
+    """Look up the most recent per-chapter eval score for chapter N from eval logs."""
+    eval_log_dir = utils.get_eval_logs_dir()
+    pattern = f"*_ch{ch_num:02d}.json"
+    matches = sorted(eval_log_dir.glob(pattern))
+    if not matches:
+        return None
+    try:
+        data = json.loads(matches[-1].read_text(encoding="utf-8"))
+        return data.get("overall_score")
+    except (json.JSONDecodeError, OSError, KeyError):
+        return None
+
+
 def evaluate_full():
     layers = load_layer_files()
     chapters = load_all_chapters()
@@ -614,15 +629,18 @@ def evaluate_full():
     if not chapters:
         return {"error": "No chapters found", "novel_score": 0.0}
 
-    # Build chapter summaries (first/last 500 chars of each)
+    # Build chapter summaries (first/last 500 chars + per-chapter score)
     summaries = []
     for num in sorted(chapters.keys()):
         text = chapters[num]
         word_count = len(text.split())
         head = text[:500]
         tail = text[-500:] if len(text) > 500 else ""
+        ch_score = _latest_chapter_score(num)
+        score_line = f"  Score: {ch_score}/10" if ch_score is not None else "  Score: (not yet evaluated)"
         summaries.append(
             f"Chapter {num} ({word_count} words):\n"
+            f"{score_line}\n"
             f"  Opening: {head}...\n"
             f"  Closing: ...{tail}\n"
         )
@@ -634,7 +652,20 @@ def evaluate_full():
         outline=layers["outline"],
         chapter_summaries="\n".join(summaries),
     )
-    return call_judge_json(prompt)
+
+    result = call_judge_json(prompt)
+
+    # Apply mechanical slop penalty across the full manuscript text
+    full_text = "\n\n".join(chapters.get(i, "") for i in sorted(chapters.keys()))
+    slop = slop_score(full_text)
+    result["full_slop"] = slop
+    if "novel_score" in result:
+        adjusted = max(0, result["novel_score"] - slop["slop_penalty"])
+        result["raw_novel_score"] = result["novel_score"]
+        result["novel_score"] = round(adjusted, 2)
+        result["slop_penalty_applied"] = slop["slop_penalty"]
+
+    return result
 
 
 # --- Main ---
