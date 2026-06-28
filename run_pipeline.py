@@ -38,6 +38,28 @@ import utils
 
 load_dotenv()
 
+
+class Tee:
+    """Duplicate writes to both an original stream and a shared log file."""
+    def __init__(self, fh, original):
+        self.fh = fh
+        self.original = original
+
+    def write(self, data):
+        self.fh.write(data)
+        self.original.write(data)
+
+    def flush(self):
+        self.fh.flush()
+        self.original.flush()
+
+    def isatty(self):
+        return self.original.isatty()
+
+    def fileno(self):
+        return self.original.fileno()
+
+
 # ---------------------------------------------------------------------------
 # Constants  (all path-dependent values are resolved at runtime via utils)
 # ---------------------------------------------------------------------------
@@ -1493,6 +1515,13 @@ def run_pipeline(args):
     project_dir = utils.get_project_dir()
     project_dir.mkdir(parents=True, exist_ok=True)
 
+    # Tee stdout/stderr to a per-run log file in projects/<name>/logs/
+    log_path = utils.get_logs_dir() / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pipeline.log"
+    log_fh = open(log_path, "w", encoding="utf-8")
+    sys.stdout = Tee(log_fh, sys.stdout)
+    sys.stderr = Tee(log_fh, sys.stderr)
+    step(f"Pipeline log: {log_path}")
+
     # Git Option B: guard root .gitignore and init project repo
     ensure_gitignore_projects()
     ensure_project_git(project_dir)
@@ -1684,6 +1713,11 @@ def run_pipeline(args):
     print(f"  Words:      {count_words_in_chapters()}")
     print(f"  Novel:      {state.get('novel_score', 0)}")
     print(f"  Cycles:     {state.get('revision_cycle', 0)}")
+
+    # Restore stdout/stderr and close the log file
+    sys.stdout = sys.stdout.original
+    sys.stderr = sys.stderr.original
+    log_fh.close()
 
 
 def main():

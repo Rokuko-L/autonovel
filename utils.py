@@ -111,6 +111,12 @@ def get_eval_logs_dir() -> Path:
     return d
 
 
+def get_logs_dir() -> Path:
+    d = get_project_dir() / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def get_briefs_dir() -> Path:
     d = get_project_dir() / "briefs"
     d.mkdir(parents=True, exist_ok=True)
