@@ -1516,6 +1516,8 @@ def run_pipeline(args):
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Tee stdout/stderr to a per-run log file in projects/<name>/logs/
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     log_path = utils.get_logs_dir() / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pipeline.log"
     log_fh = open(log_path, "w", encoding="utf-8")
     sys.stdout = Tee(log_fh, sys.stdout)
