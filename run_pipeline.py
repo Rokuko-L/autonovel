@@ -214,8 +214,8 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False, cwd: str = None)
 
 
 def uv_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
-    """Shorthand for 'uv run python <script>' from project root. Fails fast."""
-    return run_tool(f"uv run \"{sys.executable}\" {script}", timeout=timeout, check=True)
+    """Shorthand for running a Python script from project root. Fails fast."""
+    return run_tool(f"\"{sys.executable}\" {script}", timeout=timeout, check=True)
 
 
 # ---------------------------------------------------------------------------
@@ -600,7 +600,7 @@ def run_drafting(state: dict) -> dict:
             # Inner infra-retry loop: timeouts, empty files, and truncations don't burn quality attempts
             quality_attempt = False
             for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
-                cmd = f"uv run \"{sys.executable}\" draft_chapter.py {ch}"
+                cmd = f"\"{sys.executable}\" draft_chapter.py {ch}"
                 draft_result = run_tool(cmd, timeout=600, check=False)
                 if draft_result.returncode != 0:
                     step(f"Draft failed (exit {draft_result.returncode}), retrying...")
