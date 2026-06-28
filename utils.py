@@ -190,19 +190,34 @@ MODEL_ENV_VARS = {
 }
 
 
+class TruncationError(Exception):
+    """Raised when the API response was truncated (stop_reason == 'max_tokens')."""
+    pass
+
+
+def _parse_response_json(text: str) -> dict:
+    """Parse (possibly damaged) JSON from an Anthropic response string."""
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        obj, _ = decoder.raw_decode(text)
+        return obj
+
+
 def extract_text_from_response(resp):
-    import json
     if isinstance(resp, dict):
         data = resp
     else:
-        text = resp.text.strip()
+        raw = resp.text.strip()
         content_type = resp.headers.get("content-type", "")
         is_sse = "text/event-stream" in content_type and any(
-            l.strip().startswith("data:") for l in text.splitlines()
+            l.strip().startswith("data:") for l in raw.splitlines()
         )
-        if is_sse or not text.startswith("{"):
+        if is_sse or not raw.startswith("{"):
             text_content = ""
-            for line in text.splitlines():
+            for line in raw.splitlines():
                 line = line.strip()
                 if line.startswith("data:"):
                     data_str = line[5:].strip()
@@ -217,27 +232,59 @@ def extract_text_from_response(resp):
                     except json.JSONDecodeError:
                         pass
             data = {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": text_content
-                    }
-                ]
+                "content": [{"type": "text", "text": text_content}]
             }
         else:
-            # Response may be JSON with newlines inside string values
-            # Use raw_decode to extract first complete JSON object
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                decoder = json.JSONDecoder()
-                obj, _ = decoder.raw_decode(text)
-                data = obj
+            data = _parse_response_json(raw)
 
     for block in data["content"]:
         if block["type"] == "text":
             return block["text"]
     return ""
+
+
+def extract_text_and_stop_reason(resp):
+    """Return (text, stop_reason) from a non-streaming Anthropic response.
+
+    stop_reason is None for streaming responses; otherwise one of
+    'end_turn', 'max_tokens', 'stop_sequence', or None.
+    """
+    if isinstance(resp, dict):
+        data = resp
+        text_content = ""
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                text_content += block.get("text", "")
+        return text_content, data.get("stop_reason")
+
+    raw = resp.text.strip()
+    content_type = resp.headers.get("content-type", "")
+    is_sse = "text/event-stream" in content_type and any(
+        l.strip().startswith("data:") for l in raw.splitlines()
+    )
+    if is_sse or not raw.startswith("{"):
+        text_content = ""
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    continue
+                try:
+                    item = json.loads(data_str)
+                    if item.get("type") == "content_block_delta":
+                        delta = item.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            text_content += delta.get("text", "")
+                except json.JSONDecodeError:
+                    pass
+        return text_content, None
+
+    data = _parse_response_json(raw)
+    for block in data["content"]:
+        if block["type"] == "text":
+            return block["text"], data.get("stop_reason")
+    return "", data.get("stop_reason")
 
 
 def get_max_tokens_with_thinking(max_tokens):
@@ -264,6 +311,7 @@ def call_anthropic(
     temperature=0.3,
     beta_context=False,
     timeout=300,
+    raise_on_truncation=False,
 ):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
@@ -302,7 +350,17 @@ def call_anthropic(
                 timeout=timeout,
             )
             resp.raise_for_status()
+            if raise_on_truncation:
+                text, stop_reason = extract_text_and_stop_reason(resp)
+                if stop_reason == "max_tokens":
+                    raise TruncationError(
+                        f"Response truncated at ~{len(text.split())} words "
+                        f"(stop_reason: max_tokens)"
+                    )
+                return text
             return extract_text_from_response(resp)
+        except TruncationError:
+            raise
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in [400, 401, 403, 404]:
                 raise e
@@ -1068,6 +1126,7 @@ def chain_flagged_pairs(
             if abs(d1 - d2) <= max_gap and abs(i2 - i1) <= max_offset:
                 union(a, b)
 
+    from collections import defaultdict
     clusters: dict[int, list[tuple[int, int, float]]] = defaultdict(list)
     for idx, p in enumerate(pairs):
         clusters[find(idx)].append(p)

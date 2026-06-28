@@ -597,10 +597,11 @@ def run_drafting(state: dict) -> dict:
         for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
             step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
 
-            # Inner infra-retry loop: timeouts and empty files don't burn quality attempts
+            # Inner infra-retry loop: timeouts, empty files, and truncations don't burn quality attempts
             quality_attempt = False
             for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
-                draft_result = uv_run(f"draft_chapter.py {ch}", timeout=600)
+                cmd = f"uv run \"{sys.executable}\" draft_chapter.py {ch}"
+                draft_result = run_tool(cmd, timeout=600, check=False)
                 if draft_result.returncode != 0:
                     step(f"Draft failed (exit {draft_result.returncode}), retrying...")
                     continue
@@ -638,24 +639,47 @@ def run_drafting(state: dict) -> dict:
                     eval_log_pattern = f"*_ch{ch:02d}.json"
                     eval_logs = sorted(utils.get_eval_logs_dir().glob(eval_log_pattern))
                     if eval_logs:
-                        eval_path = eval_logs[-1]
+                        eval_path = eval_logs[-1]  # most recent eval by timestamp — correct because Phase 2 completes before Phase 3; if ordering ever changes this needs revisiting
                         eval_data = json.loads(eval_path.read_text(encoding="utf-8"))
-                        canon_entries = eval_data.get("new_canon_entries", [])
+                        raw_entries = eval_data.get("new_canon_entries", [])
                         unexplained = eval_data.get("unexplained_references", [])
-                        if canon_entries or unexplained:
+
+                        # Canon extraction depends on Phase 2 (drafting) fully
+                        # completing before Phase 3 (revision) starts.
+
+                        # Normalize entries: support both legacy str list and new {fact, scope} format
+                        core_entries = []
+                        inc_entries = []
+                        for entry in raw_entries:
+                            if isinstance(entry, str):
+                                inc_entries.append(entry)
+                            elif isinstance(entry, dict):
+                                fact = entry.get("fact", "")
+                                scope = entry.get("scope", "incremental")
+                                (core_entries if scope == "core" else inc_entries).append(fact)
+
+                        if core_entries or inc_entries or unexplained:
                             canon_path = utils.get_canon_path()
                             canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
-                            header = f"## As of Chapter {ch}"
-                            if header not in canon_text:
-                                with canon_path.open("a", encoding="utf-8") as f:
-                                    f.write(f"\n\n{header}\n\n")
-                                    if canon_entries:
-                                        for entry in canon_entries:
-                                            f.write(f"- {entry}\n")
-                                    if unexplained:
-                                        f.write("\n**Unexplained references:**\n")
-                                        for ref in unexplained:
-                                            f.write(f"- {ref}\n")
+                            with canon_path.open("a", encoding="utf-8") as f:
+                                if core_entries:
+                                    if "## Core Canon" not in canon_text:
+                                        f.write(f"\n\n## Core Canon\n\n")
+                                        canon_text += "\n\n## Core Canon\n\n"
+                                    for entry in core_entries:
+                                        f.write(f"- {entry}\n")
+                                if inc_entries:
+                                    ch_header = f"## As of Chapter {ch}"
+                                    if ch_header not in canon_text:
+                                        f.write(f"\n\n{ch_header}\n\n")
+                                    else:
+                                        f.write(f"\n")
+                                    for entry in inc_entries:
+                                        f.write(f"- {entry}\n")
+                                if unexplained:
+                                    f.write("\n**Unexplained references:**\n")
+                                    for ref in unexplained:
+                                        f.write(f"- {ref}\n")
                 except (json.JSONDecodeError, KeyError, OSError) as e:
                     step(f"WARN: Could not extract canon entries from eval log: {e}")
 

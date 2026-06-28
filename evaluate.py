@@ -450,8 +450,15 @@ DISCLOSURE CEILING (everything that has been put on the page through the prior c
 {disclosure_ceiling}
 
 CANON-GROUNDING RULES (read before scoring):
-- new_canon_entries: Record only what was explicitly shown or stated in this chapter's text.
-  Never record background facts from the world/character bible that haven't been put on the page.
+- new_canon_entries: Each entry is an object {"fact": "...", "scope": "core" | "incremental"}.
+  - core:     Permanent world rules, character relationships, secrets, faction alignments,
+              magic system rules — facts that are immutably true for the rest of the story.
+  - incremental: Plot-level reveals, scene-specific reactions, temporary states, intermediate
+              discoveries that later chapters may supersede or contradict.
+  If in doubt, default to "incremental". Only mark as "core" if the fact is foundational
+  and will never change.
+  Record only what was explicitly shown or stated in this chapter's text. Never record
+  background facts from the world/character bible that haven't been put on the page.
 - unexplained_references: Names, titles, or terms used in this chapter whose meaning
   a first-time reader would not yet understand (e.g. if a character is addressed as "the Saint"
   but the role hasn't been explained yet).
@@ -479,7 +486,7 @@ Respond with JSON:
   "overall_score": N,
   "weakest_dimension": "...",
   "top_3_revisions": ["specific revision 1", "revision 2", "revision 3"],
-  "new_canon_entries": ["any new facts established"],
+  "new_canon_entries": [{"fact": "new fact description", "scope": "core|incremental"}],
   "unexplained_references": ["names, titles, or terms used in this chapter that were not explained"]
 }}
 

@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_novel_title, parse_premise_beats, check_structural_repetition
+from utils import call_anthropic, get_novel_title, parse_premise_beats, check_structural_repetition, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -24,7 +24,7 @@ def call_writer(prompt, max_tokens=None):
     if max_tokens is None:
         max_tokens = int(target_words * 3.25)
     system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {target_words} words. Write fully, expansively, and completely to hit this target. Flesh out every scene with sensory details, full dialogues, and deep character interiority. Avoid summarizing events, skipping actions, or rushing through the narrative. Pacing should be slow, detailed, and immersive."
-    return call_anthropic(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8)
+    return call_anthropic(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
 
 def load_file(path):
     try:
@@ -215,7 +215,11 @@ Write the chapter now. Full text, beginning to end.
 
     for attempt in range(1, MAX_REP_ATTEMPTS + 1):
         print(f"Drafting Chapter {chapter_num} (attempt {attempt})...", file=sys.stderr)
-        result = call_writer(prompt + repetition_feedback)
+        try:
+            result = call_writer(prompt + repetition_feedback)
+        except TruncationError as e:
+            print(f"TRUNCATION_DETECTED: {e}", file=sys.stderr)
+            sys.exit(2)
 
         rep_regen, rep_feedback, rep_sidecar = check_structural_repetition(result)
 
