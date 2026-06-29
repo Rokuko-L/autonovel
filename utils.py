@@ -587,6 +587,8 @@ def parse_json_response(text: str) -> dict | list:
 
 def generate_default_novel_tex(dest_path: Path):
     """Generate a default novel.tex wrapper template for LaTeX typesetting."""
+    seed_path = get_seed_path()
+
     # Try to extract title from state.json (pipeline stores the real title here)
     title = "A Novel"
     try:
@@ -597,7 +599,6 @@ def generate_default_novel_tex(dest_path: Path):
         pass
     if title == "A Novel":
         # Fallback to seed.txt first line
-        seed_path = get_seed_path()
         if seed_path.exists():
             try:
                 with open(seed_path, encoding="utf-8") as f:
