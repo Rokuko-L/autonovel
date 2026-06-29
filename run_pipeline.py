@@ -1323,7 +1323,7 @@ def run_export(state: dict) -> dict:
         if not novel_tex.exists() or novel_tex.stat().st_size < 100:
             step("novel.tex not found or empty, generating via LLM...")
             try:
-                uv_run("gen_novel_tex.py", timeout=120)
+                uv_run("gen_novel_tex.py", timeout=300)
             except Exception as e:
                 step(f"LLM tex generation failed ({e}), using default template...")
             if not novel_tex.exists() or novel_tex.stat().st_size < 100:
