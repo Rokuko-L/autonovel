@@ -120,6 +120,8 @@ STRUCTURAL RULES (apply to every chapter):
   document, or realization in more than one beat.
 - The reader must be grounded at the start of this chapter. Every name, title,
   location, and relationship must be established through events — not assumed.
+- Any paragraph must NOT contain three or more consecutive sentences of ≤4 words
+  each. Vary sentence length naturally; this pattern is mechanically penalized.
 """
 
     # Chapter 1 premise-beat guardrail — enumerate beats from the validated outline
