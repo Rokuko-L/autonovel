@@ -66,7 +66,7 @@ TIER3_FILLER = [
     r"it goes without saying",
     r"when it comes to",
     r"one might argue that",
-    r"not just .+, but",
+    # (not just .+, but — covered by STRUCTURAL_AI_TICS below)
     # Conversational rhetoric openers (Humanizer #33)
     r"^Honestly\?[\s,]",
     r"^Truthfully[?,]\s",
@@ -216,7 +216,7 @@ def slop_score(text):
     staccato_runs = 0
     for para in paragraphs:
         para_clean = para.replace("...", " ").replace("..", " ")
-        para_sents = [s.strip() for s in re.split(r'[.!?]+', para_clean) if len(s.strip().split()) > 0]
+        para_sents = [s.strip() for s in re.split(r'[.!?]+', para_clean) if any(c.isalnum() for c in s)]
         run = 0
         for s in para_sents:
             if len(s.split()) <= 4:
@@ -529,7 +529,7 @@ def evaluate_chapter(chapter_num):
                              if re.search(rf'## As of Chapter (\d+)', s)
                              and int(re.search(r'## As of Chapter (\d+)', s).group(1)) < chapter_num]
             if prior_sections:
-                disclosure_ceiling = prior_sections[-1]
+                disclosure_ceiling = "\n\n".join(prior_sections)
 
     prompt = build_chapter_prompt(
         voice=layers["voice"],
