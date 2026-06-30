@@ -544,6 +544,9 @@ def run_foundation(state: dict) -> dict:
         step("Generating outline (part 2 — foreshadowing)...")
         uv_run("gen_outline_part2.py", timeout=600)
 
+        step("Sanitizing chapter titles...")
+        uv_run("sanitize_outline_titles.py", timeout=300)
+
         step("Generating canon...")
         uv_run("gen_canon.py", timeout=600)
 
@@ -885,7 +888,10 @@ def run_revision(
                 # -- Step 1: Adversarial editing pass (parallel per chapter) --
                 step("Running adversarial editing on all chapters...")
                 total_ch = get_total_chapters(state)
-                with ThreadPoolExecutor(max_workers=4) as pool:
+                base_url = os.getenv("ANTHROPIC_BASE_URL", "")
+                is_local = "localhost" in base_url or "127.0.0.1" in base_url
+                max_workers = 1 if is_local else 4
+                with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
                         pool.submit(uv_run, f"adversarial_edit.py {ch}", 300): ch
                         for ch in range(1, total_ch + 1)
@@ -1022,7 +1028,10 @@ def run_revision(
                 except Exception as e:
                     return {"ch_num": ch_num, "error": str(e)}
 
-            with ThreadPoolExecutor(max_workers=len(consensus_items)) as pool:
+            base_url = os.getenv("ANTHROPIC_BASE_URL", "")
+            is_local = "localhost" in base_url or "127.0.0.1" in base_url
+            max_workers = 1 if is_local else max(1, len(consensus_items))
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 futures = {pool.submit(_revise_one, item): item for item in consensus_items}
                 results = []
                 for future in as_completed(futures):

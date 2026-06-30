@@ -559,12 +559,41 @@ def parse_json_response(text: str) -> dict | list:
         text = re.sub(r'\n?```$', '', text)
         
     start = text.find('{')
-    if start == -1:
+    is_obj = True
+    if start == -1 or (text.find('[') != -1 and text.find('[') < start):
         start = text.find('[')
+        is_obj = False
     if start == -1:
         raise ValueError("No JSON object or array found in response")
         
-    json_part = text[start:]
+    # Count braces/brackets to find the matching closing character,
+    # thereby stripping any trailing conversation text that causes JSON decode errors.
+    brace_count = 0
+    in_string = False
+    escape = False
+    end_idx = len(text)
+    for idx in range(start, len(text)):
+        c = text[idx]
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_string:
+            escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == ('{' if is_obj else '['):
+            brace_count += 1
+        elif c == ('}' if is_obj else ']'):
+            brace_count -= 1
+            if brace_count == 0:
+                end_idx = idx + 1
+                break
+                
+    json_part = text[start:end_idx]
     
     # Run repairs
     json_part = repair_unescaped_quotes(json_part)

@@ -195,7 +195,18 @@ def panel_mentions_for_chapter(panel: dict, ch: int) -> dict:
 
     for reader_name, reader_data in readers.items():
         for key in mentions:
-            text = reader_data.get(key, "")
+            val = reader_data.get(key, "")
+            if isinstance(val, (dict, list)):
+                def extract_strings(v):
+                    if isinstance(v, dict):
+                        return [s for x in v.values() for s in extract_strings(x)]
+                    elif isinstance(v, list):
+                        return [s for x in v for s in extract_strings(x)]
+                    return [str(v)]
+                text = " ".join(extract_strings(val))
+            else:
+                text = str(val)
+
             if ch_re.search(text):
                 mentions[key].append(f"[{reader_name}] {text}")
 

@@ -572,7 +572,7 @@ def evaluate_chapter(chapter_num):
 # --- Full Novel Evaluation ---
 
 FULL_NOVEL_PROMPT = """Evaluate this complete fantasy novel holistically.
-You have the planning docs and ALL chapter summaries with their individual scores.
+You have the planning docs and ALL chapter metadata with their individual scores.
 
 VOICE DEFINITION:
 {voice}
@@ -586,7 +586,7 @@ CHARACTER REGISTRY:
 OUTLINE + FORESHADOWING LEDGER:
 {outline}
 
-CHAPTER SUMMARIES AND SCORES:
+CHAPTER METADATA AND SCORES:
 {chapter_summaries}
 
 Score these novel-level dimensions 0-10:
@@ -612,21 +612,12 @@ Respond with JSON:
   "weakest_chapter": N,
   "top_suggestion": "..."
 }}
+
+JSON OUTPUT REQUIREMENTS:
+1. Output ONLY valid JSON matching the exact schema above.
+2. Escape any double quotes within your JSON string values with a backslash (e.g., use \\" instead of " when referencing characters, quotes, or dialogue).
+3. Do not include any preamble, introduction, or conversation outside the JSON object.
 """
-
-
-def _latest_chapter_score(ch_num: int) -> float | None:
-    """Look up the most recent per-chapter eval score for chapter N from eval logs."""
-    eval_log_dir = utils.get_eval_logs_dir()
-    pattern = f"*_ch{ch_num:02d}.json"
-    matches = sorted(eval_log_dir.glob(pattern))
-    if not matches:
-        return None
-    try:
-        data = json.loads(matches[-1].read_text(encoding="utf-8"))
-        return data.get("overall_score")
-    except (json.JSONDecodeError, OSError, KeyError):
-        return None
 
 
 def evaluate_full():
@@ -636,20 +627,20 @@ def evaluate_full():
     if not chapters:
         return {"error": "No chapters found", "novel_score": 0.0}
 
-    # Build chapter summaries (first/last 500 chars + per-chapter score)
-    summaries = []
+    # Build chapter metadata (word count + per-chapter score)
+    metadata = []
     for num in sorted(chapters.keys()):
         text = chapters[num]
         word_count = len(text.split())
-        head = text[:500]
-        tail = text[-500:] if len(text) > 500 else ""
         ch_score = _latest_chapter_score(num)
-        score_line = f"  Score: {ch_score}/10" if ch_score is not None else "  Score: (not yet evaluated)"
-        summaries.append(
-            f"Chapter {num} ({word_count} words):\n"
-            f"{score_line}\n"
-            f"  Opening: {head}...\n"
-            f"  Closing: ...{tail}\n"
+        score_line = f"Score: {ch_score}/10" if ch_score is not None else "Score: (not yet evaluated)"
+        title = ""
+        first_line = text.strip().split('\n')[0] if text.strip() else ""
+        if first_line.startswith("#"):
+            title = f" - Title: {first_line.lstrip('#').strip()}"
+        metadata.append(
+            f"Chapter {num}{title} ({word_count} words):\n"
+            f"  {score_line}"
         )
 
     prompt = FULL_NOVEL_PROMPT.format(
@@ -657,7 +648,7 @@ def evaluate_full():
         world_summary=layers["world"][:3000],
         characters=layers["characters"],
         outline=layers["outline"],
-        chapter_summaries="\n".join(summaries),
+        chapter_summaries="\n".join(metadata),
     )
 
     result = call_judge_json(prompt)
@@ -673,6 +664,20 @@ def evaluate_full():
         result["slop_penalty_applied"] = slop["slop_penalty"]
 
     return result
+
+
+def _latest_chapter_score(ch_num: int) -> float | None:
+    """Look up the most recent per-chapter eval score for chapter N from eval logs."""
+    eval_log_dir = utils.get_eval_logs_dir()
+    pattern = f"*_ch{ch_num:02d}.json"
+    matches = sorted(eval_log_dir.glob(pattern))
+    if not matches:
+        return None
+    try:
+        data = json.loads(matches[-1].read_text(encoding="utf-8"))
+        return data.get("overall_score")
+    except (json.JSONDecodeError, OSError, KeyError):
+        return None
 
 
 # --- Main ---

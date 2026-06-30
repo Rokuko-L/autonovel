@@ -16,6 +16,7 @@ CHAPTERS_DIR = utils.get_chapters_dir()
 OUT_DIR = utils.get_typeset_dir()
 
 def latex_escape(t):
+    t = t.replace('\\', '\\textbackslash{}')
     t = t.replace('&', '\\&')
     t = t.replace('%', '\\%')
     t = t.replace('$', '\\$')
@@ -32,10 +33,10 @@ def md_to_latex(body):
         elif s == '':
             result.append('')
         else:
+            s = latex_escape(s)
             # Bold before italic (order matters for regex)
             s = re.sub(r'\*\*([^*]+)\*\*', r'\\textbf{\1}', s)
             s = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\\textit{\1}', s)
-            s = latex_escape(s)
             # Em dash: replace with comma-space (reads more naturally than a raw dash)
             s = s.replace('\u2014', ', ')
             s = s.replace('\u2013', '--')

@@ -156,7 +156,8 @@ Generate the complete content generation configuration block ("generation") as v
      "gen_characters_prompt": "...",
      "gen_outline_prompt": "...",
      "gen_outline_part2_prompt": "...",
-      "gen_canon_prompt": "Extract baseline canon facts from the seed {{seed}}, world bible {{world}}, and character registry {{characters}} — these are true from the start of the story but have not yet been revealed to any reader. Output structured facts only; do not repeat world-building verbatim.",
+     "gen_canon_prompt": "Extract baseline canon facts from the seed {{seed}}, world bible {{world}}, and character registry {{characters}} — these are true from the start of the story but have not yet been revealed to any reader. Output structured facts only; do not repeat world-building verbatim.",
+     "gen_chapter_title_rewriter_prompt": "...",
      "draft_chapter_instructions": "...",
      "anti_pattern_rules": "...",
      "canon_categories": ["list of category headers"],
@@ -171,6 +172,10 @@ Generate the complete content generation configuration block ("generation") as v
   * "gen_outline_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}} AND {{voice_part2}} AND {{premise_arc_beats}}
   * "gen_outline_part2_prompt" MUST contain: {{part1}}
   * "gen_canon_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}}. Frame it as extracting baseline canon facts from the seed/world/characters themselves (not from a chapter), marking them as "true from the start but not yet revealed to readers."
+  * "gen_chapter_title_rewriter_prompt" MUST contain: {{outline}} AND {{seed}}.
+    - This prompt will guide the LLM to rewrite the chapter titles in the outline (`outline.md`) to make them catchy, witty, and genre-appropriate while preventing repetitive title beginnings.
+    - It must instruct the model to return a raw JSON object only, mapping Chapter Numbers (as strings or integers) to their new, polished Chapter Titles (e.g., `{"1": "New Title 1", "2": "New Title 2"}`).
+    - It must instruct the model to limit titles starting with "The" to at most 30%, and titles starting with "In Which" to at most 10%, ensuring a diverse range of starting words.
 - "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a unique, evocative, and thematic chapter title for every single chapter (e.g., in the format "Chapter N: Title") instead of using generic titles like "Chapter N".
   * Recommend style guidelines and examples for chapter titles that match the tone/genre of the novel. Show that chapter titles can be:
     - Witty, self-aware meta-commentary (e.g., "In Which Things Go Wrong Immediately")
@@ -212,6 +217,7 @@ REQUIRED_PLACEHOLDERS = {
     "gen_outline_prompt":        ["{seed}", "{world}", "{characters}", "{voice_part2}"],
     "gen_outline_part2_prompt":  ["{part1}"],
     "gen_canon_prompt":          ["{seed}", "{world}", "{characters}"],
+    "gen_chapter_title_rewriter_prompt": ["{outline}", "{seed}"],
 }
 
 
@@ -342,6 +348,7 @@ def main():
                 "gen_outline_prompt": "temp template with at least fifty characters in length to pass validations",
                 "gen_outline_part2_prompt": "temp template with at least fifty characters in length to pass validations",
                 "gen_canon_prompt": "temp template with at least fifty characters in length to pass validations",
+                "gen_chapter_title_rewriter_prompt": "temp template with at least fifty characters in length to pass validations",
                 "draft_chapter_instructions": "temp template with at least fifty characters in length to pass validations",
                 "anti_pattern_rules": "temp template with at least fifty characters in length to pass validations",
                 "canon_categories": [],
