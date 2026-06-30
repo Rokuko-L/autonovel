@@ -175,9 +175,9 @@ Generate the complete content generation configuration block ("generation") as v
   * Recommend style guidelines and examples for chapter titles that match the tone/genre of the novel. Show that chapter titles can be:
     - Witty, self-aware meta-commentary (e.g., "In Which Things Go Wrong Immediately")
     - Character-driven recaps (e.g., "Dinner Party Disaster")
-    - Stylistic logs (e.g., diary records, or at most ONE system diagnostic log like `priority_override_failed` if the genre features technology/systems)
+    - Stylistic logs (e.g., a diary record, or at most ONE system diagnostic log like 'system_diagnostic_failed' if the genre features technology/systems, but do not mix system log names into general examples of normal title beginnings).
     Give the writer model the flexibility to choose or blend these styles creatively.
-    * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An".
+    * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An". Instruct the model that NO MORE than 30% of the chapters should start with the word "The". Show alternative structural formats (e.g., gerunds like "Gaslighting the Inquisition", direct questions, prepositional starters, or starting directly with nouns/characters).
 - "gen_outline_prompt" MUST instruct the outline writer that Chapter 1's entry MUST include a parseable "PREMISE BEATS" section containing one bullet per beat from the premise_arc_beats list (passed as {{premise_arc_beats}}). Required format:
     PREMISE BEATS:
     - {{beat_label}}: {{scene summary}}
@@ -188,6 +188,7 @@ Generate the complete content generation configuration block ("generation") as v
 - "draft_chapter_instructions" MUST instruct the writer to start the chapter markdown file with a top-level header including both the chapter number and the specific title from the outline (e.g., "# Chapter N: [Title]").
 - "draft_chapter_instructions" must weave in a firm requirement that each chapter is approximately {words_per_chapter} words.
 - "draft_chapter_instructions" MUST instruct the chapter writer: Chapter 1's outline contains a "PREMISE BEATS" section. The writer MUST draft prose for each beat in order before moving to the MAIN PLOT scenes. Each beat gets real scene treatment — do not compress or skip beats. The reader knows nothing about this world at the start of Chapter 1.
+- "draft_chapter_instructions" must NOT include guidance that encourages short or staccato sentence patterns (e.g. "use short sentences" or "snappy dialogue"). A separate structural guardrail enforces sentence-length variety; the genre instructions should not contradict it.
 - The "framework" section from PASS1 contains "disclosure_framework" — a per-genre description of how this genre orients new readers. You MUST thread this into:
     * "gen_outline_prompt": instruct the outline writer to schedule heavier setup/orientation beats early when the genre calls for it, and to pace revelation according to the disclosure convention.
     * "draft_chapter_instructions": instruct the chapter writer about the expected pacing of reader orientation and disclosure for this genre.

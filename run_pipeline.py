@@ -1081,6 +1081,17 @@ def run_revision(
             if novel_score < 0:
                 # Fallback: try overall_score
                 novel_score = parse_score(full_eval.stdout, "overall_score")
+
+            if novel_score == 0.0:
+                # 0.0 is almost always a judge failure — retry once
+                step("Novel score 0.0 detected, retrying evaluation...")
+                retry_eval = uv_run("evaluate.py --full", timeout=600)
+                novel_score = parse_score(retry_eval.stdout, "novel_score")
+                if novel_score == 0.0:
+                    novel_score = parse_score(retry_eval.stdout, "overall_score")
+                if novel_score <= 0.0:
+                    step("Novel score still 0.0 after retry — keeping previous score")
+                    novel_score = prev_score
         else:
             step("Skipping full novel evaluation as requested")
             novel_score = prev_score
@@ -1334,10 +1345,13 @@ def run_export(state: dict) -> dict:
         novel_tex = typeset_dir / "novel.tex"
         if not novel_tex.exists() or novel_tex.stat().st_size < 100:
             step("novel.tex not found or empty, generating via LLM...")
-            try:
-                uv_run("gen_novel_tex.py", timeout=300)
-            except Exception as e:
-                step(f"LLM tex generation failed ({e}), using default template...")
+            for tex_attempt in range(3):
+                try:
+                    uv_run("gen_novel_tex.py", timeout=300)
+                    if novel_tex.exists() and novel_tex.stat().st_size >= 100:
+                        break
+                except Exception as e:
+                    step(f"LLM tex generation attempt {tex_attempt+1}/3 failed ({e})")
             if not novel_tex.exists() or novel_tex.stat().st_size < 100:
                 step("Falling back to default template...")
                 utils.generate_default_novel_tex(novel_tex)

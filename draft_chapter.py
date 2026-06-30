@@ -20,10 +20,11 @@ def call_writer(prompt, max_tokens=None):
     estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
     chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
     target_words = estimated_words // chapter_count
+    prompt_target_words = int(target_words * 1.15)  # inflate prompt target so LLM undershoot lands near real target
     # Cap output tokens at ~3.25x target word count to prevent runaway generation
     if max_tokens is None:
         max_tokens = int(target_words * 3.25)
-    system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {target_words} words. Write fully, expansively, and completely to hit this target. Flesh out every scene with sensory details, full dialogues, and deep character interiority. Avoid summarizing events, skipping actions, or rushing through the narrative. Pacing should be slow, detailed, and immersive."
+    system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {prompt_target_words} words. Write fully, expansively, and completely to hit this target. Flesh out every scene with sensory details, full dialogues, and deep character interiority. Avoid summarizing events, skipping actions, or rushing through the narrative. Pacing should be slow, detailed, and immersive."
     return call_anthropic(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
 
 def load_file(path):
@@ -120,8 +121,14 @@ STRUCTURAL RULES (apply to every chapter):
   document, or realization in more than one beat.
 - The reader must be grounded at the start of this chapter. Every name, title,
   location, and relationship must be established through events — not assumed.
-- Any paragraph must NOT contain three or more consecutive sentences of ≤4 words
-  each. Vary sentence length naturally; this pattern is mechanically penalized.
+
+SCORING RULE — STACCATO PENALTY:
+- Every paragraph with 3+ consecutive sentences of ≤4 words each triggers a -0.5 penalty.
+- This penalty stacks per-paragraph and is NOT capped — it can destroy your score.
+- BAD: "He nodded. She smiled. It was nothing." (3 consecutive short = 1 penalty instance)
+- BAD: "I waited. He didn't move. The silence stretched. Awkward." (4 consecutive = 1 instance)
+- GOOD: "He nodded, but the smile didn't reach his eyes — it was a performance we both saw through."
+- Vary sentence lengths naturally. Every paragraph should have a blend of short, medium, and long sentences.
 """
 
     # Chapter 1 premise-beat guardrail — enumerate beats from the validated outline
