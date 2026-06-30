@@ -68,14 +68,7 @@ def parse_canon(canon_text: str):
         elif current_header.startswith("## As of Chapter"):
             as_of_sections.append(current)
 
-    # Strip "Unexplained references" diagnostic blocks from each section
-    stripped = []
-    for sec in as_of_sections:
-        idx = sec.find("\n**Unexplained references:**")
-        if idx != -1:
-            sec = sec[:idx]
-        stripped.append(sec)
-    disclosure = "\n\n".join(stripped) if stripped else ""
+    disclosure = "\n\n".join(as_of_sections) if as_of_sections else ""
     return foundation, core_canon, disclosure
 
 def extract_chapter_outline(outline_text, chapter_num):
