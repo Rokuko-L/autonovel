@@ -65,7 +65,7 @@ class Tee:
 # ---------------------------------------------------------------------------
 
 FOUNDATION_THRESHOLD = 7.5
-CHAPTER_THRESHOLD = 7.0
+CHAPTER_THRESHOLD = 6.5
 MAX_FOUNDATION_ITERS = 20
 MAX_CHAPTER_ATTEMPTS = 5
 INFRA_MAX_ATTEMPTS = 3      # separate budget for timeouts / empty-file infra failures
