@@ -35,12 +35,12 @@ def load_file(path):
 
 
 def parse_canon(canon_text: str):
-    """Split canon.md into Foundation, Core Canon, and recent As-of Chapter sections.
+    """Split canon.md into Foundation, Core Canon, and As-of Chapter sections.
 
     Returns (foundation, core_canon, disclosure_ceiling):
       - foundation:     `## Foundation` section (background truth, always included)
       - core_canon:     `## Core Canon` section (permanent established facts, always included)
-      - disclosure:     last 5 `## As of Chapter N` sections (incremental reveals, trimmed)
+      - disclosure:     all `## As of Chapter N` sections (everything the reader knows)
     """
     foundation = ""
     core_canon = ""
@@ -67,7 +67,15 @@ def parse_canon(canon_text: str):
             core_canon = current
         elif current_header.startswith("## As of Chapter"):
             as_of_sections.append(current)
-    disclosure = "\n\n".join(as_of_sections[-5:]) if as_of_sections else ""
+
+    # Strip "Unexplained references" diagnostic blocks from each section
+    stripped = []
+    for sec in as_of_sections:
+        idx = sec.find("\n**Unexplained references:**")
+        if idx != -1:
+            sec = sec[:idx]
+        stripped.append(sec)
+    disclosure = "\n\n".join(stripped) if stripped else ""
     return foundation, core_canon, disclosure
 
 def extract_chapter_outline(outline_text, chapter_num):
