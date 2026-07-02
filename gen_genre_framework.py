@@ -174,7 +174,7 @@ Generate the complete content generation configuration block ("generation") as v
   * "gen_canon_prompt" MUST contain: {{seed}} AND {{world}} AND {{characters}}. Frame it as extracting baseline canon facts from the seed/world/characters themselves (not from a chapter), marking them as "true from the start but not yet revealed to readers."
   * "gen_chapter_title_rewriter_prompt" MUST contain: {{outline}} AND {{seed}}.
     - This prompt will guide the LLM to rewrite the chapter titles in the outline (`outline.md`) to make them catchy, witty, and genre-appropriate while preventing repetitive title beginnings.
-    - It must instruct the model to return a raw JSON object only, mapping Chapter Numbers (as strings or integers) to their new, polished Chapter Titles (e.g., `{"1": "New Title 1", "2": "New Title 2"}`).
+    - It must instruct the model to return a raw JSON object only, mapping Chapter Numbers (as strings or integers) to their new, polished Chapter Titles (e.g., `{{"1": "New Title 1", "2": "New Title 2"}}`).
     - It must instruct the model to limit titles starting with "The" to at most 30%, and titles starting with "In Which" to at most 10%, ensuring a diverse range of starting words.
 - "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a unique, evocative, and thematic chapter title for every single chapter (e.g., in the format "Chapter N: Title") instead of using generic titles like "Chapter N".
   * Recommend style guidelines and examples for chapter titles that match the tone/genre of the novel. Show that chapter titles can be:
@@ -432,6 +432,7 @@ def main():
     # Success — write active_genre.json
     import utils
     out_path = utils.get_active_genre_path()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(config1, indent=2))
     print(f"✅ Genre config written to {out_path}", file=sys.stderr)
     print(f"   Genre: {config1['genre_name']}")
