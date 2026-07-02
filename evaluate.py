@@ -557,8 +557,9 @@ def evaluate_chapter(chapter_num):
         actual_words = len(chapter_text.split())
         
         length_penalty = 0.0
-        if actual_words < target_words:
-            length_penalty = max(0, (1 - actual_words / target_words)) * 3.0
+        tolerance_target = int(target_words * 0.8)
+        if actual_words < tolerance_target:
+            length_penalty = max(0, (1 - actual_words / tolerance_target)) * 3.0
             adjusted = max(0, adjusted - length_penalty)
             
         print(f"  [LENGTH] {actual_words}/{target_words} words — penalty: -{length_penalty:.2f}", file=sys.stderr)

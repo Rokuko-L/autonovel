@@ -61,7 +61,7 @@ def extract_titles(outline_text):
     """Parse chapter numbers and titles from outline.md."""
     titles = {}
     for line in outline_text.splitlines():
-        m = re.match(r'^### Ch (\d+):\s*(.+)$', line.strip())
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', line.strip(), re.IGNORECASE)
         if m:
             ch_num = int(m.group(1))
             titles[ch_num] = m.group(2).strip()
@@ -279,11 +279,12 @@ def main():
     lines = outline_text.splitlines()
     replaced_count = 0
     for i, line in enumerate(lines):
-        m = re.match(r'^### Ch (\d+):\s*(.+)$', line.strip())
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', line.strip(), re.IGNORECASE)
         if m:
             ch = int(m.group(1))
+            prefix = line.split(':')[0]
             if ch in new_titles and new_titles[ch] != current_titles[ch]:
-                lines[i] = f"### Ch {ch}: {new_titles[ch]}"
+                lines[i] = f"{prefix}: {new_titles[ch]}"
                 replaced_count += 1
                 
     if replaced_count > 0:
