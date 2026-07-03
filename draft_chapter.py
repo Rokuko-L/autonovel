@@ -73,8 +73,8 @@ def parse_canon(canon_text: str):
 
 def extract_chapter_outline(outline_text, chapter_num):
     """Extract a specific chapter's outline entry."""
-    pattern = rf'### Ch {chapter_num}:.*?(?=### Ch {chapter_num + 1}:|## Foreshadowing|$)'
-    match = re.search(pattern, outline_text, re.DOTALL)
+    pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+    match = re.search(pattern, outline_text, re.IGNORECASE | re.DOTALL)
     return match.group(0).strip() if match else "(not found)"
 
 def extract_next_chapter_outline(outline_text, chapter_num):

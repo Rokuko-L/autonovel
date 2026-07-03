@@ -391,7 +391,7 @@ def get_total_chapters(state: dict) -> int:
     outline = utils.get_outline_path()
     if outline.exists():
         text = outline.read_text(encoding="utf-8")
-        matches = re.findall(r'###\s*Ch(?:apter)?\s*(\d+)', text)
+        matches = re.findall(r'###\s*\*?\*?\s*Ch(?:apter)?\b\s*\*?\*?\s*(\d+)', text, re.IGNORECASE)
         if matches:
             return max(int(m) for m in matches)
     return CHAPTERS_TOTAL
@@ -682,7 +682,7 @@ def run_drafting(state: dict) -> dict:
             quality_attempt = False
             for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
                 cmd = f"\"{sys.executable}\" draft_chapter.py {ch}"
-                draft_result = run_tool(cmd, timeout=600, check=False)
+                draft_result = run_tool(cmd, timeout=900, check=False)
                 if draft_result.returncode != 0:
                     step(f"Draft failed (exit {draft_result.returncode}), retrying...")
                     continue

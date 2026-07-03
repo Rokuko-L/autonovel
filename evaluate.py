@@ -510,8 +510,8 @@ def evaluate_chapter(chapter_num):
 
     # Extract this chapter's outline entry (rough heuristic)
     outline = layers["outline"]
-    ch_pattern = rf'###\s*Ch\s*{chapter_num}\b.*?(?=###\s*Ch\s*\d|## Act|## Foreshadowing|$)'
-    ch_match = re.search(ch_pattern, outline, re.DOTALL)
+    ch_pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+    ch_match = re.search(ch_pattern, outline, re.IGNORECASE | re.DOTALL)
     chapter_outline = ch_match.group(0) if ch_match else "(outline entry not found)"
 
     # Load previous chapter tail
