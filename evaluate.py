@@ -420,10 +420,15 @@ def evaluate_foundation():
 
 # --- Chapter Evaluation ---
 
-def build_chapter_prompt(voice, world, characters, canon, chapter_outline, prev_chapter_tail, chapter_text, disclosure_ceiling=""):
+def build_chapter_prompt(voice, world, characters, canon, chapter_outline, prev_chapter_tail, chapter_text, disclosure_ceiling="", debt_warnings=None):
     cfg = load_genre()
     ccfg = cfg["evaluation"]["chapter"]
     prompt = ccfg["overall_calibration"] + "\n\n"
+    
+    if debt_warnings:
+        prompt += f"CRITICAL REQUIREMENT: This chapter MUST resolve the following active narrative setups/debts:\n"
+        prompt += "\n".join(f"- {w}" for w in debt_warnings)
+        prompt += "\nIf the chapter fails to clearly resolve these setups, dock the overall score significantly and explain why in your critique.\n\n"
 
     prompt += f"""VOICE DEFINITION:
 {voice}
@@ -531,6 +536,22 @@ def evaluate_chapter(chapter_num):
             if prior_sections:
                 disclosure_ceiling = "\n\n".join(prior_sections)
 
+    # Check for active narrative debts to resolve in this chapter
+    chapter_harvests = re.findall(r'\[Harvest:\s*([a-zA-Z0-9_-]+)', chapter_outline, re.IGNORECASE)
+    active_debts_to_resolve = []
+    if chapter_harvests:
+        try:
+            state_path = utils.get_project_dir() / "state.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            debts = state.get("debts", [])
+            for h_slug in chapter_harvests:
+                h_slug_clean = h_slug.strip().lower()
+                for d in debts:
+                    if h_slug_clean in d.lower():
+                        active_debts_to_resolve.append(d)
+        except Exception:
+            pass
+
     prompt = build_chapter_prompt(
         voice=layers["voice"],
         world=layers["world"][:4000],  # truncate world bible
@@ -540,6 +561,7 @@ def evaluate_chapter(chapter_num):
         prev_chapter_tail=prev_tail,
         chapter_text=chapter_text,
         disclosure_ceiling=disclosure_ceiling,
+        debt_warnings=active_debts_to_resolve,
     )
     result = call_judge_json(prompt, max_tokens=8000)
 

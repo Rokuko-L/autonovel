@@ -547,6 +547,18 @@ def run_foundation(state: dict) -> dict:
         step("Sanitizing chapter titles...")
         uv_run("sanitize_outline_titles.py", timeout=300)
 
+        # Validate plants & harvests consistency and extract active debts
+        outline_text = outline_path.read_text(encoding="utf-8")
+        ph_passed, ph_error = utils.validate_plants_harvests(outline_text)
+        if not ph_passed:
+            step(f"WARNING: Outline plants/harvests validation issues found:\n{ph_error}")
+        
+        state = load_state()
+        debts = utils.extract_outline_debts(outline_text)
+        state["debts"] = debts
+        save_state(state)
+        step(f"Logged {len(debts)} active narrative debts in project state.")
+
         step("Generating canon...")
         uv_run("gen_canon.py", timeout=600)
 

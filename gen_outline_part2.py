@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Generate remaining chapters + foreshadowing ledger."""
+"""Refine and expand outline.md block-by-block to add foreshadowing and plants/harvests."""
 import os
 import sys
+import re
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
@@ -11,41 +13,151 @@ from genre import load_genre
 load_dotenv()
 
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
-    return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, timeout=600)
+    return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600)
+
+def validate_block_output(text, start, end):
+    missing = []
+    for ch in range(start, end + 1):
+        pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b'
+        if not re.search(pattern, text, re.IGNORECASE):
+            missing.append(f"Chapter {ch}")
+    if missing:
+        return False, f"Missing detailed outlines for: {', '.join(missing)}"
+    return True, ""
 
 def main():
     root = utils.get_root_dir()
-    part1_path = utils.get_project_dir() / ".outline_part1.md"
-    mystery_path = root / "MYSTERY.md"
+    outline_path = utils.get_outline_path()
+    roadmap_path = utils.get_project_dir() / ".outline_roadmap.md"
 
-    if not part1_path.exists():
-        print(f"ERROR: .outline_part1.md not found at {part1_path} — run gen_outline.py first", file=sys.stderr)
+    if not outline_path.exists():
+        print(f"ERROR: outline.md not found at {outline_path} — run gen_outline.py first", file=sys.stderr)
         sys.exit(1)
-    if not mystery_path.exists():
-        print(f"WARNING: MYSTERY.md not found at {mystery_path}, proceeding without mystery", file=sys.stderr)
 
-    part1 = part1_path.read_text()
-    mystery = mystery_path.read_text() if mystery_path.exists() else ""
+    outline_text = outline_path.read_text(encoding="utf-8")
+    roadmap = roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else ""
+
+    world = (utils.get_world_path()).read_text(encoding="utf-8")
+    characters = (utils.get_characters_path()).read_text(encoding="utf-8")
+    voice = (utils.get_voice_path()).read_text(encoding="utf-8")
+    
+    # Extract voice part 2
+    voice_lines = voice.split('\n')
+    try:
+        part2_start = next(i for i, l in enumerate(voice_lines) if 'Part 2' in l)
+        voice_part2 = '\n'.join(voice_lines[part2_start:])
+    except StopIteration:
+        voice_part2 = voice
 
     genre_cfg = load_genre()
-    prompt = format_prompt(
-        genre_cfg["generation"]["gen_outline_part2_prompt"],
-        part1=part1, mystery=mystery
-    )
+    
+    try:
+        state = json.loads((utils.get_project_dir() / "state.json").read_text(encoding="utf-8"))
+        total_chapters = state.get("chapters_total", 30)
+        title = state.get("title", "Untitled Novel")
+    except Exception:
+        total_chapters = genre_cfg.get("generation", {}).get("outline", {}).get("estimated_chapters", 30)
+        title = "Untitled Novel"
 
-    print("Calling writer model...", file=sys.stderr)
-    for attempt in range(2):
-        result = call_writer(prompt)
-        try:
-            utils.validate_generator_output(result, "gen_outline_part2.py", min_len=200, expected_headers=["## "])
-            break
-        except RuntimeError as e:
-            if attempt == 0:
-                print(f"  WARN: {e}, retrying...", file=sys.stderr)
+    # Extract all unpolished chapters
+    unpolished_chapters = {}
+    for ch in range(1, total_chapters + 1):
+        pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+        match = re.search(pattern, outline_text, re.IGNORECASE | re.DOTALL)
+        if match:
+            unpolished_chapters[ch] = match.group(0).strip()
+        else:
+            print(f"WARNING: Chapter {ch} not found in outline.md during refinement preparation.", file=sys.stderr)
+
+    block_size = 10
+    blocks = []
+    for start in range(1, total_chapters + 1, block_size):
+        end = min(start + block_size - 1, total_chapters)
+        blocks.append((start, end))
+
+    polished_outlines = {}
+
+    for start, end in blocks:
+        print(f"Refining Block Ch {start}-{end}...", file=sys.stderr)
+        
+        # Build unpolished block text
+        unpolished_block = "\n\n".join(unpolished_chapters[ch] for ch in range(start, end + 1) if ch in unpolished_chapters)
+        
+        # Build previous polished context (for local continuity)
+        prev_polished = ""
+        if start > 1:
+            prev_start = max(1, start - block_size)
+            prev_polished = "\n\n".join(polished_outlines[ch] for ch in range(prev_start, start) if ch in polished_outlines)
+
+        prompt = f"""You are a master story pacing editor. Your task is to refine and polish the detailed chapter outlines for Chapters {start} through {end} of "{title}".
+
+GLOBAL ROADMAP & THREAD LEDGER:
+{roadmap}
+
+WORLD BIBLE:
+{world}
+
+CHARACTER REGISTRY:
+{characters}
+
+VOICE STYLE GUIDE:
+{voice_part2}
+
+PREVIOUS POLISHED CHAPTER OUTLINES (for local continuity):
+{prev_polished}
+
+CURRENT UNPOLISHED CHAPTER OUTLINES:
+{unpolished_block}
+
+TASK:
+Refine the unpolished chapter outlines for Chapters {start} through {end}.
+Focus on:
+1. **Scene Pacing**: Ensure each chapter's scene beats are sequential, detailed (3-4 sentences per beat), and advance the plot.
+2. **Plants and Harvests**: Ensure every chapter includes specific plants (setup) and harvests (payoffs) tagged exactly as `[Plant: slug_name - "Description"]` or `[Harvest: slug_name - "Description"]`, aligning with the Global Plot Threads Ledger.
+3. **Tone and Style**: Ensure the prose instructions match the clinical, high-interiority guidelines.
+
+FORMAT REQUIREMENT:
+Write the refined outlines in markdown.
+Each chapter outline must start with a heading: "### Chapter N: [Chapter Title]". Do not write any other chapters outside of Chapters {start} through {end}.
+"""
+        block_result = ""
+        for attempt in range(1, 4):
+            res = call_writer(prompt)
+            passed, err = validate_block_output(res, start, end)
+            if passed:
+                block_result = res
+                break
+            print(f"  WARN: Refinement Block Ch {start}-{end} failed validation on attempt {attempt}/3: {err}. Retrying...", file=sys.stderr)
+            prompt += f"\n\nERROR ON ATTEMPT {attempt}: {err}\nEnsure you return refined outlines for all chapters from {start} to {end}."
+            
+        if not block_result:
+            print(f"ERROR: Failed to refine Block Ch {start}-{end}.", file=sys.stderr)
+            sys.exit(1)
+
+        # Parse and save the block chapters to polished_outlines
+        for ch in range(start, end + 1):
+            pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+            match = re.search(pattern, block_result, re.IGNORECASE | re.DOTALL)
+            if match:
+                polished_outlines[ch] = match.group(0).strip()
             else:
-                raise
-    utils.get_outline_path().write_text(part1 + "\n\n" + result, encoding="utf-8")
-    print(result)
+                print(f"ERROR: Could not isolate Chapter {ch} refined outline from block output.", file=sys.stderr)
+                sys.exit(1)
+
+        # Save active block progress in outline.md immediately
+        full_outline_text = f"# {title.upper()}\n\n" + roadmap + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \
+                            "\n\n---\n\n".join(polished_outlines[ch] for ch in sorted(polished_outlines.keys()))
+        outline_path.write_text(full_outline_text, encoding="utf-8")
+
+    # Final assembly and save
+    full_outline_text = f"# {title.upper()}\n\n" + roadmap + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \
+                        "\n\n---\n\n".join(polished_outlines[ch] for ch in sorted(polished_outlines.keys()))
+    outline_path.write_text(full_outline_text, encoding="utf-8")
+    
+    # Save a copy as .outline_part1.md for backwards compatibility
+    (utils.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
+    
+    print("Outline refinement complete!", file=sys.stderr)
 
 if __name__ == "__main__":
     main()

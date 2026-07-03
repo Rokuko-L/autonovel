@@ -100,6 +100,32 @@ def main():
     chapter_outline = extract_chapter_outline(outline, chapter_num)
     next_chapter = extract_next_chapter_outline(outline, chapter_num)
     
+    # Check for active narrative debts to resolve in this chapter
+    chapter_harvests = re.findall(r'\[Harvest:\s*([a-zA-Z0-9_-]+)', chapter_outline, re.IGNORECASE)
+    active_debts_to_resolve = []
+    if chapter_harvests:
+        try:
+            state_path = utils.get_project_dir() / "state.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            debts = state.get("debts", [])
+            for h_slug in chapter_harvests:
+                h_slug_clean = h_slug.strip().lower()
+                for d in debts:
+                    if h_slug_clean in d.lower():
+                        active_debts_to_resolve.append(d)
+        except Exception:
+            pass
+
+    debt_guardrail = ""
+    if active_debts_to_resolve:
+        debt_lines = "\n".join(f"- {d}" for d in active_debts_to_resolve)
+        debt_guardrail = f"""
+NARRATIVE DEBTS RESOLUTION WARNING:
+This chapter is scheduled to pay off the following narrative setup(s):
+{debt_lines}
+You MUST write prose in this chapter that resolves these setups naturally.
+"""
+    
     # Previous chapter (if exists)
     chapters_dir = utils.get_chapters_dir()
     prev_path = chapters_dir / f"ch_{chapter_num - 1:02d}.md"
@@ -131,6 +157,8 @@ SCORING RULE — STACCATO PENALTY:
 - GOOD: "He nodded, but the smile didn't reach his eyes — it was a performance we both saw through."
 - Vary sentence lengths naturally. Every paragraph should have a blend of short, medium, and long sentences.
 """
+    if debt_guardrail:
+        structural_guardrails += "\n" + debt_guardrail
 
     # Chapter 1 premise-beat guardrail — enumerate beats from the validated outline
     premise_guardrail = ""

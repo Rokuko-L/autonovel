@@ -1097,6 +1097,133 @@ def validate_premise_beats(required_beats: list[str], outline_text: str) -> tupl
     return True, ""
 
 
+def validate_plants_harvests(outline_text: str) -> tuple[bool, str]:
+    """
+    Validate that all plants and harvests in outline.md are logically consistent:
+    - Every harvest must have a corresponding plant in an earlier chapter.
+    - Matches are resolved using slugs. If a slug doesn't match exactly, 
+      token-set overlap fallback is used.
+    """
+    import re
+    import sys
+    
+    # Split text by Chapter headings to locate each chapter's section
+    chapters_content = {}
+    current_ch = None
+    current_lines = []
+    
+    for line in outline_text.splitlines():
+        # Match Chapter headings with/without formatting
+        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\b', cleaned_line, re.IGNORECASE)
+        if m:
+            if current_ch is not None:
+                chapters_content[current_ch] = "\n".join(current_lines)
+            current_ch = int(m.group(1))
+            current_lines = []
+        if current_ch is not None:
+            current_lines.append(line)
+            
+    if current_ch is not None:
+        chapters_content[current_ch] = "\n".join(current_lines)
+
+    # Extract all plants and harvests from each chapter
+    plants = [] # list of dict: {"chapter": int, "slug": str, "desc": str}
+    harvests = [] # list of dict: {"chapter": int, "slug": str, "desc": str}
+    
+    tag_pattern = r'\[(Plant|Harvest):\s*([a-zA-Z0-9_-]+)\s*[:-]\s*[\'"]?([^\'\"\]]+)[\'"]?\]'
+    
+    for ch, content in chapters_content.items():
+        matches = re.findall(tag_pattern, content)
+        for tag_type, slug, desc in matches:
+            slug = slug.strip().lower()
+            desc = desc.strip().lower()
+            if tag_type.lower() == "plant":
+                plants.append({"chapter": ch, "slug": slug, "desc": desc})
+            else:
+                harvests.append({"chapter": ch, "slug": slug, "desc": desc})
+
+    errors = []
+    
+    # Check each harvest
+    for h in harvests:
+        matched_plant = None
+        # Try exact slug match
+        for p in plants:
+            if p["slug"] == h["slug"]:
+                matched_plant = p
+                break
+                
+        # If no exact slug match, try fuzzy matching via token-set overlap on description
+        if not matched_plant:
+            h_words = set(w for w in h["desc"].split() if len(w) >= 4)
+            best_overlap = 0
+            best_p = None
+            for p in plants:
+                p_words = set(w for w in p["desc"].split() if len(w) >= 4)
+                overlap = len(h_words.intersection(p_words))
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_p = p
+            if best_overlap >= 3: # Require at least 3 matching words of length >= 4
+                matched_plant = best_p
+                print(f"[INFO] Fuzzy matched harvest slug '{h['slug']}' with plant slug '{best_p['slug']}' via description token overlap.", file=sys.stderr)
+
+        if not matched_plant:
+            errors.append(f"Dangling harvest: '[Harvest: {h['slug']} - \"{h['desc']}\"]' in Chapter {h['chapter']} has no corresponding plant setup in previous chapters.")
+        elif matched_plant["chapter"] >= h["chapter"]:
+            errors.append(f"Order error: '[Harvest: {h['slug']}]' in Chapter {h['chapter']} occurs before or in the same chapter as its plant setup '[Plant: {matched_plant['slug']}]' in Chapter {matched_plant['chapter']}.")
+
+    if errors:
+        return False, "\n".join(errors)
+    return True, ""
+
+
+def extract_outline_debts(outline_text: str) -> list[str]:
+    """Extract all active plant slugs that have no corresponding harvest in the outline."""
+    import re
+    # Match Chapter headings with/without formatting
+    chapters_content = {}
+    current_ch = None
+    current_lines = []
+    
+    for line in outline_text.splitlines():
+        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\b', cleaned_line, re.IGNORECASE)
+        if m:
+            if current_ch is not None:
+                chapters_content[current_ch] = "\n".join(current_lines)
+            current_ch = int(m.group(1))
+            current_lines = []
+        if current_ch is not None:
+            current_lines.append(line)
+            
+    if current_ch is not None:
+        chapters_content[current_ch] = "\n".join(current_lines)
+
+    plants = []
+    harvests = []
+    tag_pattern = r'\[(Plant|Harvest):\s*([a-zA-Z0-9_-]+)\s*[:-]\s*[\'"]?([^\'\"\]]+)[\'"]?\]'
+    
+    for ch, content in chapters_content.items():
+        matches = re.findall(tag_pattern, content)
+        for tag_type, slug, desc in matches:
+            slug = slug.strip().lower()
+            desc = desc.strip().lower()
+            if tag_type.lower() == "plant":
+                plants.append({"chapter": ch, "slug": slug, "desc": desc})
+            else:
+                harvests.append({"chapter": ch, "slug": slug, "desc": desc})
+
+    harvested_slugs = {h["slug"] for h in harvests}
+    debts = []
+    for p in plants:
+        if p["slug"] not in harvested_slugs:
+            debts.append(f"Ch {p['chapter']} Setup: {p['slug']} - \"{p['desc']}\"")
+            
+    return debts
+
+
 # --- Repetition detection ---
 
 def shingled_jaccard(a: str, b: str, n: int = 4) -> float:

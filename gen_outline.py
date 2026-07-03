@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Generate outline.md from seed + world + characters + mystery + craft."""
+"""Generate outline.md in a robust, act-by-act chunked fashion."""
 import argparse
 import os
 import sys
+import re
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
@@ -14,8 +16,18 @@ load_dotenv()
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
     return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600)
 
+def validate_block_output(text, start, end):
+    missing = []
+    for ch in range(start, end + 1):
+        pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b'
+        if not re.search(pattern, text, re.IGNORECASE):
+            missing.append(f"Chapter {ch}")
+    if missing:
+        return False, f"Missing detailed outlines for: {', '.join(missing)}"
+    return True, ""
+
 def main():
-    parser = argparse.ArgumentParser(description="Generate chapter outline.")
+    parser = argparse.ArgumentParser(description="Generate chapter outline block-by-block.")
     parser.add_argument("--retry-feedback", default="",
                         help="Error feedback from previous attempt (missing/out-of-order premise beats)")
     args = parser.parse_args()
@@ -39,48 +51,211 @@ def main():
     characters = required["characters.md"].read_text()
     mystery = required["MYSTERY.md"].read_text()
     craft = required["CRAFT.md"].read_text()
-
     voice = required["voice.md"].read_text()
+    
+    # Extract voice part 2
     voice_lines = voice.split('\n')
-    part2_start = next(i for i, l in enumerate(voice_lines) if 'Part 2' in l)
-    voice_part2 = '\n'.join(voice_lines[part2_start:])
+    try:
+        part2_start = next(i for i, l in enumerate(voice_lines) if 'Part 2' in l)
+        voice_part2 = '\n'.join(voice_lines[part2_start:])
+    except StopIteration:
+        voice_part2 = voice
 
     genre_cfg = load_genre()
+    genre_name = genre_cfg.get("genre_name", "Dark Political Fantasy")
+    
+    # Get total chapters from project state, default to config or 30
+    try:
+        state = json.loads((utils.get_project_dir() / "state.json").read_text(encoding="utf-8"))
+        total_chapters = state.get("chapters_total", 30)
+        title = state.get("title", "Untitled Novel")
+    except Exception:
+        total_chapters = genre_cfg.get("generation", {}).get("outline", {}).get("estimated_chapters", 30)
+        title = "Untitled Novel"
 
-    # Format premise_arc_beats as a numbered list for the prompt template
     beats = genre_cfg.get("framework", {}).get("premise_arc_beats", [])
     numbered_beats = "\n".join(f"{i+1}. {b}" for i, b in enumerate(beats))
 
-    prompt = format_prompt(
-        genre_cfg["generation"]["gen_outline_prompt"],
-        seed=seed, world=world, characters=characters,
-        mystery=mystery, voice_part2=voice_part2, craft=craft,
-        premise_arc_beats=numbered_beats
-    )
+    # Phase 1: High-Level Roadmap
+    roadmap_path = utils.get_project_dir() / ".outline_roadmap.md"
+    
+    if args.retry_feedback and roadmap_path.exists():
+        print("Retry detected: keeping existing high-level roadmap and regenerating Block 1.", file=sys.stderr)
+        roadmap_content = roadmap_path.read_text(encoding="utf-8")
+    else:
+        print("Phase 1: Generating Global High-Level Roadmap...", file=sys.stderr)
+        roadmap_prompt = f"""You are a master narrative architect. Your task is to generate a high-level roadmap and a Global Plot Threads Ledger for a novel titled "{title}" in the genre: {genre_name}.
 
-    # Append retry feedback for targeted chapter 1 regen if this is a retry
+SEED CONCEPT:
+{seed}
+
+WORLD BIBLE:
+{world}
+
+CHARACTER REGISTRY:
+{characters}
+
+VOICE STYLE GUIDE:
+{voice_part2}
+
+CRAFT GUIDELINES:
+{craft}
+
+TOTAL CHAPTERS: {total_chapters}
+PREMISE ARC BEATS:
+{numbered_beats}
+
+TASK:
+1. Create a high-level roadmap of the entire book. For each chapter from 1 to {total_chapters}, write a 1-to-2 sentence summary of the key event or beat in that chapter. You must distribute the premise arc beats logically across all chapters.
+2. Create a "Global Plot Threads Ledger" listing 3 to 6 major plot threads, and specifying which chapters they are established (planted) and resolved (harvested). Use simple, lowercase slug identifiers for the threads (e.g. "silver_locket", "dead_king_secret").
+
+FORMAT REQUIREMENT:
+Your output must be structured markdown. Start the roadmap section with "## HIGH-LEVEL ROADMAP" and the ledger section with "## GLOBAL PLOT THREADS LEDGER".
+Each chapter entry must start with "### Chapter N:".
+"""
+        roadmap_content = ""
+        for attempt in range(3):
+            res = call_writer(roadmap_prompt)
+            if "## HIGH-LEVEL ROADMAP" in res:
+                roadmap_content = res
+                break
+            print(f"  WARN: Roadmap missing expected header on attempt {attempt+1}, retrying...", file=sys.stderr)
+        if not roadmap_content:
+            print("ERROR: Failed to generate valid roadmap.", file=sys.stderr)
+            sys.exit(1)
+            
+        roadmap_path.write_text(roadmap_content, encoding="utf-8")
+
+    # Phase 2: Block Expansion
+    # We will expand in blocks of 10 chapters
+    block_size = 10
+    blocks = []
+    for start in range(1, total_chapters + 1, block_size):
+        end = min(start + block_size - 1, total_chapters)
+        blocks.append((start, end))
+
+    detailed_outlines = {}
+    
+    # Load any already existing detailed outlines if we are resuming or retrying
+    outline_path = utils.get_outline_path()
+    if outline_path.exists():
+        existing_text = outline_path.read_text(encoding="utf-8")
+        # Extract existing chapters to see what we can keep (unless it is Block 1 on retry)
+        for ch in range(1, total_chapters + 1):
+            pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+            match = re.search(pattern, existing_text, re.IGNORECASE | re.DOTALL)
+            if match:
+                detailed_outlines[ch] = match.group(0).strip()
+
+    # If this is a retry, clear Block 1 (chapters 1-10) to force regeneration
     if args.retry_feedback:
-        prompt += (
-            f"\n\nYOUR PREVIOUS ATTEMPT HAD THESE ERRORS:\n{args.retry_feedback}\n\n"
-            "IMPORTANT: Keep every chapter's outline identical to the previous attempt "
-            "except Chapter 1's PREMISE BEATS section — regenerate only that section "
-            "to fix the errors listed above. Do not change any other chapter."
-        )
+        for ch in range(1, 11):
+            if ch in detailed_outlines:
+                del detailed_outlines[ch]
 
-    print("Calling writer model...", file=sys.stderr)
-    for attempt in range(2):
-        result = call_writer(prompt)
-        try:
-            utils.validate_generator_output(result, "gen_outline.py", min_len=500, expected_headers=["# ", "### "])
-            break
-        except RuntimeError as e:
-            if attempt == 0:
-                print(f"  WARN: {e}, retrying...", file=sys.stderr)
+    # Expand each block
+    for start, end in blocks:
+        # Check if we already have ALL chapters in this block detailed
+        if all(ch in detailed_outlines for ch in range(start, end + 1)):
+            print(f"Block Ch {start}-{end} already expanded, skipping.", file=sys.stderr)
+            continue
+
+        print(f"Phase 2: Expanding Block Ch {start}-{end}...", file=sys.stderr)
+        
+        # Build previous chapters context (just the immediately preceding block for local continuity)
+        prev_detailed = ""
+        if start > 1:
+            prev_start = max(1, start - block_size)
+            prev_detailed = "\n\n".join(detailed_outlines[ch] for ch in range(prev_start, start) if ch in detailed_outlines)
+
+        # Build active plants/debts context from previous blocks
+        active_plants = []
+        # Find all plants in previous chapters
+        prev_text = "\n\n".join(detailed_outlines[ch] for ch in sorted(detailed_outlines.keys()) if ch < start)
+        all_plants = re.findall(r'\[Plant:\s*([a-zA-Z0-9_]+)\s*-\s*\"([^\"]+)\"\]', prev_text)
+        all_harvests = re.findall(r'\[Harvest:\s*([a-zA-Z0-9_]+)\s*-\s*\"([^\"]+)\"\]', prev_text)
+        harvested_slugs = {h[0] for h in all_harvests}
+        for slug, desc in all_plants:
+            if slug not in harvested_slugs:
+                active_plants.append(f"- [Plant: {slug} - \"{desc}\"]")
+        active_plants_text = "\n".join(active_plants) if active_plants else "None (all previous plants resolved)"
+
+        block_prompt = f"""You are a master story pacing engineer. Your task is to take the high-level roadmap and expand Chapters {start} through {end} of "{title}" into detailed chapter outlines.
+
+GLOBAL ROADMAP & THREAD LEDGER:
+{roadmap_content}
+
+WORLD BIBLE:
+{world}
+
+CHARACTER REGISTRY:
+{characters}
+
+VOICE STYLE GUIDE:
+{voice_part2}
+
+ACTIVE PLANTS (open threads from previous chapters that need harvesting/resolution):
+{active_plants_text}
+
+PREVIOUS DETAILED OUTLINES (for local continuity):
+{prev_detailed}
+
+TASK:
+Write the detailed outlines for Chapters {start} through {end}.
+For EACH chapter in this range, you must output:
+1. POV: [Character name]
+2. Emotional Arc: [Emotional shift, e.g. Contentment -> Dread]
+3. Summary: [2-3 sentences of what happens]
+4. Scene Beats: A numbered list of 4 to 6 sequential scene beats. Each beat MUST have a detailed paragraph (3-4 sentences) describing the events.
+5. Plants & Harvests: List of plants and harvests, tagged exactly as `[Plant: slug_name - "Description"]` or `[Harvest: slug_name - "Description"]`.
+
+CRITICAL RULES:
+- Use standard slug identifiers matching the Global Plot Threads Ledger where applicable (e.g. silver_locket, dead_king_secret).
+- Generate exactly Chapters {start} through {end}. Do not skip any chapters. Do not write outlines for chapters outside this range.
+- Start each chapter outline with a header: "### Chapter N: [Title]"
+"""
+        # Append retry feedback if editing Block 1
+        if start == 1 and args.retry_feedback:
+            block_prompt += f"\n\nYOUR PREVIOUS ATTEMPT FOR CHAPTER 1 HAD THESE ERRORS:\n{args.retry_feedback}\nMake sure Chapter 1 includes the PREMISE BEATS section in correct format."
+
+        block_result = ""
+        for attempt in range(1, 4):
+            res = call_writer(block_prompt)
+            passed, err = validate_block_output(res, start, end)
+            if passed:
+                block_result = res
+                break
+            print(f"  WARN: Block Ch {start}-{end} validation failed on attempt {attempt}/3: {err}. Retrying...", file=sys.stderr)
+            block_prompt += f"\n\nERROR ON ATTEMPT {attempt}: {err}\nEnsure you write detailed outlines for all chapters from {start} to {end}."
+            
+        if not block_result:
+            print(f"ERROR: Failed to expand Block Ch {start}-{end}.", file=sys.stderr)
+            sys.exit(1)
+
+        # Parse and save the block chapters to detailed_outlines
+        for ch in range(start, end + 1):
+            pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+            match = re.search(pattern, block_result, re.IGNORECASE | re.DOTALL)
+            if match:
+                detailed_outlines[ch] = match.group(0).strip()
             else:
-                raise
-    utils.get_outline_path().write_text(result, encoding="utf-8")
-    (utils.get_project_dir() / ".outline_part1.md").write_text(result, encoding="utf-8")
-    print(result)
+                print(f"ERROR: Could not isolate Chapter {ch} outline from block output.", file=sys.stderr)
+                sys.exit(1)
+
+        # Save active block progress in outline.md immediately
+        full_outline_text = f"# {title.upper()}\n\n" + roadmap_content + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \
+                            "\n\n---\n\n".join(detailed_outlines[ch] for ch in sorted(detailed_outlines.keys()))
+        outline_path.write_text(full_outline_text, encoding="utf-8")
+
+    # Final assembly and save
+    full_outline_text = f"# {title.upper()}\n\n" + roadmap_content + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \
+                        "\n\n---\n\n".join(detailed_outlines[ch] for ch in sorted(detailed_outlines.keys()))
+    outline_path.write_text(full_outline_text, encoding="utf-8")
+    
+    # Save a copy as .outline_part1.md for backwards compatibility
+    (utils.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
+    
+    print("Outline generation complete!", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
