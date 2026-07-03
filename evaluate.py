@@ -387,11 +387,11 @@ Score these dimensions (gap + improvement required for each):
     prompt += f"""
 Respond with JSON:
 {{
+  "overall_score": N,
+  "lore_score": N,
 {chr(10).join(f'  "{dim["key"]}": {{"score": N, "gap": "...", "fix": "...", "note": "..."}},' for dim in ecfg["dimensions"])}
   "slop_in_planning_docs": {{"found": ["list any AI slop patterns"], "note": "..."}},
   "contradictions_found": ["list any factual contradictions"],
-  "overall_score": N,
-  "lore_score": N,
   "weakest_dimension": "...",
   "top_3_improvements": ["ranked list of improvements"]
 }}
@@ -484,11 +484,11 @@ Score these dimensions:
     prompt += f"""
 Respond with JSON:
 {{
+  "overall_score": N,
 {chr(10).join(f'  "{dim["key"]}": {{"score": N, "weakest_moment": "...", "fix": "...", "note": "..."}},' for dim in ccfg["dimensions"])}
   "three_weakest_sentences": ["quote 1", "quote 2", "quote 3"],
   "three_strongest_sentences": ["quote 1", "quote 2", "quote 3"],
   "ai_patterns_detected": ["list any AI writing patterns found"],
-  "overall_score": N,
   "weakest_dimension": "...",
   "top_3_revisions": ["specific revision 1", "revision 2", "revision 3"],
   "new_canon_entries": [{{"fact": "new fact description", "scope": "core|incremental"}}],
