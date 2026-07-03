@@ -264,6 +264,8 @@ def git_reset_hard(ref: str = "HEAD~1"):
     """Hard reset to discard bad changes."""
     step(f"GIT RESET: {ref}")
     run_tool(f"git reset --hard {ref}", cwd=str(utils.get_project_dir()))
+    # Clean untracked files/directories to prevent cross-iteration contamination
+    run_tool("git clean -fd", cwd=str(utils.get_project_dir()))
 
 
 def git_commit_staged(message: str) -> str:
