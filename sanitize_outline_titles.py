@@ -61,7 +61,9 @@ def extract_titles(outline_text):
     """Parse chapter numbers and titles from outline.md."""
     titles = {}
     for line in outline_text.splitlines():
-        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', line.strip(), re.IGNORECASE)
+        # Strip markdown formatting (*, _) before matching to be robust against styled headers
+        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', cleaned_line, re.IGNORECASE)
         if m:
             ch_num = int(m.group(1))
             titles[ch_num] = m.group(2).strip()
@@ -279,19 +281,29 @@ def main():
     lines = outline_text.splitlines()
     replaced_count = 0
     for i, line in enumerate(lines):
-        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', line.strip(), re.IGNORECASE)
+        # Strip markdown formatting (*, _) to match the chapter format
+        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', cleaned_line, re.IGNORECASE)
         if m:
             ch = int(m.group(1))
-            prefix = line.split(':')[0]
-            if ch in new_titles and new_titles[ch] != current_titles[ch]:
-                lines[i] = f"{prefix}: {new_titles[ch]}"
+            parts = line.split(':', 1)
+            prefix = parts[0]
+            # Safely capture any formatting suffixes (e.g. trailing **)
+            suffix = ""
+            if line.endswith('**'):
+                suffix = "**"
+            elif line.endswith('*'):
+                suffix = "*"
+            
+            if ch in new_titles and ch in current_titles and new_titles[ch] != current_titles[ch]:
+                lines[i] = f"{prefix}: {new_titles[ch]}{suffix}"
                 replaced_count += 1
                 
     if replaced_count > 0:
         outline_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"Successfully sanitized outline.md. Renamed {replaced_count} chapter titles:")
         for ch in sorted(new_titles.keys()):
-            if new_titles[ch] != current_titles[ch]:
+            if ch in current_titles and new_titles[ch] != current_titles[ch]:
                 print(f"  Ch {ch}: '{current_titles[ch]}' -> '{new_titles[ch]}'")
     else:
         print("Sanitization succeeded, but no titles needed to be changed.")
