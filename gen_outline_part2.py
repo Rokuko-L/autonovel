@@ -59,15 +59,20 @@ def main():
         total_chapters = genre_cfg.get("generation", {}).get("outline", {}).get("estimated_chapters", 30)
         title = "Untitled Novel"
 
-    # Extract all unpolished chapters
+    # Extract all unpolished chapters (only from Detailed section)
     unpolished_chapters = {}
-    for ch in range(1, total_chapters + 1):
-        pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
-        match = re.search(pattern, outline_text, re.IGNORECASE | re.DOTALL)
-        if match:
-            unpolished_chapters[ch] = match.group(0).strip()
-        else:
-            print(f"WARNING: Chapter {ch} not found in outline.md during refinement preparation.", file=sys.stderr)
+    if "## DETAILED CHAPTER OUTLINES" in outline_text:
+        detailed_section = outline_text.split("## DETAILED CHAPTER OUTLINES", 1)[1]
+        for ch in range(1, total_chapters + 1):
+            pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+            match = re.search(pattern, detailed_section, re.IGNORECASE | re.DOTALL)
+            if match:
+                unpolished_chapters[ch] = match.group(0).strip()
+            else:
+                print(f"WARNING: Chapter {ch} not found in outline.md Detailed section during refinement preparation.", file=sys.stderr)
+    else:
+        print("ERROR: ## DETAILED CHAPTER OUTLINES section not found in outline.md during refinement preparation.", file=sys.stderr)
+        sys.exit(1)
 
     block_size = 10
     blocks = []

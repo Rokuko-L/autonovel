@@ -140,12 +140,17 @@ Each chapter entry must start with "### Chapter N:".
     outline_path = utils.get_outline_path()
     if outline_path.exists():
         existing_text = outline_path.read_text(encoding="utf-8")
-        # Extract existing chapters to see what we can keep (unless it is Block 1 on retry)
-        for ch in range(1, total_chapters + 1):
-            pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
-            match = re.search(pattern, existing_text, re.IGNORECASE | re.DOTALL)
-            if match:
-                detailed_outlines[ch] = match.group(0).strip()
+        # Extract existing chapters to see what we can keep (only from the Detailed section)
+        if "## DETAILED CHAPTER OUTLINES" in existing_text:
+            detailed_section = existing_text.split("## DETAILED CHAPTER OUTLINES", 1)[1]
+            for ch in range(1, total_chapters + 1):
+                pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{ch}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
+                match = re.search(pattern, detailed_section, re.IGNORECASE | re.DOTALL)
+                if match:
+                    match_text = match.group(0).strip()
+                    # Ensure it is a detailed outline, not a leftover snippet
+                    if "POV:" in match_text or "Scene Beats:" in match_text:
+                        detailed_outlines[ch] = match_text
 
     # If this is a retry, clear Block 1 (chapters 1-10) to force regeneration
     if args.retry_feedback:
