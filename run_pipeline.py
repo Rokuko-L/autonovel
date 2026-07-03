@@ -542,7 +542,7 @@ def run_foundation(state: dict) -> dict:
         }, indent=2), encoding="utf-8")
 
         step("Generating outline (part 2 — foreshadowing)...")
-        uv_run("gen_outline_part2.py", timeout=600)
+        uv_run("gen_outline_part2.py", timeout=900)
 
         step("Sanitizing chapter titles...")
         uv_run("sanitize_outline_titles.py", timeout=300)
