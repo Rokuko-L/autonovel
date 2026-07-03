@@ -81,11 +81,13 @@ def parse_titles_list(raw_response):
     for line in lines:
         match = re.match(r'^\d+[\.\)]\s*(.+)$', line.strip())
         if match:
-            titles.append(match.group(1).strip().strip('"').strip("'"))
+            t = match.group(1).strip().strip('"').strip("'").strip("*").strip("_").strip()
+            if t:
+                titles.append(t)
     if not titles:
         for line in lines:
-            cleaned = line.strip().strip('"').strip("'")
-            if cleaned and not cleaned.startswith("Here") and not cleaned.startswith("15") and not cleaned.startswith("10"):
+            cleaned = line.strip().strip('"').strip("'").strip("*").strip("_").strip()
+            if cleaned and not cleaned.startswith("Here") and not re.match(r'^(?:15|10)\b', cleaned):
                 titles.append(cleaned)
     return titles[:25]
 
@@ -260,7 +262,22 @@ No explanations. Example:
                 for fut in as_completed(fut_map):
                     judge_key, scores = fut.result()
                     for title in unseen:
-                        all_judge_scores.setdefault(title, []).append(scores.get(title, 50))
+                        score = scores.get(title)
+                        if score is None:
+                            # Normalize comparisons to handle minor LLM formatting differences (e.g. asterisks/quotes)
+                            def normalize(s):
+                                return re.sub(r'[\s\*_"\']+', '', s).lower()
+                            norm_title = normalize(title)
+                            for k, v in scores.items():
+                                if normalize(k) == norm_title:
+                                    try:
+                                        score = int(v)
+                                    except (ValueError, TypeError):
+                                        pass
+                                    break
+                        if score is None:
+                            score = 50
+                        all_judge_scores.setdefault(title, []).append(score)
 
             # Aggregate into Hall of Fame
             for title, score_list in all_judge_scores.items():
