@@ -226,21 +226,24 @@ def slop_score(text):
             else:
                 run = 0
 
+    # Scale absolute counts to a density basis (per 3,000 words) to prevent manuscript length inflation
+    scale = 3000.0 / word_count
+
     # Composite penalty (0 = clean, 10 = disaster)
     penalty = 0.0
-    penalty += min(len(tier1_hits) * 1.5, 4.0)       # tier1: up to 4 pts
-    penalty += min(tier2_cluster_count * 1.0, 2.0)    # tier2 clusters: up to 2 pts
-    penalty += min(sum(c for _, c in tier3_hits) * 0.3, 2.0)  # tier3: up to 2 pts
+    penalty += min((len(tier1_hits) * scale) * 1.5, 4.0)       # tier1: up to 4 pts
+    penalty += min((tier2_cluster_count * scale) * 1.0, 2.0)    # tier2 clusters: up to 2 pts
+    penalty += min((sum(c for _, c in tier3_hits) * scale) * 0.3, 2.0)  # tier3: up to 2 pts
     if em_dash_density > 15:
         penalty += min((em_dash_density - 15) * 0.3, 1.0)  # em dashes: up to 1 pt (threshold raised for voice)
     if sentence_length_cv < 0.3:
         penalty += 1.0  # uniform sentence length: 1 pt
     if transition_ratio > 0.3:
         penalty += min(transition_ratio * 2, 1.0)  # transition abuse: up to 1 pt
-    penalty += min(fiction_tell_count * 0.3, 2.0)     # fiction AI tells: up to 2 pts
-    penalty += min(telling_count * 0.2, 1.5)          # show-don't-tell: up to 1.5 pts
-    penalty += min(structural_tic_count * 0.5, 2.0)   # structural AI tics: up to 2 pts
-    penalty += min(staccato_runs * 0.5, 1.0)          # staccato punchlines: up to 1 pt
+    penalty += min((fiction_tell_count * scale) * 0.3, 2.0)     # fiction AI tells: up to 2 pts
+    penalty += min((telling_count * scale) * 0.2, 1.5)          # show-don't-tell: up to 1.5 pts
+    penalty += min((structural_tic_count * scale) * 0.5, 2.0)   # structural AI tics: up to 2 pts
+    penalty += min((staccato_runs * scale) * 0.5, 1.0)          # staccato punchlines: up to 1 pt
 
     penalty = min(penalty, 10.0)
 
