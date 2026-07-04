@@ -623,6 +623,7 @@ Score these novel-level dimensions 0-10:
 
 Respond with JSON:
 {{
+  "novel_score": N,
   "arc_completion": {{"score": N, "note": "..."}},
   "pacing_curve": {{"score": N, "note": "..."}},
   "theme_coherence": {{"score": N, "note": "..."}},
@@ -630,7 +631,6 @@ Respond with JSON:
   "world_consistency": {{"score": N, "note": "..."}},
   "voice_consistency": {{"score": N, "note": "..."}},
   "overall_engagement": {{"score": N, "note": "..."}},
-  "novel_score": N,
   "weakest_dimension": "...",
   "weakest_chapter": N,
   "top_suggestion": "..."
