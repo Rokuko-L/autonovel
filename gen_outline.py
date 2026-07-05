@@ -26,6 +26,54 @@ def validate_block_output(text, start, end):
         return False, f"Missing detailed outlines for: {', '.join(missing)}"
     return True, ""
 
+def verify_tonal_drift(roadmap_text, seed_concept, genre_name):
+    """
+    Evaluates Acts 2 & 3 of the roadmap for tonal drift or magic/tech rule breaks against Act 1.
+    Returns (has_drift, feedback_message)
+    """
+    print("Running Phase 1 tonal drift validation...", file=sys.stderr)
+    prompt = f"""You are a master story editor. Your task is to analyze the proposed high-level roadmap of a novel for tonal drift, logic breaks, or sudden genre shifts.
+    
+    NOVEL GENRE: {genre_name}
+    SEED CONCEPT:
+    {seed_concept}
+    
+    HIGH-LEVEL ROADMAP:
+    {roadmap_text}
+    
+    TASK:
+    Analyze if Act 2 (Chapters 11-20) or Act 3 (Chapters 21-30) deviates significantly from the established world rules, tone, style, or stakes register of Act 1 (Chapters 1-10).
+    For example:
+    - Does a political intrigue novel suddenly become a sci-fi simulation?
+    - Does a grounded low-magic fantasy shift to high-fantasy multiversal travel with no setup?
+    - Are the rules of the magic system or setting established in Act 1 violated later?
+    
+    Respond in JSON format:
+    {{
+      "has_drift": true/false,
+      "analysis": "A detailed multi-sentence description of your analysis and findings.",
+      "violations": [
+        "Description of violation 1 (if any)...",
+        "Description of violation 2 (if any)..."
+      ]
+    }}
+    JSON only, no formatting/preamble outside the JSON object."""
+    
+    try:
+        from utils import parse_json_response
+        raw = call_anthropic(prompt=prompt, system="You are a meticulous book editor who outputs valid JSON only.", model_key="judge", max_tokens=2000, temperature=0.1)
+        data = parse_json_response(raw)
+        has_drift = data.get("has_drift", False)
+        violations = data.get("violations", [])
+        if has_drift and violations:
+            feedback = "Tonal/Genre violations detected:\n" + "\n".join(f"- {v}" for v in violations)
+            return True, feedback
+        return False, ""
+    except Exception as e:
+        print(f"  WARN: Tonal drift validation call failed ({e}), skipping gatekeeper.", file=sys.stderr)
+        return False, ""
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate chapter outline block-by-block.")
     parser.add_argument("--retry-feedback", default="",
@@ -114,12 +162,20 @@ Your output must be structured markdown. Start the roadmap section with "## HIGH
 Each chapter entry must start with "### Chapter N:".
 """
         roadmap_content = ""
-        for attempt in range(3):
+        for attempt in range(1, 4):
             res = call_writer(roadmap_prompt)
             if "## HIGH-LEVEL ROADMAP" in res:
-                roadmap_content = res
-                break
-            print(f"  WARN: Roadmap missing expected header on attempt {attempt+1}, retrying...", file=sys.stderr)
+                # Run the tonal drift check
+                has_drift, feedback = verify_tonal_drift(res, seed, genre_name)
+                if not has_drift:
+                    roadmap_content = res
+                    break
+                else:
+                    print(f"  WARN: Roadmap attempt {attempt} failed tonal drift check:\n{feedback}", file=sys.stderr)
+                    # Add drift feedback to prompt for self-correction
+                    roadmap_prompt += f"\n\nERROR ON ATTEMPT {attempt}: {feedback}\nEnsure that the proposed outline maintains a consistent tone, stakes register, and world/magic rules between Act 1 and Acts 2/3."
+            else:
+                print(f"  WARN: Roadmap missing expected header on attempt {attempt}, retrying...", file=sys.stderr)
         if not roadmap_content:
             print("ERROR: Failed to generate valid roadmap.", file=sys.stderr)
             sys.exit(1)
@@ -209,10 +265,13 @@ TASK:
 Write the detailed outlines for Chapters {start} through {end}.
 For EACH chapter in this range, you must output:
 1. POV: [Character name]
-2. Emotional Arc: [Emotional shift, e.g. Contentment -> Dread]
-3. Summary: [2-3 sentences of what happens]
-4. Scene Beats: A numbered list of 4 to 6 sequential scene beats. Each beat MUST have a detailed paragraph (3-4 sentences) describing the events.
-5. Plants & Harvests: List of plants and harvests, tagged exactly as `[Plant: slug_name - "Description"]` or `[Harvest: slug_name - "Description"]`.
+2. Characters: [List of characters who appear in this chapter, comma-separated]
+3. Emotional Arc: [Emotional shift, e.g. Contentment -> Dread]
+4. Summary: [2-3 sentences of what happens]
+5. Orientation Facts: [A bulleted list of 2-4 concrete, statable facts the outline commits to reveal/establish in this chapter for orientation, e.g. relationships, setting details, background context. Especially critical for Chapter 1 and character introduction chapters]
+6. Scene Stakes: [One sentence describing what concrete external stakes are at play or could change by the end of this specific chapter]
+7. Scene Beats: A numbered list of 4 to 6 sequential scene beats. Each beat MUST have a detailed paragraph (3-4 sentences) describing the events.
+8. Plants & Harvests: List of plants and harvests, tagged exactly as `[Plant: slug_name - "Description"]` or `[Harvest: slug_name - "Description"]`.
 
 CRITICAL RULES:
 - Use standard slug identifiers matching the Global Plot Threads Ledger where applicable (e.g. silver_locket, dead_king_secret).
@@ -251,6 +310,50 @@ CRITICAL RULES:
         full_outline_text = f"# {title.upper()}\n\n" + roadmap_content + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \
                             "\n\n---\n\n".join(detailed_outlines[ch] for ch in sorted(detailed_outlines.keys()))
         outline_path.write_text(full_outline_text, encoding="utf-8")
+
+    # Late-Introduction Validator
+    print("Running late-introduction validator...", file=sys.stderr)
+    late_intro_errors = []
+    character_first_appearance = {}
+    character_block_appearances = {}
+    
+    for ch in sorted(detailed_outlines.keys()):
+        ch_text = detailed_outlines[ch]
+        chars_match = re.search(r'-\s*(?:\*\*|\*)?Characters(?:\*\*|\*)?:\s*(.*)', ch_text, re.IGNORECASE)
+        if chars_match:
+            char_line = chars_match.group(1).strip()
+            char_line = re.sub(r'[\*\_\-\[\]\(\)]', '', char_line)
+            chars = [c.strip() for c in char_line.split(',') if c.strip()]
+            for char in chars:
+                char_lower = char.lower()
+                # Skip generic tokens
+                if char_lower in ["unseen", "mentioned", "referenced", "none"]:
+                    continue
+                # Clean up role annotations (e.g. "Kael (Spare)" -> "kael")
+                char_clean = re.sub(r'\s*\(.*?\)', '', char_lower).strip()
+                if not char_clean:
+                    continue
+                if char_clean not in character_first_appearance:
+                    character_first_appearance[char_clean] = (ch, char.strip())
+                if char_clean not in character_block_appearances:
+                    character_block_appearances[char_clean] = []
+                character_block_appearances[char_clean].append(ch)
+
+    cutoff_chapter = int(total_chapters * 0.6)
+    for char_clean, (first_ch, char_name) in character_first_appearance.items():
+        if first_ch > cutoff_chapter:
+            appearances = character_block_appearances[char_clean]
+            if len(appearances) >= 3:
+                late_intro_errors.append(
+                    f"Character '{char_name}' is introduced late in Ch {first_ch} (after 60% mark) "
+                    f"but appears in {len(appearances)} chapters: {appearances}."
+                )
+
+    if late_intro_errors:
+        print("\n[WARN] Late-introduction validator flagged structural risks:", file=sys.stderr)
+        for err in late_intro_errors:
+            print(f"  - {err}", file=sys.stderr)
+        print("Check outline.md for late-introduction issues. Continuing pipeline...\n", file=sys.stderr)
 
     # Final assembly and save
     full_outline_text = f"# {title.upper()}\n\n" + roadmap_content + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \

@@ -509,6 +509,64 @@ quotes. If any describe a problem an editor would flag, your score is too high.
     return prompt
 
 
+def check_orientation_facts(chapter_text, chapter_outline):
+    """
+    Check if the orientation facts from the outline appear in the chapter text.
+    Returns a list of failed facts.
+    """
+    import re
+    match = re.search(r'Orientation\s+Facts\s*(?:\*\*)?:\s*(.*?)(?=\n\s*(?:-\s*)?\*\*|\Z)', chapter_outline, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return []
+    
+    facts = []
+    for line in match.group(1).splitlines():
+        line = line.strip().lstrip('-*').strip()
+        if line:
+            facts.append(line)
+            
+    if not facts:
+        return []
+        
+    text_lower = chapter_text.lower()
+    failed_facts = []
+    
+    # Common stop words to ignore
+    stop_words = {
+        "with", "from", "over", "under", "about", "after", "through", "between",
+        "before", "into", "onto", "your", "their", "them", "then", "there", "they",
+        "that", "this", "these", "those", "have", "been", "were", "what", "when",
+        "where", "which", "who", "whom", "whose", "why", "how", "will", "would",
+        "shall", "should", "could", "might", "must", "some", "any", "each", "every",
+        "both", "either", "neither", "somebody", "someone", "something", "anybody",
+        "anyone", "anything", "nobody", "nothing", "everything", "everyone", "everybody"
+    }
+    
+    for fact in facts:
+        # Try to find capitalized words (proper nouns)
+        proper_nouns = re.findall(r'\b[A-Z][a-z]+\b', fact)
+        proper_nouns = [w for w in proper_nouns if w.lower() not in stop_words]
+        
+        found = False
+        if proper_nouns:
+            for pn in proper_nouns:
+                if pn.lower() in text_lower:
+                    found = True
+                    break
+        else:
+            words = re.findall(r'\b[a-zA-Z]{4,}\b', fact)
+            non_trivial = [w.lower() for w in words if w.lower() not in stop_words]
+            for w in non_trivial:
+                if w in text_lower:
+                    found = True
+                    break
+                    
+        if not found:
+            failed_facts.append(fact)
+            
+    return failed_facts
+
+
 def evaluate_chapter(chapter_num):
     layers = load_layer_files()
     chapter_text = load_chapter(chapter_num)
@@ -581,14 +639,42 @@ def evaluate_chapter(chapter_num):
         target_words = estimated_words // chapter_count
         actual_words = len(chapter_text.split())
         
+        # Word count penalty with climax/finale buffer
         length_penalty = 0.0
-        tolerance_target = int(target_words * 0.8)
-        if actual_words < tolerance_target:
-            length_penalty = max(0, (1 - actual_words / tolerance_target)) * 3.0
+        tolerance_min = int(target_words * 0.8)
+        
+        is_climax = False
+        if chapter_num == chapter_count:
+            is_climax = True
+        else:
+            if "climax" in chapter_outline.lower() or "battle" in chapter_outline.lower() or "final" in chapter_outline.lower() or "coup" in chapter_outline.lower():
+                is_climax = True
+                
+        if is_climax:
+            tolerance_max = int(target_words * 1.55) # ~5,000 words ceiling
+            print(f"  [INFO] Climax chapter detected: higher length ceiling allowed ({tolerance_max} words)", file=sys.stderr)
+        else:
+            tolerance_max = int(target_words * 1.25) # 4,000 words ceiling
+            
+        if actual_words < tolerance_min:
+            length_penalty = max(0, (1 - actual_words / tolerance_min)) * 3.0
             adjusted = max(0, adjusted - length_penalty)
+        elif actual_words > tolerance_max:
+            length_penalty = max(0, (actual_words / tolerance_max - 1)) * 3.0
+            adjusted = max(0, adjusted - length_penalty)
+            
+        # Orientation facts check
+        failed_facts = check_orientation_facts(chapter_text, chapter_outline)
+        orientation_penalty = 0.0
+        if failed_facts:
+            orientation_penalty = len(failed_facts) * 2.0
+            adjusted = max(0, adjusted - orientation_penalty)
+            print(f"  [ORIENTATION] FAILED: {len(failed_facts)} fact(s) not dramatized: {failed_facts} — penalty: -{orientation_penalty:.2f}", file=sys.stderr)
+            result["orientation_failed_facts"] = failed_facts
             
         print(f"  [LENGTH] {actual_words}/{target_words} words — penalty: -{length_penalty:.2f}", file=sys.stderr)
         result["length_penalty"] = length_penalty
+        result["orientation_penalty"] = orientation_penalty
         result["raw_judge_score"] = result["overall_score"]
         result["overall_score"] = round(adjusted, 2)
 

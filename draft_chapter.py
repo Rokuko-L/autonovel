@@ -85,6 +85,19 @@ def extract_next_chapter_outline(outline_text, chapter_num):
     lines = next_entry.split('\n')[:10]
     return '\n'.join(lines)
 
+def parse_orientation_facts(chapter_outline):
+    """Parse orientation facts list from chapter outline."""
+    import re
+    match = re.search(r'Orientation\s+Facts\s*(?:\*\*)?:\s*(.*?)(?=\n\s*(?:-\s*)?\*\*|\Z)', chapter_outline, re.IGNORECASE | re.DOTALL)
+    if match:
+        facts = []
+        for line in match.group(1).splitlines():
+            line = line.strip().lstrip('-*').strip()
+            if line:
+                facts.append(line)
+        return facts
+    return []
+
 def main():
     chapter_num = int(sys.argv[1])
     
@@ -159,6 +172,17 @@ SCORING RULE — STACCATO PENALTY:
 """
     if debt_guardrail:
         structural_guardrails += "\n" + debt_guardrail
+
+    # Parse and append Orientation Facts checklist to guardrails
+    orientation_facts = parse_orientation_facts(chapter_outline)
+    if orientation_facts:
+        fact_lines = "\n".join(f"  - {f}" for f in orientation_facts)
+        orientation_guardrail = f"""
+ORIENTATION CHECKLIST (MUST DRAMATIZE):
+You MUST explicitly establish and dramatize the following facts in the chapter prose. Ground them in what is happening externally and internally. Do NOT simply state them in a summary narration block; dramatize them through action, thoughts, or dialogue:
+{fact_lines}
+"""
+        structural_guardrails += "\n" + orientation_guardrail
 
     # Chapter 1 premise-beat guardrail — enumerate beats from the validated outline
     premise_guardrail = ""
