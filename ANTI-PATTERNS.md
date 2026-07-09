@@ -1,5 +1,8 @@
 # AI WRITING ANTI-PATTERNS
 
+> [!WARNING]
+> **HISTORICAL DOCUMENT ONLY:** The contents of this file have been integrated into `voice.md` (specifically under Part 1: Guardrails). This file is preserved for reference only and is not loaded by the pipeline.
+
 Patterns discovered through iterative evaluation of AI-generated novel
 chapters. These are the specific failure modes that survive prompt
 engineering and surface-level slop detection. They are structural, not

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 import utils
 
-VALID_TYPES = {"OVER-EXPLAIN", "REDUNDANT", "FAT", "TELL", "STRUCTURAL", "GENERIC"}
+VALID_TYPES = {"OVER-EXPLAIN", "REDUNDANT", "FAT", "TELL", "STRUCTURAL", "GENERIC", "STACCATO"}
 MIN_QUOTE_LEN = 25
 
 

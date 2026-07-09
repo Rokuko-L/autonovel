@@ -102,6 +102,17 @@ is a dead giveaway. Use commas, parentheses, or two sentences instead.
 (a merchant's inventory, a spell's components), earn it. Don't
 default to bullet points because it's easy.
 
+**Staccato fragment abuse**: No staccato emphasis fragments. Do not follow a full sentence or clause with one or more short fragments (roughly 1-4 words, lacking a main verb or a complete subject-verb pair) used to land emphasis through rhythm and white space rather than through content. This applies regardless of how many fragments are used, their part of speech, or whether they're nouns, adjectives, or clipped clauses — the tell is the shape (statement, then staccato beat(s)), not the specific words.
+
+Banned shape, with examples spanning different lengths and word types so the pattern is clear — do not treat these as the exhaustive list, treat them as the same failure mode wearing different clothes:
+*   *Single-word pairs:* "Silver. Victory." / "Restless. Hungry."
+*   *Adjective contrasts:* "Warm. Safe." / "Practical. Unadorned."
+*   *Three-part noun/adjective runs:* "Stronger. Tighter. More efficient."
+*   *Clipped parallel clauses:* "It hurt. It was real." / "The silence stretched. Cracked. Broke."
+*   *Negated fragments:* "Not reduced. Not restructured."
+
+If a moment needs emphatic weight, build it into the rhythm of a single full sentence (varied clause length, a strong verb, a turn in the syntax) rather than trailing fragments after it. Before finalizing any sentence that ends in a period followed by a 1-4 word fragment, ask: could this be one sentence instead? If yes, rewrite it as one.
+
 ### The smell test
 
 After writing any passage, ask:

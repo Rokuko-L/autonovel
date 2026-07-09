@@ -46,8 +46,7 @@ YOUR TASK:
       ("At its core, what matters is..."), and generic capstone sentences
       ("The future looked bright.")
     - TELL: names an emotion or state instead of showing it
-    - STACCATO: manufactured punchlines — 3+ consecutive ultra-short sentences
-      for artificial dramatic effect ("It had no preference. No prior. No nostalgia.")
+    - STACCATO: manufactured punchlines — 2 or more consecutive fragments of 3 words or fewer used for dramatic/emphatic effect (e.g., "Silver. Victory.")
    - STRUCTURAL: paragraph/section that disrupts pacing or rhythm
    - UNGROUNDED: uses a name, title, term, or concept without it having been
      established in the disclosure ceiling above. Example: a character is addressed
@@ -104,7 +103,12 @@ def edit_chapter(ch_num):
 
     prompt = EDIT_PROMPT.format(chapter_text=text, word_count=word_count, canon_context=canon_text or "(first chapter or no canon established yet)")
     raw = call_judge(prompt)
-    result = parse_json(raw)
+    try:
+        result = parse_json(raw)
+    except Exception as e:
+        print("RAW RESPONSE FROM JUDGE:")
+        print(raw)
+        raise e
     
     # Save log
     log_path = edit_log_dir / f"ch{ch_num:02d}_cuts.json"

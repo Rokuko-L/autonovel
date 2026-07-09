@@ -243,9 +243,9 @@ def slop_score(text):
     penalty += min((fiction_tell_count * scale) * 0.3, 2.0)     # fiction AI tells: up to 2 pts
     penalty += min((telling_count * scale) * 0.2, 1.5)          # show-don't-tell: up to 1.5 pts
     penalty += min((structural_tic_count * scale) * 0.5, 2.0)   # structural AI tics: up to 2 pts
-    penalty += min((staccato_runs * scale) * 0.5, 1.0)          # staccato punchlines: up to 1 pt
+    penalty += min((staccato_runs * scale) * 0.08, 2.0)          # staccato punchlines: up to 2 pts
 
-    penalty = min(penalty, 10.0)
+    penalty = min(penalty, 2.0)
 
     return {
         "tier1_hits": tier1_hits,
@@ -503,8 +503,10 @@ CRITICAL FORMATTING GUIDELINES:
 2. Escape any double quotes within your JSON string values with a backslash (e.g., use \\" instead of " when referencing characters, quotes, or dialogue).
 3. Do not include any preamble, introduction, or conversation outside the JSON object.
 
-FINAL CHECK: If your overall_score is above 7, re-read your weakest_moment
-quotes. If any describe a problem an editor would flag, your score is too high.
+SCORING CALIBRATION:
+- Evaluate the chapter based on the overall balance of strengths and weaknesses across all dimensions. Do not let minor, easily fixable stylistic flaws or trivial editor notes artificially cap the score at 7 or below.
+- Reserve scores of 8.0+ for chapters that are structurally sound, align well with the voice and characters, and successfully cover their core narrative beats.
+- If a chapter has a significant, core-level failure in a defined category (such as a major plot/continuity contradiction, complete failure to cover outline beats, or major voice derailment), the overall_score should not exceed 7.0. Otherwise, score the chapter proportionally to its actual quality.
 """
     return prompt
 
