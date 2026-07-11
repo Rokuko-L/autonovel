@@ -175,11 +175,13 @@ RULES (non-negotiable — must follow exactly):
 8. Frontmatter order: half title -> blank verso -> title page -> colophon -> epigraph -> blank verso
 9. Backmatter: end ornament + closing line
 10. Use \\leftmark for chapter titles in headers (fancyhdr), NOT \\thechapter.
-11. Use \\MakeUppercase or plain text in chapter headings. Do NOT use \\MakeTextUppercase.
+11. Do NOT use \\MakeUppercase or \\MakeTextUppercase in \\titleformat definitions (this causes preamble compilation errors due to macro argument consumption). Let titlesec use small caps (\\scshape) or normal casing for chapter headings.
 12. Colophon must include only the author name (nothing else).
 13. When using decorative math symbols (stars, arrows, card suits like \\spadesuit, \\clubsuit, \\diamondsuit, \\heartsuit, etc.) in chapter headings, ornaments, or text, they MUST be wrapped in math mode (e.g., \\(\\spadesuit\\) or \\(\\diamondsuit\\) or $\\clubsuit$). Do NOT use them in raw text mode. Only use standard symbols from amssymb or basic LaTeX, and do NOT use non-standard variations or prefixes (e.g. do NOT use \\varspadesuit, \\varclubsuit, \\vardiamondsuit, \\varheartsuit).
 14. The title from context is the EXACT novel title — use it as the primary heading on the title page and half-title page. Never replace it with "A Novel", "A NOVEL", or any placeholder text. Never relegate it to a subtitle.
 15. Do NOT invoke the standard LaTeX `\\maketitle` command anywhere in the document body. Since custom commands are defined and used for the title pages, calling `\\maketitle` will crash compilation due to missing standard title declarations.
+16. Do NOT use \\par or blank lines inside any arguments of \\titleformat or other titlesec command definitions (this causes "Paragraph ended before \\ttl@format@ii was complete" compilation errors). Use spacing commands (e.g., \\vspace, \\hspace) or other formatting macros to separate content instead.
+
 
 CREATIVE FREEDOM (you decide):
 - Title page layout: multi-line, decorative, thematic — match the novel's tone

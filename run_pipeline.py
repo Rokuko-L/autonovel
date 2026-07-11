@@ -898,6 +898,7 @@ def run_revision(
             if cycle_baseline_score < 0:
                 cycle_baseline_score = parse_score(baseline_eval.stdout, "overall_score")
 
+            post_adv_score = cycle_baseline_score
             if run_adv:
                 # -- Step 1: Adversarial editing pass (parallel per chapter) --
                 step("Running adversarial editing on all chapters...")
@@ -911,12 +912,38 @@ def run_revision(
                         for ch in range(1, total_ch + 1)
                     }
                     for future in as_completed(futures):
-                        ch = futures[future]
-                        try:
-                            future.result()
-                            step(f"  ch {ch}: done")
-                        except Exception:
-                            step(f"  ch {ch}: edit failed, continuing anyway")
+                         ch = futures[future]
+                         try:
+                             future.result()
+                             step(f"  ch {ch}: done")
+                         except Exception:
+                             step(f"  ch {ch}: edit failed, continuing anyway")
+                
+                # Evaluate full novel score after Step 1
+                step("Evaluating novel score after Adversarial Edits...")
+                post_adv_eval = uv_run("evaluate.py --full", timeout=600)
+                post_adv_score = parse_score(post_adv_eval.stdout, "novel_score")
+                if post_adv_score < 0:
+                    post_adv_score = parse_score(post_adv_eval.stdout, "overall_score")
+                
+                step(f"Adversarial edits score shift: {cycle_baseline_score} -> {post_adv_score}")
+                
+                # Validation check with tolerance
+                if post_adv_score >= (cycle_baseline_score - tolerance):
+                    run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                    commit_hash = git_add_commit(
+                        f"revision cycle {cycle}: apply adversarial edits {cycle_baseline_score}->{post_adv_score}"
+                    )
+                    log_result(commit_hash, f"rev-cycle-{cycle}-adv", post_adv_score,
+                               count_words_in_chapters(), "keep",
+                               f"Cycle {cycle}: Step 1 adversarial edits kept {cycle_baseline_score}->{post_adv_score}")
+                else:
+                    step(f"Adversarial edits made the novel significantly worse ({post_adv_score} < {cycle_baseline_score - tolerance}), reverting edits")
+                    git_reset_hard("HEAD")
+                    post_adv_score = cycle_baseline_score
+                    log_result("reverted", f"rev-cycle-{cycle}-adv", post_adv_score,
+                               count_words_in_chapters(), "discard",
+                               f"Cycle {cycle}: Step 1 adversarial edits regressed {cycle_baseline_score}->{post_adv_score}")
             else:
                 step("Skipping adversarial editing as requested")
 
@@ -925,38 +952,38 @@ def run_revision(
                 step("Applying mechanical cuts (OVER-EXPLAIN, REDUNDANT)...")
                 run_tool("uv run python apply_cuts.py all "
                          "--types OVER-EXPLAIN REDUNDANT --min-fat 15", timeout=300)
+                
+                # Evaluate full novel score after Step 2
+                step("Evaluating novel score after Mechanical Cuts...")
+                post_cuts_eval = uv_run("evaluate.py --full", timeout=600)
+                post_cuts_score = parse_score(post_cuts_eval.stdout, "novel_score")
+                if post_cuts_score < 0:
+                    post_cuts_score = parse_score(post_cuts_eval.stdout, "overall_score")
+                
+                step(f"Mechanical cuts score shift: {post_adv_score} -> {post_cuts_score}")
+                
+                if post_cuts_score >= (post_adv_score - 0.05):
+                    run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                    commit_hash = git_add_commit(
+                        f"revision cycle {cycle}: apply mechanical cuts {post_adv_score}->{post_cuts_score}"
+                    )
+                    log_result(commit_hash, f"rev-cycle-{cycle}-cuts", post_cuts_score,
+                               count_words_in_chapters(), "keep",
+                               f"Cycle {cycle}: Step 2 mechanical cuts kept {post_adv_score}->{post_cuts_score}")
+                    state["novel_score"] = post_cuts_score
+                else:
+                    step(f"Mechanical cuts made the novel worse ({post_cuts_score} < {post_adv_score - 0.05}), reverting cuts")
+                    git_reset_hard("HEAD")
+                    log_result("reverted", f"rev-cycle-{cycle}-cuts", post_cuts_score,
+                               count_words_in_chapters(), "discard",
+                               f"Cycle {cycle}: Step 2 mechanical cuts regressed {post_adv_score}->{post_cuts_score}")
+                    state["novel_score"] = post_adv_score
             else:
                 if skip_mechanical_cuts:
                     step("Skipping mechanical cuts as requested")
                 else:
                     step("apply_cuts.py not found, skipping mechanical cuts")
-
-            # Evaluate full novel score after Step 1 & 2
-            step("Evaluating novel score after Adversarial Edits & Mechanical Cuts...")
-            post_step12_eval = uv_run("evaluate.py --full", timeout=600)
-            post_step12_score = parse_score(post_step12_eval.stdout, "novel_score")
-            if post_step12_score < 0:
-                post_step12_score = parse_score(post_step12_eval.stdout, "overall_score")
-
-            step(f"Novel score shift after Step 1 & 2: {cycle_baseline_score} -> {post_step12_score}")
-
-            # Validation check with tolerance
-            if post_step12_score >= (cycle_baseline_score - tolerance):
-                # Commit the changes as a clean validated snapshot
-                # Stage everything
-                run_tool("git add -A", cwd=str(utils.get_project_dir()))
-                commit_hash = git_add_commit(
-                    f"revision cycle {cycle}: apply adversarial edits and mechanical cuts {cycle_baseline_score}->{post_step12_score}"
-                )
-                log_result(commit_hash, f"rev-cycle-{cycle}-cuts", post_step12_score,
-                           count_words_in_chapters(), "keep",
-                           f"Cycle {cycle}: Step 1/2 cuts kept {cycle_baseline_score}->{post_step12_score}")
-            else:
-                step(f"Step 1 & 2 edits made the novel significantly worse ({post_step12_score} < {cycle_baseline_score - tolerance}), reverting edits")
-                git_reset_hard("HEAD")
-                log_result("reverted", f"rev-cycle-{cycle}-cuts", post_step12_score,
-                           count_words_in_chapters(), "discard",
-                           f"Cycle {cycle}: Step 1/2 cuts regressed {cycle_baseline_score}->{post_step12_score}")
+                state["novel_score"] = post_adv_score
         else:
             step("Skipping both adversarial editing and mechanical cuts — no Cycle edits to apply")
 
@@ -1018,7 +1045,7 @@ def run_revision(
                                 "pre_score": pre_score, "post_score": pre_score}
 
                     step(f"Revising Ch {ch_num} with brief {brief_file.name}...")
-                    uv_run(f"gen_revision.py {ch_num} {brief_file}", timeout=600)
+                    uv_run(f'gen_revision.py {ch_num} "{brief_file}"', timeout=600)
 
                     post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
                     post_score = parse_score(post_eval.stdout, "overall_score")
@@ -1171,7 +1198,7 @@ def run_revision(
             # Step 1: Generate the review
             step("Sending manuscript to Opus for review...")
             review_result = uv_run(
-                f"review.py --output {utils.get_reviews_path()}", timeout=900)
+                f'review.py --output "{utils.get_reviews_path()}"', timeout=900)
             
             # Step 2: Parse the review
             step("Parsing review...")
@@ -1226,7 +1253,7 @@ def run_revision(
                         pre_score = parse_score(pre_eval.stdout, "overall_score")
                         
                         step(f"Revising Ch {ch_num} from review brief...")
-                        uv_run(f"gen_revision.py {ch_num} {brief}", timeout=600)
+                        uv_run(f'gen_revision.py {ch_num} "{brief}"', timeout=600)
                         
                         # Evaluate post-revision score
                         step(f"Evaluating Ch {ch_num} after revision...")
@@ -1273,10 +1300,30 @@ def run_revision(
             step("Running mechanical cleanup pass...")
             apply_cuts_py = utils.get_root_dir() / "apply_cuts.py"
             if apply_cuts_py.exists():
+                # Evaluate score before cuts
+                pre_cuts_eval = uv_run("evaluate.py --full", timeout=600)
+                pre_cuts_score = parse_score(pre_cuts_eval.stdout, "novel_score")
+                if pre_cuts_score < 0:
+                    pre_cuts_score = parse_score(pre_cuts_eval.stdout, "overall_score")
+
                 run_tool(
                     "uv run python apply_cuts.py all --types OVER-EXPLAIN REDUNDANT --min-fat 15",
                     timeout=300)
-                git_add_commit(f"review round {rnd}: mechanical cleanup")
+
+                # Evaluate score after cuts
+                post_cuts_eval = uv_run("evaluate.py --full", timeout=600)
+                post_cuts_score = parse_score(post_cuts_eval.stdout, "novel_score")
+                if post_cuts_score < 0:
+                    post_cuts_score = parse_score(post_cuts_eval.stdout, "overall_score")
+
+                step(f"Mechanical cuts score shift: {pre_cuts_score} -> {post_cuts_score}")
+
+                if post_cuts_score >= (pre_cuts_score - 0.05):
+                    run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                    git_add_commit(f"review round {rnd}: mechanical cleanup {pre_cuts_score}->{post_cuts_score}")
+                else:
+                    step(f"Mechanical cuts made the novel worse ({post_cuts_score} < {pre_cuts_score - 0.05}), reverting cuts")
+                    git_reset_hard("HEAD")
             
             step(f"Review round {rnd} complete.")
         
@@ -1362,7 +1409,7 @@ def run_export(state: dict) -> dict:
     if build_tex.exists():
         step("Building LaTeX content...")
         # Run with cwd set to project typeset dir so aux files stay isolated
-        run_tool(f"uv run python {build_tex}", timeout=120, cwd=str(utils.get_typeset_dir()))
+        run_tool(f'uv run python "{build_tex}"', timeout=120, cwd=str(utils.get_typeset_dir()))
 
         # 5. Typeset with tectonic (if available)
         novel_tex = typeset_dir / "novel.tex"
@@ -1473,11 +1520,14 @@ Rules:
     log_result(commit_hash, "export", state.get("novel_score", "?"),
                total_words, "export", "Final export")
 
-    state["phase"] = "complete"
+    if shutil.which("tectonic") and not compiled:
+        state["phase"] = "complete_no_pdf"
+    else:
+        state["phase"] = "complete"
     state["current_focus"] = "done"
     save_state(state)
 
-    banner(f"EXPORT COMPLETE — {len(chapter_files)} chapters, {total_words} words")
+    banner(f"EXPORT COMPLETE — {len(chapter_files)} chapters, {total_words} words (Phase: {state['phase']})")
     return state
 
 
