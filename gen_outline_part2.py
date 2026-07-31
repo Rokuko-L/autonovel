@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt
+from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -127,7 +127,11 @@ Each chapter outline must start with a heading: "### Chapter N: [Chapter Title]"
 """
         block_result = ""
         for attempt in range(1, 4):
-            res = call_writer(prompt)
+            try:
+                res = call_writer(prompt)
+            except TruncationError as e:
+                print(f"  WARN: Refinement Block Ch {start}-{end} attempt {attempt} truncated ({e}), retrying...", file=sys.stderr)
+                continue
             passed, err = validate_block_output(res, start, end)
             if passed:
                 block_result = res

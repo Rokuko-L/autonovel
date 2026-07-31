@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt
+from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -47,7 +47,11 @@ def main():
 
     print("Calling writer model...", file=sys.stderr)
     for attempt in range(2):
-        result = call_writer(prompt)
+        try:
+            result = call_writer(prompt)
+        except TruncationError as e:
+            print(f"  WARN: {e}, retrying...", file=sys.stderr)
+            continue
         try:
             utils.validate_generator_output(result, "gen_canon.py", min_len=100, expected_headers=None)
             break

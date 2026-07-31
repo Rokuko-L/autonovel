@@ -13,7 +13,7 @@ from genre import load_genre
 load_dotenv()
 
 def call_writer(prompt, max_tokens=16000):
-    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["revision_system"], model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8)
+    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["revision_system"], model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
 
 def main():
     ch_num = int(sys.argv[1])
@@ -24,12 +24,12 @@ def main():
     world = utils.get_world_path().read_text(encoding="utf-8")
     brief = Path(brief_file).read_text(encoding="utf-8")
     
-    # Load adjacent chapters for continuity
+    # Load adjacent chapters for continuity (sentence-boundary trimmed)
     chapters_dir = utils.get_chapters_dir()
     prev_path = chapters_dir / f"ch_{ch_num - 1:02d}.md"
     next_path = chapters_dir / f"ch_{ch_num + 1:02d}.md"
-    prev_tail = prev_path.read_text(encoding="utf-8")[-2000:] if prev_path.exists() else "(first chapter)"
-    next_head = next_path.read_text(encoding="utf-8")[:1500] if next_path.exists() else "(last chapter)"
+    prev_tail = utils.tail_context(prev_path.read_text(encoding="utf-8"), max_words=600) if prev_path.exists() else "(first chapter)"
+    next_head = utils.head_context(next_path.read_text(encoding="utf-8"), max_words=300) if next_path.exists() else "(last chapter)"
     
     # Load old version if exists
     old_path = chapters_dir / f"ch_{ch_num:02d}.md"

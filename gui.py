@@ -3,6 +3,7 @@ import sys
 import json
 import queue
 import shlex
+import signal
 import threading
 import subprocess
 from pathlib import Path
@@ -724,6 +725,8 @@ class AutonovelApp(ctk.CTk):
             )
             if sys.platform == "win32":
                 kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            else:
+                kwargs["start_new_session"] = True  # own process group → killable as a tree
             self.process = subprocess.Popen(cmd_args, **kwargs)
 
             # Stream stdout/stderr outputs to UI queue
@@ -736,15 +739,39 @@ class AutonovelApp(ctk.CTk):
         except Exception as e:
             self.log_queue.put(("ERROR", str(e)))
 
+    def _kill_process_tree(self, force=False):
+        """Kill the process AND its children.
+
+        Stopping only the 'uv' wrapper used to leave the pipeline child running
+        and writing to the project — a second Run would then race it.
+        """
+        if not self.process or self.process.poll() is not None:
+            return
+        pid = self.process.pid
+        try:
+            if sys.platform == "win32":
+                # taskkill without /F cannot terminate console processes — always /T /F.
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True, text=True, timeout=15,
+                )
+            else:
+                if force:
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                else:
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
     def stop_process(self):
         if not self.process:
             return
         
-        self.write_log("\n[SYSTEM] Stopping process, sending SIGTERM...\n")
-        self.process.terminate()
+        self.write_log("\n[SYSTEM] Stopping process tree...\n")
+        self._kill_process_tree(force=False)
         self.set_status("Stopping...", "#F59E0B")
 
-        # Background thread to monitor process and send SIGKILL if still active after 3s
+        # Background thread to monitor process and force-kill the tree if still active after 3s
         def poll_and_kill():
             for _ in range(30):  # 3 seconds max polling
                 if self.process is None or self.process.poll() is not None:
@@ -752,8 +779,8 @@ class AutonovelApp(ctk.CTk):
                 threading.Event().wait(0.1)
             
             if self.process and self.process.poll() is None:
-                self.write_log("\n[SYSTEM] Process still alive after 3s. Force killing (SIGKILL)...\n")
-                self.process.kill()
+                self.write_log("\n[SYSTEM] Process still alive after 3s. Force killing process tree...\n")
+                self._kill_process_tree(force=True)
 
         threading.Thread(target=poll_and_kill, daemon=True).start()
 

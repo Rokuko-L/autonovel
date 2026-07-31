@@ -46,12 +46,25 @@ class Tee:
         self.original = original
 
     def write(self, data):
-        self.fh.write(data)
-        self.original.write(data)
+        # A log-file failure (disk full, closed pipe) must never kill the run
+        try:
+            self.fh.write(data)
+        except OSError:
+            pass
+        try:
+            self.original.write(data)
+        except OSError:
+            pass
 
     def flush(self):
-        self.fh.flush()
-        self.original.flush()
+        try:
+            self.fh.flush()
+        except OSError:
+            pass
+        try:
+            self.original.flush()
+        except OSError:
+            pass
 
     def isatty(self):
         return self.original.isatty()
@@ -217,7 +230,7 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False, cwd: str = None)
         effective_cwd = cwd if cwd is not None else str(utils.get_root_dir())
         result = subprocess.run(
             shlex.split(cmd_norm), shell=False, capture_output=True, text=True,
-            encoding="utf-8", timeout=timeout, cwd=effective_cwd,
+            encoding="utf-8", errors="replace", timeout=timeout, cwd=effective_cwd,
         )
         if result.returncode != 0:
             print(f"    WARN: exit code {result.returncode}")
@@ -261,11 +274,30 @@ def git_add_commit(message: str) -> str:
 
 
 def git_reset_hard(ref: str = "HEAD~1"):
-    """Hard reset to discard bad changes."""
+    """Hard reset to discard bad changes.
+
+    Preserves legitimately-appended canon.md entries (they ride along with the
+    next commit after a reset and would otherwise be silently lost), and spares
+    the timestamped eval/edit/brief logs from `git clean` so downstream stages
+    don't silently no-op on freshly-written review/cuts artifacts.
+    """
     step(f"GIT RESET: {ref}")
-    run_tool(f"git reset --hard {ref}", cwd=str(utils.get_project_dir()))
-    # Clean untracked files/directories to prevent cross-iteration contamination
-    run_tool("git clean -fd", cwd=str(utils.get_project_dir()))
+    project_dir = utils.get_project_dir()
+
+    # Preserve uncommitted canon.md appends (e.g. from a successful chapter eval
+    # that hasn't been committed yet when this reset fires).
+    canon_status = run_tool("git status --porcelain -- canon.md", cwd=str(project_dir))
+    if any(line.startswith((" M", "M ", "MM")) for line in canon_status.stdout.splitlines()):
+        run_tool("git add canon.md", cwd=str(project_dir))
+        git_commit_staged("canon: preserve pending append before reset")
+
+    run_tool(f"git reset --hard {ref}", cwd=str(project_dir))
+    # Clean untracked files/directories to prevent cross-iteration contamination,
+    # but never delete the timestamped artifact logs the pipeline depends on.
+    run_tool(
+        "git clean -fd -e eval_logs -e edit_logs -e briefs -e logs -e repetition_check.json",
+        cwd=str(project_dir),
+    )
 
 
 def git_commit_staged(message: str) -> str:
@@ -383,6 +415,12 @@ def count_chapter_files() -> int:
     if not chapters_dir.exists():
         return 0
     return len(list(chapters_dir.glob("ch_*.md")))
+
+
+def _chapter_num_key(path) -> int:
+    """Numeric sort key for ch_*.md files (ch_2 must sort before ch_10)."""
+    m = re.search(r"ch_(\d+)\.md", Path(path).name)
+    return int(m.group(1)) if m else 10**9
 
 
 def get_total_chapters(state: dict) -> int:
@@ -544,7 +582,11 @@ def run_foundation(state: dict) -> dict:
         }, indent=2), encoding="utf-8")
 
         step("Generating outline (part 2 — foreshadowing)...")
-        uv_run("gen_outline_part2.py", timeout=900)
+        # Each block is one 600s LLM call with up to 3 validation retries; the
+        # subprocess cap must cover ALL blocks or a legitimate run gets killed
+        # mid-polish, leaving outline.md with only the polished prefix.
+        n_blocks = max(1, -(-get_total_chapters(state) // 10))
+        uv_run("gen_outline_part2.py", timeout=max(900, n_blocks * 900))
 
         step("Sanitizing chapter titles...")
         uv_run("sanitize_outline_titles.py", timeout=300)
@@ -679,6 +721,21 @@ def run_drafting(state: dict) -> dict:
     total = get_total_chapters(state)
     start_chapter = state.get("chapters_drafted", 0) + 1
 
+    # Hard word-count floor for accepting a draft (below the eval's 80% tolerance,
+    # a chapter is structurally broken — 100 bytes (~15 words) is not a draft).
+    try:
+        genre_cfg = load_genre()
+        est_words = genre_cfg["generation"]["outline"]["estimated_words"]
+        target_words = est_words // total
+    except (KeyError, ZeroDivisionError):
+        target_words = 3200
+    min_words = int(target_words * 0.6)
+    step(f"Chapter target: ~{target_words} words (min acceptable draft: {min_words})")
+
+    # Hard floor for force-keeping a failed chapter: below this we skip and record,
+    # we do NOT ship sub-garbage as canon.
+    force_keep_floor = CHAPTER_THRESHOLD - 2.0
+
     chapters_dir = utils.get_chapters_dir()  # also creates the directory
 
     for ch in range(start_chapter, total + 1):
@@ -704,6 +761,10 @@ def run_drafting(state: dict) -> dict:
                 ch_file = chapters_dir / f"ch_{ch:02d}.md"
                 if not ch_file.exists() or ch_file.stat().st_size < 100:
                     step("Chapter file missing or too short, retrying...")
+                    continue
+                word_count = len(ch_file.read_text(encoding="utf-8").split())
+                if word_count < min_words:
+                    step(f"Chapter too short ({word_count}w < {min_words}w minimum), retrying...")
                     continue
 
                 quality_attempt = True
@@ -761,9 +822,14 @@ def run_drafting(state: dict) -> dict:
                         ch_file.unlink(missing_ok=True)
 
         if not drafted:
-            if best_draft_content is not None:
+            force_worthy = (
+                best_draft_content is not None
+                and best_score >= force_keep_floor
+                and best_word_count >= min_words
+            )
+            if force_worthy:
                 step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
-                     f"keeping best attempt {best_attempt_num} (score {best_score}) and moving on")
+                     f"keeping best attempt {best_attempt_num} (score {best_score}, floor {force_keep_floor}) and moving on")
                 ch_file = chapters_dir / f"ch_{ch:02d}.md"
                 ch_file.write_text(best_draft_content, encoding="utf-8")
                 commit_hash = git_add_commit(
@@ -775,7 +841,21 @@ def run_drafting(state: dict) -> dict:
                 # Append canon entries of the best attempt even when force-kept
                 update_canon_from_eval(ch, attempt_num=best_attempt_num)
             else:
-                step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts and no valid drafts were generated.")
+                if best_draft_content is None:
+                    reason = "no valid drafts were generated"
+                else:
+                    reason = (f"best score {best_score} below force-keep floor {force_keep_floor} "
+                              f"or word count {best_word_count} below {min_words}")
+                step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts ({reason}). "
+                     f"Marking chapter as SKIPPED in state — it will be absent from the manuscript.")
+                log_result("skipped", f"ch{ch:02d}", best_score, best_word_count,
+                           "skipped", reason)
+                state["chapters_drafted"] = ch
+                skipped = state.get("skipped_chapters", [])
+                if ch not in skipped:
+                    skipped.append(ch)
+                state["skipped_chapters"] = skipped
+                save_state(state)
 
     # All chapters drafted
     # TODO: revision phase may rewrite chapter text without re-syncing canon.md.
@@ -908,7 +988,7 @@ def run_revision(
                 max_workers = 1 if is_local else 4
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
-                        pool.submit(uv_run, f"adversarial_edit.py {ch}", 300): ch
+                        pool.submit(uv_run, f"adversarial_edit.py {ch}", 600): ch
                         for ch in range(1, total_ch + 1)
                     }
                     for future in as_completed(futures):
@@ -990,9 +1070,12 @@ def run_revision(
         # -- Step 3: Generate arc summary + Reader panel --
         if not skip_reader_panel:
             step("Generating arc summary for reader panel...")
-            uv_run("build_arc_summary.py", timeout=300)
+            # 4 workers × 120s per chapter call; cap must cover all chapters
+            n_ch_arc = count_chapter_files()
+            uv_run("build_arc_summary.py", timeout=max(300, -(-n_ch_arc // 4) * 150 + 60))
             step("Running reader panel evaluation...")
-            uv_run("reader_panel.py", timeout=600)
+            # 4 sequential readers × (300s call + retries) — don't kill a slow panel
+            uv_run("reader_panel.py", timeout=1800)
         else:
             step("Skipping reader panel as requested")
 
@@ -1211,9 +1294,12 @@ def run_revision(
                 utils.get_edit_logs_dir().glob("*_review.json"), reverse=True)
             total_items = 0
             if review_logs:
+                try:
+                    review_data = json.loads(review_logs[0].read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError) as e:
+                    step(f"WARNING: review log {review_logs[0].name} is corrupt ({e}) — treating as no-op round")
+                    review_data = {}
 
-                review_data = json.loads(review_logs[0].read_text(encoding="utf-8"))
-                
                 stars = review_data.get("stars", 0) or 0
                 total_items = review_data.get("total_items", 0)
                 major_items = review_data.get("major_items", 0)
@@ -1355,6 +1441,7 @@ def run_export(state: dict) -> dict:
     """
     banner("PHASE 4: EXPORT", "=")
 
+    import shutil
     root_dir = utils.get_root_dir()
     chapters_dir = utils.get_chapters_dir()
     typeset_dir = utils.get_typeset_dir()
@@ -1369,31 +1456,32 @@ def run_export(state: dict) -> dict:
     build_arc = root_dir / "build_arc_summary.py"
     if build_arc.exists():
         step("Building arc summary...")
-        uv_run("build_arc_summary.py", timeout=300)
+        n_ch_arc = count_chapter_files()
+        uv_run("build_arc_summary.py", timeout=max(300, -(-n_ch_arc // 4) * 150 + 60))
 
-    # 3. Pre-export cleanup: deterministically strip AI-tell formatting patterns
-    step("Cleaning chapters (em dashes, markdown bold)...")
+    # 3. Pre-export cleanup: strip AI-tell formatting patterns for the EXPORTED
+    #    deliverables only — the canonical chapter files are never mutated.
+    #    (build_tex.py applies the same em-dash treatment for the PDF.)
     _EM_DASH_RE = re.compile(r'\u2014')                          # unicode em dash
     _BOLD_RE    = re.compile(r'\*\*(.+?)\*\*')                   # **bold** → plain
-    cleaned_count = 0
-    for ch_file in sorted(chapters_dir.glob("ch_*.md")):
-        original = ch_file.read_text(encoding="utf-8")
-        cleaned  = _EM_DASH_RE.sub(', ', original)               # em dash → comma
-        cleaned  = _BOLD_RE.sub(r'\1', cleaned)                  # **text** → text
-        if cleaned != original:
-            ch_file.write_text(cleaned, encoding="utf-8")
-            cleaned_count += 1
-    if cleaned_count:
-        step(f"  Cleaned {cleaned_count} chapter(s)")
+
+    def _export_clean(text: str) -> str:
+        return _BOLD_RE.sub(r'\1', _EM_DASH_RE.sub(', ', text))
 
     # 4. Concatenate chapters into manuscript.md (written into project dir)
     step("Building manuscript.md...")
     manuscript = utils.get_manuscript_path()
-    chapter_files = sorted(chapters_dir.glob("ch_*.md"))
+    chapter_files = sorted(chapters_dir.glob("ch_*.md"), key=_chapter_num_key)
+
+    total_planned = state.get("chapters_total", 0)
+    if total_planned and len(chapter_files) < total_planned:
+        present = {_chapter_num_key(p) for p in chapter_files}
+        missing = [n for n in range(1, total_planned + 1) if n not in present]
+        step(f"WARNING: {len(missing)} planned chapter(s) missing from manuscript: {missing}")
 
     parts = []
     for ch_file in chapter_files:
-        text = ch_file.read_text(encoding="utf-8").strip()
+        text = _export_clean(ch_file.read_text(encoding="utf-8").strip())
         if text:
             parts.append(text)
 
@@ -1413,12 +1501,17 @@ def run_export(state: dict) -> dict:
 
         # 5. Typeset with tectonic (if available)
         novel_tex = typeset_dir / "novel.tex"
-        if not novel_tex.exists() or novel_tex.stat().st_size < 100:
-            step("novel.tex not found or empty, generating via LLM...")
+        tex_valid = (
+            novel_tex.exists()
+            and novel_tex.stat().st_size >= 100
+            and "\\end{document}" in novel_tex.read_text(encoding="utf-8")
+        )
+        if not tex_valid:
+            step("novel.tex not found, empty, or incomplete (no \\end{document}) — generating via LLM...")
             for tex_attempt in range(3):
                 try:
                     uv_run("gen_novel_tex.py", timeout=300)
-                    if novel_tex.exists() and novel_tex.stat().st_size >= 100:
+                    if novel_tex.exists() and novel_tex.stat().st_size >= 100 and "\\end{document}" in novel_tex.read_text(encoding="utf-8"):
                         break
                 except Exception as e:
                     step(f"LLM tex generation attempt {tex_attempt+1}/3 failed ({e})")
@@ -1426,8 +1519,8 @@ def run_export(state: dict) -> dict:
                 step("Falling back to default template...")
                 utils.generate_default_novel_tex(novel_tex)
 
+        compiled = False
         if novel_tex.exists():
-            import shutil
             if shutil.which("tectonic"):
                 # Ensure required fonts are installed before typesetting
                 install_fonts_script = root_dir / "install_fonts.py"
@@ -1758,7 +1851,7 @@ def run_pipeline(args):
                         cmd += ["--words-per-chapter", str(args.words_per_chapter)]
                     if notes_for_genre:
                         cmd += ["--notes", notes_for_genre]
-                    subprocess.run(cmd, check=True)
+                    subprocess.run(cmd, check=True, timeout=900)
                     from genre import reload_genre
                     reload_genre()
                     print("Genre config ready.\n")

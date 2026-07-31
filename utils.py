@@ -1,5 +1,6 @@
 import _utf8
 import os
+import sys
 import json
 import re
 import itertools
@@ -201,6 +202,19 @@ class TruncationError(Exception):
     pass
 
 
+def _warn_unused_trailing(text: str, consumed_len: int) -> None:
+    """Warn to stderr when a response contains content after the first JSON value."""
+    import sys
+    trailing = text[consumed_len:].strip()
+    if trailing:
+        print(
+            f"  [WARN] JSON parse dropped {len(trailing)} trailing chars after the first "
+            f"JSON value (possible second object or conversation tail): "
+            f"{trailing[:80]!r}...",
+            file=sys.stderr,
+        )
+
+
 def _parse_response_json(text: str) -> dict:
     """Parse (possibly damaged) JSON from an Anthropic response string."""
     text = text.strip()
@@ -208,7 +222,8 @@ def _parse_response_json(text: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError:
         decoder = json.JSONDecoder()
-        obj, _ = decoder.raw_decode(text)
+        obj, end = decoder.raw_decode(text)
+        _warn_unused_trailing(text, end)
         return obj
 
 
@@ -274,6 +289,7 @@ def extract_text_and_stop_reason(resp):
     )
     if is_sse or not raw.startswith("{"):
         text_content = ""
+        stop_reason = None
         for line in raw.splitlines():
             line = line.strip()
             if line.startswith("data:"):
@@ -282,13 +298,22 @@ def extract_text_and_stop_reason(resp):
                     continue
                 try:
                     item = json.loads(data_str)
-                    if item.get("type") == "content_block_delta":
+                    if item.get("type") == "message":
+                        for block in item.get("content", []):
+                            if block.get("type") == "text":
+                                text_content += block.get("text", "")
+                        if item.get("stop_reason"):
+                            stop_reason = item["stop_reason"]
+                    elif item.get("type") == "content_block_delta":
                         delta = item.get("delta", {})
                         if delta.get("type") == "text_delta":
                             text_content += delta.get("text", "")
+                    elif item.get("type") == "message_delta":
+                        if item.get("delta", {}).get("stop_reason"):
+                            stop_reason = item["delta"]["stop_reason"]
                 except json.JSONDecodeError:
                     pass
-        return text_content, None
+        return text_content, stop_reason
 
     data = _parse_response_json(raw)
     for block in data["content"]:
@@ -321,7 +346,7 @@ def call_anthropic(
     temperature=0.3,
     beta_context=False,
     timeout=300,
-    raise_on_truncation=False,
+    raise_on_truncation=True,
 ):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
@@ -613,9 +638,62 @@ def parse_json_response(text: str) -> dict | list:
     json_part = re.sub(r',\s*([\}\]])', r'\1', json_part)
     
     # Heal truncated JSON
-    json_part = fix_truncated_json(json_part)
+    healed = fix_truncated_json(json_part)
+    if healed != json_part:
+        import traceback
+        caller = traceback.extract_stack(limit=4)[-2]
+        print(
+            f"  [WARN] parse_json_response HEALED truncated JSON from {caller.filename.split('/')[-1]}:{caller.lineno} "
+            f"(appended {len(healed) - len(json_part)} closing chars — partial data will be used as-is)",
+            file=sys.stderr,
+        )
+        json_part = healed
+        # Healing can manufacture a trailing comma (e.g. "…[1," → "[1,]") — repair it.
+        json_part = re.sub(r',\s*([\}\]])', r'\1', json_part)
+    
+    if end_idx < len(text) and text[end_idx:].strip():
+        import traceback
+        caller = traceback.extract_stack(limit=4)[-2]
+        print(
+            f"  [WARN] parse_json_response ignored {len(text[end_idx:].strip())} trailing chars after the "
+            f"closing brace from {caller.filename.split('/')[-1]}:{caller.lineno}",
+            file=sys.stderr,
+        )
     
     return json.loads(json_part, strict=False)
+
+
+def tail_context(text: str, max_words: int = 600) -> str:
+    """Return the tail of text (~max_words), starting at a sentence boundary.
+
+    Prevents cutting a previous chapter's ending mid-sentence, which would
+    hand the writer a dangling fragment to continue from.
+    """
+    import re
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    tail = ' '.join(words[-max_words:])
+    # Start after the first sentence boundary in the tail so we don't begin mid-sentence
+    m = re.search(r'[.!?]["\')\]]?\s+\S', tail)
+    if m:
+        tail = tail[m.end() - 1:].lstrip()
+    return tail
+
+
+def head_context(text: str, max_words: int = 300) -> str:
+    """Return the head of text (~max_words), ending at a sentence boundary."""
+    import re
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    head = ' '.join(words[:max_words])
+    last = max(head.rfind('.'), head.rfind('!'), head.rfind('?'))
+    if last > len(head) * 0.6:
+        head = head[:last + 1]
+    else:
+        head += " […]"
+    return head
 
 
 def generate_default_novel_tex(dest_path: Path):

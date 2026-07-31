@@ -281,6 +281,10 @@ def main():
         print(f"ERROR: LLM returned invalid LaTeX (fence extraction produced {len(latex)} chars)", file=sys.stderr)
         sys.exit(1)
 
+    if "\\end{document}" not in latex:
+        print("ERROR: LLM returned INCOMPLETE LaTeX (no \\end{document}) — refusing to write a truncated novel.tex", file=sys.stderr)
+        sys.exit(1)
+
     dest.write_text(latex, encoding="utf-8")
     print(f"Wrote novel.tex ({len(latex)} bytes) to {dest}", file=sys.stderr)
 

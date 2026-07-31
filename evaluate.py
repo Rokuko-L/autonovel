@@ -27,7 +27,7 @@ from pathlib import Path
 # Load .env file if present
 from dotenv import load_dotenv
 load_dotenv()
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
+from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic, TruncationError
 from genre import load_genre
 import utils
 
@@ -213,6 +213,8 @@ def slop_score(text):
     structural_tic_count = sum(c for _, c in structural_tics)
 
     # Staccato punchline detector (Humanizer #31) — 3+ consecutive sentences ≤4 words
+    # Count EVERY run of 3+ short sentences (a run of k short sentences = k-2 instances),
+    # including runs that continue past the initial trigger.
     staccato_runs = 0
     for para in paragraphs:
         para_clean = para.replace("...", " ").replace("..", " ")
@@ -221,15 +223,19 @@ def slop_score(text):
         for s in para_sents:
             if len(s.split()) <= 4:
                 run += 1
-                if run == 3:
-                    staccato_runs += 1
             else:
+                if run >= 3:
+                    staccato_runs += run - 2
                 run = 0
+        if run >= 3:
+            staccato_runs += run - 2
 
     # Scale absolute counts to a density basis (per 3,000 words) to prevent manuscript length inflation
     scale = 3000.0 / word_count
 
     # Composite penalty (0 = clean, 10 = disaster)
+    # Global cap: 4.0 — enough to push a sloppy chapter below the 6.5 gate
+    # without letting one failure mode single-handedly zero a good chapter.
     penalty = 0.0
     penalty += min((len(tier1_hits) * scale) * 1.5, 4.0)       # tier1: up to 4 pts
     penalty += min((tier2_cluster_count * scale) * 1.0, 2.0)    # tier2 clusters: up to 2 pts
@@ -245,7 +251,7 @@ def slop_score(text):
     penalty += min((structural_tic_count * scale) * 0.5, 2.0)   # structural AI tics: up to 2 pts
     penalty += min((staccato_runs * scale) * 0.08, 2.0)          # staccato punchlines: up to 2 pts
 
-    penalty = min(penalty, 2.0)
+    penalty = min(penalty, 4.0)
 
     return {
         "tier1_hits": tier1_hits,
@@ -346,6 +352,16 @@ Correct the JSON syntax errors in your previous response. Respond ONLY with the 
             
             last_raw = raw
             return parse_json_response(raw)
+        except TruncationError:
+            # Response hit the token cap. Retrying with the SAME-or-smaller budget is
+            # guaranteed to truncate again — re-ask the original prompt with more room.
+            if attempt == retries:
+                raise
+            print(f"Judge response truncated on attempt {attempt}/{retries} — "
+                  f"retrying original prompt with a larger output budget "
+                  f"({max_tokens} -> {int(max_tokens * 1.5)})", file=sys.stderr)
+            max_tokens = int(max_tokens * 1.5)
+            last_raw = None
         except (json.JSONDecodeError, ValueError) as e:
             last_error = str(e)
             if attempt == retries:
@@ -448,7 +464,7 @@ CANON (established hard facts -- violations are bugs):
 CHAPTER OUTLINE ENTRY:
 {chapter_outline}
 
-PREVIOUS CHAPTER (last 1500 words):
+PREVIOUS CHAPTER (last ~600 words):
 {prev_chapter_tail}
 
 THE CHAPTER TO EVALUATE:
@@ -576,15 +592,23 @@ def evaluate_chapter(chapter_num):
         return {"error": f"Chapter {chapter_num} is empty or missing",
                 "overall_score": 0.0}
 
-    # Extract this chapter's outline entry (rough heuristic)
+    # Extract this chapter's outline entry — scoped to the DETAILED section so the
+    # HIGH-LEVEL ROADMAP one-liner is never judged as the real beats entry.
     outline = layers["outline"]
+    if "## DETAILED CHAPTER OUTLINES" in outline:
+        outline = outline.split("## DETAILED CHAPTER OUTLINES", 1)[1]
     ch_pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
     ch_match = re.search(ch_pattern, outline, re.IGNORECASE | re.DOTALL)
-    chapter_outline = ch_match.group(0) if ch_match else "(outline entry not found)"
+    if not ch_match:
+        raise ValueError(
+            f"Chapter {chapter_num} outline entry not found in the "
+            f"## DETAILED CHAPTER OUTLINES section — cannot evaluate against an empty outline."
+        )
+    chapter_outline = ch_match.group(0)
 
-    # Load previous chapter tail
+    # Load previous chapter tail (600-word, sentence-boundary trimmed)
     prev_text = load_chapter(chapter_num - 1) if chapter_num > 1 else "(first chapter)"
-    prev_tail = prev_text[-3000:] if len(prev_text) > 3000 else prev_text
+    prev_tail = utils.tail_context(prev_text, max_words=600) if chapter_num > 1 else prev_text
 
     # Extract disclosure ceiling from canon (everything revealed through chapter N-1)
     disclosure_ceiling = ""

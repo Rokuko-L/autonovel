@@ -89,12 +89,25 @@ def main():
             futures.append(executor.submit(process_chapter_outline, path, ch, text, wc, title_line))
             
     entries = []
+    failures = []
     for future in as_completed(futures):
         try:
             entries.append(future.result())
         except Exception as e:
-            print(f"Error processing chapter: {e}")
+            failures.append(e)
             
+    if failures:
+        print(f"ERROR: {len(failures)} chapter(s) failed to summarize: {failures[:3]}", file=sys.stderr)
+        print("FATAL: refusing to write an outline missing chapters — downstream eval/panel", file=sys.stderr)
+        print("       would silently judge an incomplete book. Fix the failures and re-run.", file=sys.stderr)
+        sys.exit(1)
+
+    expected_nums = {int(re.search(r"ch_(\d+)\.md", p.name).group(1)) for p in chapter_files}
+    got_nums = {e["num"] for e in entries}
+    if got_nums != expected_nums:
+        print(f"ERROR: outline entries {sorted(got_nums)} do not match chapter files {sorted(expected_nums)}", file=sys.stderr)
+        sys.exit(1)
+
     # Sort entries by chapter number so outline is in order
     entries.sort(key=lambda x: x["num"])
     

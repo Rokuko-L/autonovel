@@ -16,13 +16,34 @@ CHAPTERS_DIR = utils.get_chapters_dir()
 OUT_DIR = utils.get_typeset_dir()
 
 def latex_escape(t):
-    t = t.replace('\\', '\\textbackslash{}')
-    t = t.replace('&', '\\&')
-    t = t.replace('%', '\\%')
-    t = t.replace('$', '\\$')
-    t = t.replace('#', '\\#')
-    t = t.replace('_', '\\_')
-    return t
+    # Single-pass character escaping. Multi-pass .replace() chains re-scan their
+    # own output (e.g. escaping '{' after '\\' corrupts the braces inside the
+    # generated '\\textbackslash{}'), so escape every special character here.
+    out = []
+    for c in t:
+        if c == '\\':
+            out.append('\\textbackslash{}')
+        elif c == '{':
+            out.append('\\textbraceleft{}')
+        elif c == '}':
+            out.append('\\textbraceright{}')
+        elif c == '&':
+            out.append('\\&')
+        elif c == '%':
+            out.append('\\%')
+        elif c == '$':
+            out.append('\\$')
+        elif c == '#':
+            out.append('\\#')
+        elif c == '_':
+            out.append('\\_')
+        elif c == '^':
+            out.append('\\textasciicircum{}')
+        elif c == '~':
+            out.append('\\textasciitilde{}')
+        else:
+            out.append(c)
+    return ''.join(out)
 
 def md_to_latex(body):
     result = []
@@ -112,8 +133,18 @@ def make_drop_cap(latex_body):
     drop = f"\\lettrine[lines=2, lhang=0.1, nindent=0.2em]{{{first_letter}}}{{{word_rest}}}{para_rest}"
     return drop + '\n\n' + rest
 
+def _chapter_num(path) -> int:
+    m = re.search(r"ch_(\d+)\.md", path.name)
+    return int(m.group(1)) if m else 10**9
+
+
 chapters_tex = []
-chapter_files = sorted(CHAPTERS_DIR.glob("ch_*.md"))
+chapter_files = sorted(CHAPTERS_DIR.glob("ch_*.md"), key=_chapter_num)
+nums = [_chapter_num(p) for p in chapter_files]
+if nums:
+    missing = [n for n in range(1, max(nums) + 1) if n not in nums]
+    if missing:
+        print(f"WARNING: missing chapters (will be absent from the PDF): {missing}")
 for path in chapter_files:
     m = re.search(r"ch_(\d+)\.md", path.name)
     if not m:
@@ -122,10 +153,20 @@ for path in chapter_files:
     
     with open(path, encoding="utf-8") as f:
         text = f.read()
+    if not text.strip():
+        print(f"WARNING: {path.name} is empty — skipped")
+        continue
     
     lines = text.strip().split('\n')
-    title_line = lines[0].lstrip('# ').strip()
-    body = '\n'.join(lines[1:]).strip()
+    # Only consume the first line as the chapter title if it's actually a
+    # markdown header — otherwise the chapter's first line would be silently
+    # eaten by the published book.
+    if lines[0].lstrip().startswith('#'):
+        title_line = lines[0].lstrip('# ').strip()
+        body = '\n'.join(lines[1:]).strip()
+    else:
+        title_line = f"Chapter {n}"
+        body = '\n'.join(lines).strip()
     
     if ': ' in title_line:
         label, subtitle = title_line.split(': ', 1)

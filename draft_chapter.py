@@ -72,15 +72,34 @@ def parse_canon(canon_text: str):
     return foundation, core_canon, disclosure
 
 def extract_chapter_outline(outline_text, chapter_num):
-    """Extract a specific chapter's outline entry."""
+    """Extract a specific chapter's outline entry from the DETAILED section.
+
+    Scoped to '## DETAILED CHAPTER OUTLINES' so the HIGH-LEVEL ROADMAP one-liner
+    (which appears earlier in the file) is never matched instead of the real
+    beats entry. Raises if the entry is missing — a chapter drafted without its
+    outline is worse than no draft at all.
+    """
+    if "## DETAILED CHAPTER OUTLINES" in outline_text:
+        # Scope to the detailed section: a fresh outline's HIGH-LEVEL ROADMAP
+        # one-liner appears first and must never be drafted from instead of the
+        # real beats entry.
+        outline_text = outline_text.split("## DETAILED CHAPTER OUTLINES", 1)[1]
+    # Rebuilt outlines (post-export, "### Ch N:" format) have no roadmap and no
+    # DETAILED header — whole-text search is correct for them.
     pattern = rf'###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b.*?(?=###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*(?:\d+)\b|## Act|## Foreshadowing|$)'
     match = re.search(pattern, outline_text, re.IGNORECASE | re.DOTALL)
-    return match.group(0).strip() if match else "(not found)"
+    if not match:
+        raise ValueError(
+            f"Chapter {chapter_num} outline entry not found in the "
+            f"## DETAILED CHAPTER OUTLINES section — refusing to draft without beats."
+        )
+    return match.group(0).strip()
 
 def extract_next_chapter_outline(outline_text, chapter_num):
     """Extract the next chapter's outline (just first few lines for continuity)."""
-    next_entry = extract_chapter_outline(outline_text, chapter_num + 1)
-    if next_entry == "(not found)":
+    try:
+        next_entry = extract_chapter_outline(outline_text, chapter_num + 1)
+    except ValueError:
         return "(final chapter)"
     lines = next_entry.split('\n')[:10]
     return '\n'.join(lines)
@@ -139,12 +158,12 @@ This chapter is scheduled to pay off the following narrative setup(s):
 You MUST write prose in this chapter that resolves these setups naturally.
 """
     
-    # Previous chapter (if exists)
+    # Previous chapter (if exists) — full ~600-word tail starting at a sentence boundary
     chapters_dir = utils.get_chapters_dir()
     prev_path = chapters_dir / f"ch_{chapter_num - 1:02d}.md"
     if prev_path.exists():
         prev_text = prev_path.read_text(encoding="utf-8")
-        prev_tail = prev_text[-2000:] if len(prev_text) > 2000 else prev_text
+        prev_tail = utils.tail_context(prev_text, max_words=600)
     else:
         prev_tail = "(first chapter -- no previous)"
 

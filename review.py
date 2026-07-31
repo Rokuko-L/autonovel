@@ -28,13 +28,23 @@ load_dotenv()
 
 REVIEW_PROMPT = """Read the below novel, "{title}". Review it first as a literary critic (like a newspaper book review) and then as a professor of fiction. In the later review, give specific, actionable suggestions for any defects you find. Be fair but honest. You don't *have* to find defects.
 
+OUTPUT FORMAT (strict — this drives automated revision):
+1. In the critic section, rate the novel with a star line exactly like: "Stars: ★★★★½" (0 to 5 stars, half stars allowed).
+2. In the professor section, list every actionable item as a numbered list, one item per line, in this exact shape:
+   1. **<Short item title>**
+      Severity: major|moderate|minor
+      Type: compression|addition|mechanical|structural|revision
+      Specific Suggestion: <2-4 sentence concrete fix, chapter-referenced>
+   Number them consecutively from 1. If you find nothing actionable, write "No actionable items."
+
 {manuscript}"""
 
 
-def call_opus(prompt, max_tokens=8000):
-    """Call Opus with the full manuscript."""
+def call_opus(prompt, max_tokens=16000):
+    """Call Opus with the full manuscript. Raises on truncation — a review cut
+    off mid-professor-section would silently end the revision loop early."""
     print(f"Sending to Opus ({len(prompt):,} chars)...", file=sys.stderr)
-    return call_anthropic(prompt=prompt, model_key="review", max_tokens=max_tokens, beta_context=True, timeout=600)
+    return call_anthropic(prompt=prompt, model_key="review", max_tokens=max_tokens, beta_context=True, timeout=600, raise_on_truncation=True)
 
 
 def get_title():
@@ -88,8 +98,8 @@ def parse_review(review_text):
         stars = star_str.count('★') + (0.5 if '½' in star_str else 0)
     
     # Extract professor's numbered items
-    # Look for patterns like "1. Title" or "Problem:" or "Suggestion:"
-    prof_items = re.split(r'\n(?=\d+\.\s+[A-Z])', professor_text)
+    # Look for patterns like "1. Title" or "1. **Title**" or "Problem:" or "Suggestion:"
+    prof_items = re.split(r'\n(?=\d+\.\s)', professor_text)
     
     for section in prof_items:
         if not section.strip():
@@ -101,7 +111,7 @@ def parse_review(review_text):
             continue
         
         num = int(title_match.group(1))
-        title = title_match.group(2).strip()
+        title = re.sub(r'\*\*(.+?)\*\*', r'\1', title_match.group(2)).strip()
         
         # Classify severity based on language
         text_lower = section.lower()
@@ -163,15 +173,21 @@ def should_stop(parsed_review):
     """Determine if the novel is done being revised.
     
     Stopping conditions:
-    - Stars >= 4
-    - No major unqualified items
-    - More than half the items are qualified/hedged
+    - Stars >= 4.5 with no major items
+    - Stars >= 4 with > half the items qualified/hedged
+    - The review parsed successfully (stars present) and found <= 2 items
+
+    A missing star rating means the review failed to parse — that is NOT a
+    signal to stop; the loop should keep going (or surface the failure).
     """
-    stars = parsed_review.get("stars", 0) or 0
+    stars_raw = parsed_review.get("stars")
+    stars = stars_raw or 0
     total = parsed_review["total_items"]
     major = parsed_review["major_items"]
     qualified = parsed_review["qualified_items"]
     
+    if stars_raw is None:
+        return False, "review did not parse a star rating — not treating as done"
     if stars >= 4.5 and major == 0:
         return True, "★★★★½ with no major items"
     if stars >= 4 and total > 0 and qualified / total > 0.5:

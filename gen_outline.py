@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt
+from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -69,6 +69,9 @@ def verify_tonal_drift(roadmap_text, seed_concept, genre_name):
             feedback = "Tonal/Genre violations detected:\n" + "\n".join(f"- {v}" for v in violations)
             return True, feedback
         return False, ""
+    except TruncationError:
+        # A truncated judge verdict is UNKNOWN, not "no drift" — never fail open on truncation.
+        raise
     except Exception as e:
         print(f"  WARN: Tonal drift validation call failed ({e}), skipping gatekeeper.", file=sys.stderr)
         return False, ""
@@ -163,8 +166,12 @@ Each chapter entry must start with "### Chapter N:".
 """
         roadmap_content = ""
         for attempt in range(1, 4):
-            res = call_writer(roadmap_prompt)
-            if "## HIGH-LEVEL ROADMAP" in res:
+            try:
+                res = call_writer(roadmap_prompt)
+            except TruncationError as e:
+                print(f"  WARN: Roadmap attempt {attempt} truncated ({e}), retrying...", file=sys.stderr)
+                continue
+            if "## HIGH-LEVEL ROADMAP" in res and "## GLOBAL PLOT THREADS LEDGER" in res:
                 # Run the tonal drift check
                 has_drift, feedback = verify_tonal_drift(res, seed, genre_name)
                 if not has_drift:
@@ -175,7 +182,7 @@ Each chapter entry must start with "### Chapter N:".
                     # Add drift feedback to prompt for self-correction
                     roadmap_prompt += f"\n\nERROR ON ATTEMPT {attempt}: {feedback}\nEnsure that the proposed outline maintains a consistent tone, stakes register, and world/magic rules between Act 1 and Acts 2/3."
             else:
-                print(f"  WARN: Roadmap missing expected header on attempt {attempt}, retrying...", file=sys.stderr)
+                print(f"  WARN: Roadmap missing expected headers (## HIGH-LEVEL ROADMAP and/or ## GLOBAL PLOT THREADS LEDGER) on attempt {attempt}, retrying...", file=sys.stderr)
         if not roadmap_content:
             print("ERROR: Failed to generate valid roadmap.", file=sys.stderr)
             sys.exit(1)
@@ -284,7 +291,11 @@ CRITICAL RULES:
 
         block_result = ""
         for attempt in range(1, 4):
-            res = call_writer(block_prompt)
+            try:
+                res = call_writer(block_prompt)
+            except TruncationError as e:
+                print(f"  WARN: Block Ch {start}-{end} attempt {attempt} truncated ({e}), retrying...", file=sys.stderr)
+                continue
             passed, err = validate_block_output(res, start, end)
             if passed:
                 block_result = res
