@@ -652,58 +652,64 @@ def run_foundation(state: dict) -> dict:
     return state
 
 
-def update_canon_from_eval(ch: int, attempt_num: int = None):
+def update_canon_from_eval(ch: int, attempt_num: int = None, eval_log_path=None):
     """
     Append new canon entries and unexplained references from the evaluation log of chapter ch.
-    If attempt_num is provided, use the evaluation log matching that quality attempt.
-    Otherwise, use the most recent evaluation log.
+    If eval_log_path is provided (parsed from the evaluate.py stdout line 'eval_log: <path>'),
+    that exact log is used — positional indexing into the log directory is unreliable because
+    the directory also accumulates logs from other phases and discarded attempts.
+    Otherwise fall back to the most recent log.
     """
     try:
-        eval_log_pattern = f"*_ch{ch:02d}.json"
-        eval_logs = sorted(utils.get_eval_logs_dir().glob(eval_log_pattern))
-        if eval_logs:
+        if eval_log_path is not None and Path(eval_log_path).exists():
+            eval_path = Path(eval_log_path)
+        else:
+            eval_log_pattern = f"*_ch{ch:02d}.json"
+            eval_logs = sorted(utils.get_eval_logs_dir().glob(eval_log_pattern))
+            if not eval_logs:
+                return
             if attempt_num is not None and attempt_num <= len(eval_logs):
                 eval_path = eval_logs[attempt_num - 1]
             else:
                 eval_path = eval_logs[-1]
-            
-            eval_data = json.loads(eval_path.read_text(encoding="utf-8"))
-            raw_entries = eval_data.get("new_canon_entries", [])
-            unexplained = eval_data.get("unexplained_references", [])
 
-            # Normalize entries: support both legacy str list and new {fact, scope} format
-            core_entries = []
-            inc_entries = []
-            for entry in raw_entries:
-                if isinstance(entry, str):
-                    inc_entries.append(entry)
-                elif isinstance(entry, dict):
-                    fact = entry.get("fact", "")
-                    scope = entry.get("scope", "incremental")
-                    (core_entries if scope == "core" else inc_entries).append(fact)
+        eval_data = json.loads(eval_path.read_text(encoding="utf-8"))
+        raw_entries = eval_data.get("new_canon_entries", [])
+        unexplained = eval_data.get("unexplained_references", [])
 
-            if core_entries or inc_entries or unexplained:
-                canon_path = utils.get_canon_path()
-                canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
-                with canon_path.open("a", encoding="utf-8") as f:
-                    if core_entries:
-                        if "## Core Canon" not in canon_text:
-                            f.write(f"\n\n## Core Canon\n\n")
-                            canon_text += "\n\n## Core Canon\n\n"
-                        for entry in core_entries:
-                            f.write(f"- {entry}\n")
-                    if inc_entries:
-                        ch_header = f"## As of Chapter {ch}"
-                        if ch_header not in canon_text:
-                            f.write(f"\n\n{ch_header}\n\n")
-                        else:
-                            f.write(f"\n")
-                        for entry in inc_entries:
-                            f.write(f"- {entry}\n")
-                    if unexplained:
-                        f.write("\n**Unexplained references:**\n")
-                        for ref in unexplained:
-                            f.write(f"- {ref}\n")
+        # Normalize entries: support both legacy str list and new {fact, scope} format
+        core_entries = []
+        inc_entries = []
+        for entry in raw_entries:
+            if isinstance(entry, str):
+                inc_entries.append(entry)
+            elif isinstance(entry, dict):
+                fact = entry.get("fact", "")
+                scope = entry.get("scope", "incremental")
+                (core_entries if scope == "core" else inc_entries).append(fact)
+
+        if core_entries or inc_entries or unexplained:
+            canon_path = utils.get_canon_path()
+            canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
+            with canon_path.open("a", encoding="utf-8") as f:
+                if core_entries:
+                    if "## Core Canon" not in canon_text:
+                        f.write(f"\n\n## Core Canon\n\n")
+                        canon_text += "\n\n## Core Canon\n\n"
+                    for entry in core_entries:
+                        f.write(f"- {entry}\n")
+                if inc_entries:
+                    ch_header = f"## As of Chapter {ch}"
+                    if ch_header not in canon_text:
+                        f.write(f"\n\n{ch_header}\n\n")
+                    else:
+                        f.write(f"\n")
+                    for entry in inc_entries:
+                        f.write(f"- {entry}\n")
+                if unexplained:
+                    f.write("\n**Unexplained references:**\n")
+                    for ref in unexplained:
+                        f.write(f"- {ref}\n")
     except (json.JSONDecodeError, KeyError, OSError) as e:
         print(f"  WARN: Could not extract canon entries from eval log: {e}", file=sys.stderr)
 
@@ -745,6 +751,7 @@ def run_drafting(state: dict) -> dict:
         best_draft_content = None
         best_word_count = 0
         best_attempt_num = 0
+        attempt_log_paths = {}  # attempt_num -> eval log path for that attempt
 
         for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
             step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
@@ -782,6 +789,13 @@ def run_drafting(state: dict) -> dict:
             score = parse_score(eval_result.stdout, "overall_score")
             step(f"Chapter {ch} score: {score}")
 
+            # Pin the exact eval log of THIS attempt (evaluate.py prints 'eval_log: <path>')
+            eval_log_path = None
+            log_m = re.search(r"eval_log:\s*(\S+)", eval_result.stdout)
+            if log_m:
+                eval_log_path = Path(log_m.group(1))
+                attempt_log_paths[attempt] = eval_log_path
+
             if score >= CHAPTER_THRESHOLD:
                 commit_hash = git_add_commit(
                     f"ch{ch:02d}: score {score}, {word_count}w")
@@ -791,7 +805,7 @@ def run_drafting(state: dict) -> dict:
                 save_state(state)
 
                 # Append canon entries from the eval JSON LOG FILE
-                update_canon_from_eval(ch, attempt_num=attempt)
+                update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
 
                 drafted = True
                 break
@@ -839,7 +853,8 @@ def run_drafting(state: dict) -> dict:
                 state["chapters_drafted"] = ch
                 save_state(state)
                 # Append canon entries of the best attempt even when force-kept
-                update_canon_from_eval(ch, attempt_num=best_attempt_num)
+                update_canon_from_eval(ch, attempt_num=best_attempt_num,
+                                       eval_log_path=attempt_log_paths.get(best_attempt_num))
             else:
                 if best_draft_content is None:
                     reason = "no valid drafts were generated"
@@ -1803,6 +1818,10 @@ def run_pipeline(args):
     else:
         # Run from current state onward
         current = state.get("phase", "foundation")
+        if current == "complete_no_pdf":
+            # PDF build failed on a prior run — resume from export so the run
+            # doesn't re-execute foundation/drafting/revision destructively.
+            current = "export"
         if current == "complete":
             print("Pipeline already complete. Use --from-scratch to restart "
                   "or --phase to run a specific phase.")

@@ -292,13 +292,27 @@ Write the chapter now. Full text, beginning to end.
 """
 
     MAX_REP_ATTEMPTS = 2
+    MAX_TRUNC_RETRIES = 2
     repetition_feedback = ""
+    genre_cfg = load_genre()
+    _est_words = genre_cfg["generation"]["outline"]["estimated_words"]
+    _chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
+    target_words = _est_words // _chapter_count
+    max_tokens = None
+    trunc_retries_left = MAX_TRUNC_RETRIES
 
     for attempt in range(1, MAX_REP_ATTEMPTS + 1):
         print(f"Drafting Chapter {chapter_num} (regen check {attempt}/{MAX_REP_ATTEMPTS})...", file=sys.stderr)
         try:
-            result = call_writer(prompt + repetition_feedback)
+            result = call_writer(prompt + repetition_feedback, max_tokens=max_tokens)
         except TruncationError as e:
+            if trunc_retries_left > 0:
+                trunc_retries_left -= 1
+                base = int(target_words * 3.25) if max_tokens is None else max_tokens
+                max_tokens = int(base * 1.5)
+                print(f"TRUNCATION_DETECTED: {e} — retrying with max_tokens={max_tokens} "
+                      f"({trunc_retries_left} retries left)", file=sys.stderr)
+                continue
             print(f"TRUNCATION_DETECTED: {e}", file=sys.stderr)
             sys.exit(2)
 

@@ -189,16 +189,24 @@ def main():
         print(f"READING: {reader_info['name']}")
         print(f"{'='*50}")
         
-        try:
-            result = call_reader(reader_key, arc_summary)
-            results[reader_key] = result
-            
-            # Print highlights
-            print(f"  Momentum loss: {str(result.get('momentum_loss', ''))[:150]}...")
-            print(f"  Best scene: {str(result.get('best_scene', ''))[:150]}...")
-            print(f"  Would recommend: {str(result.get('would_recommend', ''))[:150]}...")
-        except Exception as e:
-            print(f"  ERROR: {e}")
+        # Retry a failed reader once so a single truncated/errored response
+        # doesn't silently drop that reader from the panel consensus.
+        for rtry in range(1, 3):
+            try:
+                result = call_reader(reader_key, arc_summary)
+                results[reader_key] = result
+                
+                # Print highlights
+                print(f"  Momentum loss: {str(result.get('momentum_loss', ''))[:150]}...")
+                print(f"  Best scene: {str(result.get('best_scene', ''))[:150]}...")
+                print(f"  Would recommend: {str(result.get('would_recommend', ''))[:150]}...")
+                break
+            except Exception as e:
+                print(f"  ERROR (attempt {rtry}/2): {e}")
+                if rtry == 2:
+                    print(f"  WARNING: reader '{reader_key}' failed twice — dropped from panel")
+        else:
+            continue
     
     # Find disagreements
     disagreements = find_disagreements(results)

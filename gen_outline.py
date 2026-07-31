@@ -238,10 +238,10 @@ Each chapter entry must start with "### Chapter N:".
 
         # Build active plants/debts context from previous blocks
         active_plants = []
-        # Find all plants in previous chapters
+        # Find all plants in previous chapters (tolerant of em dash / curly quotes)
         prev_text = "\n\n".join(detailed_outlines[ch] for ch in sorted(detailed_outlines.keys()) if ch < start)
-        all_plants = re.findall(r'\[Plant:\s*([a-zA-Z0-9_]+)\s*-\s*\"([^\"]+)\"\]', prev_text)
-        all_harvests = re.findall(r'\[Harvest:\s*([a-zA-Z0-9_]+)\s*-\s*\"([^\"]+)\"\]', prev_text)
+        all_plants = re.findall(r'\[Plant:\s*([a-zA-Z0-9_]+)\s*[-–—]\s*["“]([^"”]+)["”]\]', prev_text)
+        all_harvests = re.findall(r'\[Harvest:\s*([a-zA-Z0-9_]+)\s*[-–—]\s*["“]([^"”]+)["”]\]', prev_text)
         harvested_slugs = {h[0] for h in all_harvests}
         for slug, desc in all_plants:
             if slug not in harvested_slugs:

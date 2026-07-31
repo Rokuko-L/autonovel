@@ -549,7 +549,9 @@ def check_orientation_facts(chapter_text, chapter_outline):
     text_lower = chapter_text.lower()
     failed_facts = []
     
-    # Common stop words to ignore
+    # Common stop words to ignore — including sentence-initial determiners and
+    # pronouns, which are capitalized in the fact list ("The", "A", "She", "He")
+    # and would otherwise match ANY chapter text, passing every fact.
     stop_words = {
         "with", "from", "over", "under", "about", "after", "through", "between",
         "before", "into", "onto", "your", "their", "them", "then", "there", "they",
@@ -557,7 +559,11 @@ def check_orientation_facts(chapter_text, chapter_outline):
         "where", "which", "who", "whom", "whose", "why", "how", "will", "would",
         "shall", "should", "could", "might", "must", "some", "any", "each", "every",
         "both", "either", "neither", "somebody", "someone", "something", "anybody",
-        "anyone", "anything", "nobody", "nothing", "everything", "everyone", "everybody"
+        "anyone", "anything", "nobody", "nothing", "everything", "everyone", "everybody",
+        "the", "a", "an", "and", "of", "to", "in", "for", "on", "at", "by", "as",
+        "or", "but", "not", "no", "so", "if", "then", "than", "she", "he", "it",
+        "we", "you", "i", "my", "your", "his", "her", "our", "its", "their", "me",
+        "him", "us", "them", "with", "was", "is", "are", "be", "been", "being", "had",
     }
     
     for fact in facts:

@@ -220,13 +220,13 @@ def main():
     try:
         state = json.loads(load_file(utils.get_state_path()))
     except (json.JSONDecodeError, ValueError):
-        pass
+        print("ERROR: state.json is corrupted or unparseable — the title page may get a wrong title.", file=sys.stderr)
 
     genre_cfg = {}
     try:
         genre_cfg = json.loads(load_file(utils.get_active_genre_path()))
     except (json.JSONDecodeError, ValueError):
-        pass
+        print("ERROR: active_genre.json is corrupted or unparseable — genre context will be empty.", file=sys.stderr)
 
     title = extract_title(seed_text, state)
     author = get_author()

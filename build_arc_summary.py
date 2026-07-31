@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 import utils
-from utils import call_anthropic, get_novel_title
+from utils import call_anthropic, get_novel_title, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -35,11 +35,18 @@ def process_chapter_arc_summary(path, ch):
     wc = len(text.split())
     opening, closing, dialogue = extract_key_passages(text)
     
-    # Get a 100-word summary from the model
-    summary = call_writer(
-        f"Summarize this chapter in exactly 3 sentences. What happens, what changes, what question is left open.\n\nCHAPTER {ch}:\n{text}",
-        max_tokens=200
-    )
+    # Get a 100-word summary from the model (retry once with a bigger budget on truncation)
+    try:
+        summary = call_writer(
+            f"Summarize this chapter in exactly 3 sentences. What happens, what changes, what question is left open.\n\nCHAPTER {ch}:\n{text}",
+            max_tokens=200
+        )
+    except TruncationError:
+        print(f"Ch {ch}: summary truncated at 200 tokens — retrying with 600", file=sys.stderr)
+        summary = call_writer(
+            f"Summarize this chapter in exactly 3 sentences. What happens, what changes, what question is left open.\n\nCHAPTER {ch}:\n{text}",
+            max_tokens=600
+        )
     
     entry = f"""### Chapter {ch} ({wc} words)
 **Summary:** {summary}
