@@ -19,21 +19,21 @@ def main():
     ch_num = int(sys.argv[1])
     brief_file = sys.argv[2]
     
-    voice = utils.get_voice_path().read_text()
-    characters = utils.get_characters_path().read_text()
-    world = utils.get_world_path().read_text()
-    brief = Path(brief_file).read_text()
+    voice = utils.get_voice_path().read_text(encoding="utf-8")
+    characters = utils.get_characters_path().read_text(encoding="utf-8")
+    world = utils.get_world_path().read_text(encoding="utf-8")
+    brief = Path(brief_file).read_text(encoding="utf-8")
     
     # Load adjacent chapters for continuity
     chapters_dir = utils.get_chapters_dir()
     prev_path = chapters_dir / f"ch_{ch_num - 1:02d}.md"
     next_path = chapters_dir / f"ch_{ch_num + 1:02d}.md"
-    prev_tail = prev_path.read_text()[-2000:] if prev_path.exists() else "(first chapter)"
-    next_head = next_path.read_text()[:1500] if next_path.exists() else "(last chapter)"
+    prev_tail = prev_path.read_text(encoding="utf-8")[-2000:] if prev_path.exists() else "(first chapter)"
+    next_head = next_path.read_text(encoding="utf-8")[:1500] if next_path.exists() else "(last chapter)"
     
     # Load old version if exists
     old_path = chapters_dir / f"ch_{ch_num:02d}.md"
-    old_text = old_path.read_text() if old_path.exists() else "(no existing draft)"
+    old_text = old_path.read_text(encoding="utf-8") if old_path.exists() else "(no existing draft)"
     
     title = get_novel_title()
     prompt = f"""Rewrite Chapter {ch_num} of "{title}."
@@ -68,7 +68,7 @@ Write the FULL revised chapter now."""
     result = call_writer(prompt)
     
     out_path = chapters_dir / f"ch_{ch_num:02d}.md"
-    out_path.write_text(result)
+    out_path.write_text(result, encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
 

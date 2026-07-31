@@ -231,7 +231,11 @@ def extract_text_from_response(resp):
                         continue
                     try:
                         item = json.loads(data_str)
-                        if item.get("type") == "content_block_delta":
+                        if item.get("type") == "message":
+                            for block in item.get("content", []):
+                                if block.get("type") == "text":
+                                    text_content += block.get("text", "")
+                        elif item.get("type") == "content_block_delta":
                             delta = item.get("delta", {})
                             if delta.get("type") == "text_delta":
                                 text_content += delta.get("text", "")
