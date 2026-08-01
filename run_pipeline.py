@@ -833,10 +833,36 @@ def run_drafting(state: dict) -> dict:
                 log_result("discarded", f"ch{ch:02d}", score, word_count,
                            "discard", f"Chapter {ch} attempt {attempt}")
                 # Feed the judge's findings back into the next attempt
-                retry_feedback = build_eval_feedback(eval_log_path)
+                retry_feedback, near_clean = build_eval_feedback(eval_log_path)
                 if retry_feedback:
                     step(f"Built retry feedback for Ch {ch} attempt {attempt + 1} "
                          f"({len(retry_feedback)} chars)")
+
+                if near_clean:
+                    # The draft missed the keep bar by a hair with negligible
+                    # mechanical penalties. Retrying means deleting this draft
+                    # and generating blind — which regresses (observed: ch20
+                    # 6.4 -> 3.32/4.5/3.24, ch13 6.25 -> 4.22). Keep it.
+                    raw_note = ""
+                    if eval_log_path and eval_log_path.exists():
+                        try:
+                            raw_note = str(json.loads(
+                                eval_log_path.read_text(encoding="utf-8")
+                            ).get("raw_judge_score", "?"))
+                        except Exception:
+                            raw_note = "?"
+                    step(f"NEAR-CLEAN eval (raw {raw_note}) — keeping Ch {ch} at {score} "
+                         f"instead of retrying")
+                    commit_hash = git_add_commit(
+                        f"ch{ch:02d}: near-clean keep, score {score}, {word_count}w")
+                    log_result(commit_hash, f"ch{ch:02d}", score, word_count,
+                               "keep", f"Chapter {ch} (near-clean keep, attempt {attempt})")
+                    state["chapters_drafted"] = ch
+                    save_state(state)
+                    update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                    drafted = True
+                    break
+
                 # Remove the bad chapter file so next attempt starts fresh
                 if ch_file.exists():
                     rel_path = f"chapters/ch_{ch:02d}.md"
@@ -914,14 +940,18 @@ def build_eval_feedback(eval_log_path):
 
     Extracts the judge's AI-pattern findings, top-3 revisions, and the
     mechanical slop tic report so the next draft attempt can address them.
-    Returns a string to pass as --retry-feedback, or "" if unavailable.
+    Returns (feedback_string, near_clean_flag).
+    near_clean is True when the draft missed the keep bar by a hair with
+    negligible mechanical penalties — in that case the draft should be KEPT
+    rather than retried, because a blind regeneration from a deleted draft
+    regresses (observed: ch20 6.4 -> 3.32, 4.5, 3.24; ch13 6.25 -> 4.22).
     """
     try:
         if not eval_log_path or not Path(eval_log_path).exists():
-            return ""
+            return "", False
         data = json.loads(Path(eval_log_path).read_text(encoding="utf-8"))
     except Exception:
-        return ""
+        return "", False
 
     lines = []
 
@@ -951,22 +981,11 @@ def build_eval_feedback(eval_log_path):
         for name, cnt in struct:
             lines.append(f"  - {name} ({cnt}x)")
 
-    if not lines:
-        # The judge found nothing wrong — this is a regression hazard. A
-        # clean eval with empty feedback makes the model rewrite the chapter
-        # wholesale and re-introduce tics (observed: ch13 A5 6.25 -> 4.22).
-        # Tell it to preserve the approved prose instead.
-        return ("YOUR PREVIOUS DRAFT WAS EVALUATED AS CLEAN — it scored above the keep threshold "
-                "with no AI patterns, no tic clusters, and no structural issues detected.\n"
-                "DO NOT rewrite the chapter wholesale. Keep the accepted prose essentially as-is. "
-                "Only make surgical changes if a specific problem exists (e.g. unresolved canon). "
-                "If nothing needs changing, produce the same text verbatim.")
-
     # Near-clean detection: the draft missed the keep bar by a hair with
     # negligible mechanical penalties (raw judge score high, tic/slop
-    # penalties tiny). In this state a wholesale rewrite invites regression
-    # (observed: ch13 A5 6.25 -> 4.22 after a near-clean eval). Preserve the
-    # prose and only make surgical fixes for the listed points.
+    # penalties tiny). In this state a blind retry (draft deleted, fresh
+    # generation) regresses — keep the draft instead (observed: ch20 6.4 ->
+    # 3.32, 4.5, 3.24; ch13 6.25 -> 4.22).
     try:
         raw_score = float(data.get("raw_judge_score") or 0)
         adjusted_score = float(data.get("overall_score") or 0)
@@ -977,13 +996,23 @@ def build_eval_feedback(eval_log_path):
     near_clean = (raw_score >= CHAPTER_THRESHOLD
                   and adjusted_score >= CHAPTER_THRESHOLD - 1.0
                   and slop_penalty < 2.0 and tic_penalty < 1.0)
+
+    if not lines:
+        # The judge found nothing wrong. A clean eval with empty feedback
+        # makes the model rewrite the chapter wholesale and re-introduce tics.
+        return ("YOUR PREVIOUS DRAFT WAS EVALUATED AS CLEAN — no AI patterns, no tic clusters, "
+                "and no structural issues detected.\n"
+                "DO NOT rewrite the chapter wholesale. Keep the accepted prose essentially as-is. "
+                "Only make surgical changes if a specific problem exists (e.g. unresolved canon). "
+                "If nothing needs changing, produce the same text verbatim."), near_clean
+
     if near_clean:
         lines.append("NOTE: your raw judge score was strong and the mechanical detectors added "
                      "almost no penalty — this draft missed the keep bar by a hair. Do NOT rewrite "
                      "it wholesale. Address each listed point with surgical edits and preserve "
                      "everything the judge did not flag. If the points above are already satisfied, "
                      "produce the same text verbatim.")
-    return "\n".join(lines)
+    return "\n".join(lines), near_clean
 
 
 def parse_panel_consensus(panel_path: Path) -> list[dict]:
