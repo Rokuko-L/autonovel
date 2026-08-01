@@ -952,7 +952,37 @@ def build_eval_feedback(eval_log_path):
             lines.append(f"  - {name} ({cnt}x)")
 
     if not lines:
-        return ""
+        # The judge found nothing wrong — this is a regression hazard. A
+        # clean eval with empty feedback makes the model rewrite the chapter
+        # wholesale and re-introduce tics (observed: ch13 A5 6.25 -> 4.22).
+        # Tell it to preserve the approved prose instead.
+        return ("YOUR PREVIOUS DRAFT WAS EVALUATED AS CLEAN — it scored above the keep threshold "
+                "with no AI patterns, no tic clusters, and no structural issues detected.\n"
+                "DO NOT rewrite the chapter wholesale. Keep the accepted prose essentially as-is. "
+                "Only make surgical changes if a specific problem exists (e.g. unresolved canon). "
+                "If nothing needs changing, produce the same text verbatim.")
+
+    # Near-clean detection: the draft missed the keep bar by a hair with
+    # negligible mechanical penalties (raw judge score high, tic/slop
+    # penalties tiny). In this state a wholesale rewrite invites regression
+    # (observed: ch13 A5 6.25 -> 4.22 after a near-clean eval). Preserve the
+    # prose and only make surgical fixes for the listed points.
+    try:
+        raw_score = float(data.get("raw_judge_score") or 0)
+        adjusted_score = float(data.get("overall_score") or 0)
+    except (TypeError, ValueError):
+        raw_score = adjusted_score = 0.0
+    slop_penalty = slop.get("slop_penalty") or 0.0
+    tic_penalty = slop.get("prose_tic_penalty") or 0.0
+    near_clean = (raw_score >= CHAPTER_THRESHOLD
+                  and adjusted_score >= CHAPTER_THRESHOLD - 1.0
+                  and slop_penalty < 2.0 and tic_penalty < 1.0)
+    if near_clean:
+        lines.append("NOTE: your raw judge score was strong and the mechanical detectors added "
+                     "almost no penalty — this draft missed the keep bar by a hair. Do NOT rewrite "
+                     "it wholesale. Address each listed point with surgical edits and preserve "
+                     "everything the judge did not flag. If the points above are already satisfied, "
+                     "produce the same text verbatim.")
     return "\n".join(lines)
 
 
