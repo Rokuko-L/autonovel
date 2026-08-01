@@ -533,7 +533,7 @@ def check_orientation_facts(chapter_text, chapter_outline):
     Returns a list of failed facts.
     """
     import re
-    match = re.search(r'Orientation\s+Facts\s*(?:\*\*)?:\s*(.*?)(?=\n\s*(?:-\s*)?\*\*|\Z)', chapter_outline, re.IGNORECASE | re.DOTALL)
+    match = re.search(r'Orientation\s+Facts\s*(?:\*\*)?:\s*(.*?)(?=\n\s*(?:\d+\.\s*)?\*\*|\Z)', chapter_outline, re.IGNORECASE | re.DOTALL)
     if not match:
         return []
     

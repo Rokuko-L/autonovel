@@ -499,7 +499,8 @@ def process_notes(notes_input, genre):
         prompt=(
             f"The user has provided a massive document ({word_count} words) for a {genre_str} novel. "
             f"Extract a dense 500-word summary of the core premise, genre, main characters, "
-            f"and central conflict. Do not write a story, just extract the core DNA."
+            f"and central conflict. Do not write a story, just extract the core DNA.\n\n"
+            f"=== DOCUMENT ===\n{notes}"
         ),
         model_key="judge",
         max_tokens=2000,
