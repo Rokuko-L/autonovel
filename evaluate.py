@@ -118,6 +118,76 @@ STRUCTURAL_AI_TICS = [
     r"\b(?:is|was) the (?:language|art|science|essence|foundation|soul|hallmark|bedrock|currency) of\b",
 ]
 
+# Prose tic families -- rhetorical constructions that are fine once but betray
+# machine origin in clusters. Detected with density thresholds (see below).
+# NOTE: these are NOT banned outright; a single "not X, but Y" is normal human
+# prose. The tell is repetition within a chapter.
+
+PROSE_TIC_PATTERNS = [
+    # "not X, but Y" (bare form -- "It did not arrive as sound, but as a blow")
+    ("not_but", r"[Nn]ot [a-z][^.,!?;]{2,60}?,\s*but "),
+    # Stacked negation ("Not a melody, not a hum, but a deep vibration")
+    ("stacked_negation", r"[Nn]ot [a-z][^.,!?;]{2,50}?,\s*(?:not|nor) [a-z]"),
+    # "not X so much as Y" ("not a torrent so much as a whine")
+    ("not_so_much_as", r"not [a-z][^.,!?;]{2,60}?,\s*so much as "),
+    # Abstract-noun frame ("the sound of", "the shape of", "the weight of" as
+    # a rhetorical device, not a literal reference)
+    ("x_of_y_frame", r"\bthe (?:sound|shape|weight|color|smell|feel|taste|music|language|art|science|essence|soul|fabric|texture|rhythm|echo|hint|whisper|scent|flavor) of\b"),
+    # "a thing of X and Y" descriptor frame ("a thing of jagged edges and creeping shadow")
+    ("thing_of", r"\b(?:a|an) (?:thing|creature|woman|girl|man|place|room|cat|beast|girl|boy) of [a-z]+ and [a-z]+"),
+]
+
+# Density thresholds: instances per 3000 words that start costing points.
+# Below threshold = normal human variation. Above = tic.
+PROSE_TIC_THRESHOLDS = {
+    "not_but": 2.0,          # >2 per 3k words penalized
+    "stacked_negation": 1.0, # >1 per 3k words penalized
+    "not_so_much_as": 1.0,
+    "x_of_y_frame": 3.0,     # >3 per 3k words penalized (some are literal)
+    "thing_of": 1.0,
+}
+
+PROSE_TIC_PENALTY_PER_INSTANCE = {
+    "not_but": 0.35,
+    "stacked_negation": 0.45,
+    "not_so_much_as": 0.45,
+    "x_of_y_frame": 0.25,
+    "thing_of": 0.4,
+}
+
+PROSE_TIC_CAPS = {
+    "not_but": 1.5,
+    "stacked_negation": 1.2,
+    "not_so_much_as": 1.0,
+    "x_of_y_frame": 1.0,
+    "thing_of": 0.8,
+}
+
+
+def prose_tics(text):
+    """Density-based detection of rhetorical tic families.
+
+    Returns (tics, extra_penalty) where tics is a list of
+    (tic_name, count, per_3k) and extra_penalty is the added deduction.
+    """
+    word_count = len(text.split()) or 1
+    scale = 3000.0 / word_count
+    tics = []
+    extra_penalty = 0.0
+    for name, pattern in PROSE_TIC_PATTERNS:
+        count = len(re.findall(pattern, text))
+        if count == 0:
+            continue
+        per_3k = count * scale
+        tics.append((name, count, round(per_3k, 2)))
+        threshold = PROSE_TIC_THRESHOLDS[name]
+        if per_3k > threshold:
+            over = per_3k - threshold
+            extra_penalty += min(over * PROSE_TIC_PENALTY_PER_INSTANCE[name],
+                                 PROSE_TIC_CAPS[name])
+    return tics, round(extra_penalty, 2)
+
+
 # Show-don't-tell detectors: emotion TELLING patterns
 TELLING_PATTERNS = [
     r"\b(?:he|she|they|I|we|[A-Z]\w+) (?:felt|was|seemed|looked|appeared) (?:angry|sad|happy|scared|nervous|excited|jealous|guilty|anxious|lonely|desperate|furious|terrified|elated|miserable|hopeful|confused|relieved|horrified|disgusted|ashamed|proud|bitter|defeated|triumphant)\b",
@@ -251,6 +321,10 @@ def slop_score(text):
     penalty += min((structural_tic_count * scale) * 0.5, 2.0)   # structural AI tics: up to 2 pts
     penalty += min((staccato_runs * scale) * 0.08, 2.0)          # staccato punchlines: up to 2 pts
 
+    # Prose tic families (density-based) -- the "reads like AI" constructions
+    prose_tics_found, tic_penalty = prose_tics(text)
+    penalty += min(tic_penalty, 3.0)
+
     penalty = min(penalty, 4.0)
 
     return {
@@ -262,6 +336,8 @@ def slop_score(text):
         "structural_ai_tics": structural_tics,
         "staccato_runs": staccato_runs,
         "telling_violations": telling_count,
+        "prose_tics": [{"tic": n, "count": c, "per_3k": p} for n, c, p in prose_tics_found],
+        "prose_tic_penalty": tic_penalty,
         "em_dash_density": round(em_dash_density, 2),
         "sentence_length_cv": round(sentence_length_cv, 3),
         "transition_opener_ratio": round(transition_ratio, 3),

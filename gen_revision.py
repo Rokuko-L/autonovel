@@ -36,6 +36,35 @@ def main():
     old_text = old_path.read_text(encoding="utf-8") if old_path.exists() else "(no existing draft)"
     
     title = get_novel_title()
+
+    # Pull the latest eval's AI-pattern findings so the revision removes them
+    ai_feedback = ""
+    try:
+        eval_dir = utils.get_eval_logs_dir()
+        candidates = sorted(
+            (p for p in eval_dir.glob(f"*_ch{ch_num:02d}.json")),
+            key=lambda p: p.stat().st_mtime, reverse=True)
+        if candidates:
+            import json
+            ev = json.loads(candidates[0].read_text(encoding="utf-8"))
+            bits = []
+            pats = ev.get("ai_patterns_detected") or []
+            revs = ev.get("top_3_revisions") or []
+            tics = (ev.get("slop") or {}).get("prose_tics") or []
+            if pats:
+                bits.append("AI PATTERNS DETECTED (eliminate these):\n" +
+                            "\n".join(f"  - {p}" for p in pats))
+            if revs:
+                bits.append("PRIORITY REVISIONS:\n" +
+                            "\n".join(f"  - {r}" for r in revs))
+            if tics:
+                bits.append("MECHANICAL TICS (rewrite these constructions):\n" +
+                            "\n".join(f"  - {t['tic']}: {t['count']}x" for t in tics))
+            if bits:
+                ai_feedback = "\n\nEVALUATOR FEEDBACK (address every point in your rewrite):\n" + "\n\n".join(bits)
+    except Exception:
+        pass
+
     prompt = f"""Rewrite Chapter {ch_num} of "{title}."
 
 REVISION BRIEF (follow this exactly):
@@ -61,6 +90,7 @@ THE EXISTING DRAFT (use as raw material -- keep what works, cut what doesn't):
 
 ANTI-PATTERN RULES:
 {load_genre()["generation"]["anti_pattern_rules"]}
+{ai_feedback}
 
 Write the FULL revised chapter now."""
 

@@ -104,8 +104,61 @@ def extract_next_chapter_outline(outline_text, chapter_num):
     lines = next_entry.split('\n')[:10]
     return '\n'.join(lines)
 
+def scan_prior_chapter_crutches(chapters_dir, current_chapter, max_phrases=12):
+    """Find distinctive phrases used across PRIOR chapters and warn against reuse.
+
+    Cross-chapter crutch memory: an image or metaphor is atmospheric once,
+    but repeating "bruise-colored sky" in 4 chapters reads as a machine
+    tick. Extract distinctive (rare-word) 3-4 gram phrases from all prior
+    chapters, count how many chapters they appear in, and return the worst
+    offenders as a do-not-reuse list.
+    """
+    import collections
+    stop = set()
+    try:
+        from utils import stop_words
+        stop = set(stop_words())
+    except Exception:
+        pass
+    if not stop:
+        stop = {"the", "a", "an", "and", "or", "but", "of", "in", "on", "at",
+                "to", "for", "with", "from", "by", "her", "his", "she", "he",
+                "it", "was", "were", "had", "have", "has", "as", "so", "if",
+                "then", "that", "this", "there", "her", "their", "its", "not",
+                "no", "yes", "you", "your", "they", "them", "we", "our", "my",
+                "me", "i", "said", "says", "would", "could", "should", "will",
+                "can", "may", "might", "must", "been", "being", "herself",
+                "himself", "itself", "down", "up", "out", "off", "over",
+                "under", "again", "more", "most", "some", "any", "all", "few",
+                "both", "each", "every", "own", "same", "too", "very", "just",
+                "into", "onto", "about", "after", "before", "between",
+                "through", "during", "without", "against", "around", "within",
+                "along", "across", "behind", "beyond", "beneath", "among"}
+
+    phrase_counts = collections.defaultdict(set)
+    for ch in range(1, current_chapter):
+        path = chapters_dir / f"ch_{ch:02d}.md"
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        words = text.split()
+        for n in (4, 3):
+            for i in range(len(words) - n + 1):
+                gram = words[i:i + n]
+                if any(w.strip(".,;:!?\"'()[]-—").lower() in stop for w in gram):
+                    continue
+                key = " ".join(w.strip(".,;:!?\"'()[]-—") for w in gram).lower()
+                if len(key) < 12:
+                    continue
+                phrase_counts[key].add(ch)
+
+    # Phrases appearing in 2+ distinct prior chapters are crutches
+    crutches = [(p, sorted(chs)) for p, chs in phrase_counts.items() if len(chs) >= 2]
+    crutches.sort(key=lambda x: -len(x[1]))
+    return crutches[:max_phrases]
+
+
 def parse_orientation_facts(chapter_outline):
-    """Parse orientation facts list from chapter outline."""
     import re
     match = re.search(r'Orientation\s+Facts\s*(?:\*\*)?:\s*(.*?)(?=\n\s*(?:-\s*)?\*\*|\Z)', chapter_outline, re.IGNORECASE | re.DOTALL)
     if match:
@@ -119,6 +172,16 @@ def parse_orientation_facts(chapter_outline):
 
 def main():
     chapter_num = int(sys.argv[1])
+    retry_feedback = ""
+    for i, arg in enumerate(sys.argv[2:]):
+        if arg == "--retry-feedback" and i + 2 < len(sys.argv):
+            fb_arg = sys.argv[i + 3]
+            fb_path = Path(fb_arg)
+            if fb_path.exists():
+                retry_feedback = fb_path.read_text(encoding="utf-8")
+            else:
+                retry_feedback = fb_arg
+            break
     
     # Load all context
     voice = load_file(utils.get_voice_path())
@@ -280,6 +343,29 @@ DISCLOSURE CEILING (everything that has been put on the page so far. Anything no
 including anything from the world/character bible, must be introduced through this chapter's
 events — not assumed, not name-dropped):
 {canon_disclosure}
+"""
+
+    # Cross-chapter crutch memory: ban distinctive phrases already overused
+    # in prior chapters (a phrase that appears in 2+ earlier chapters).
+    crutches = scan_prior_chapter_crutches(chapters_dir, chapter_num)
+    if crutches:
+        crutch_lines = "\n".join(
+            f"  - \"{p}\" (used in chapters {', '.join(str(c) for c in chs)})"
+            for p, chs in crutches)
+        structural_guardrails += f"""
+
+CROSS-CHAPTER CRUTCH BAN (READ CAREFULLY):
+The following distinctive phrases were already used repeatedly in EARLIER chapters.
+Do NOT use them, or close variants of them, in this chapter. Find a fresh image
+or metaphor each time:
+{crutch_lines}
+"""
+
+    if retry_feedback:
+        structural_guardrails += f"""
+
+EVALUATOR FEEDBACK FROM PREVIOUS ATTEMPT (address EVERY point):
+{retry_feedback}
 """
 
     prompt += f"""

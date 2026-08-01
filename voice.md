@@ -69,6 +69,48 @@ These add zero information. The sentence is always better without them.
 - "One might argue that..." -> argue it or don't
 - "Not just X, but Y" -> restructure (the #1 LLM rhetorical crutch)
 
+### Tic families -- density is the tell (permanent, all novels)
+
+These constructions are normal ONCE. They betray machine origin when they
+cluster. Max allowances per chapter below. Past that, rewrite with varied
+syntax.
+
+**1. "not X, but Y" (bare form).** "It did not arrive as sound, but as a
+blow." "Not a melody, not a hum, but a deep vibration." Max 1 per chapter.
+Variants all count: "not X so much as Y", "not X, not Y[, but Z]",
+"X was not Y, but Z". Replace with direct statement: "The throne was
+singing. A bone-level vibration, not a melody."
+
+**2. Stacked negation ("not X, not Y").** "Not loudly. Not the way they did
+when..." Max 1 per chapter. Restructure to name what it IS, not what it
+isn't, or use a single negation.
+
+**3. The abstract-noun frame ("the X of Y").** "the sound of", "the shape
+of", "the weight of", "the color of", "the feel of", "the taste of",
+"the music of", "the language of" used as a rhetorical device ("the sound
+of something waiting to be told what to be"). Max 2 per chapter, and only
+when literal ("the weight of the axe"). If the phrase is figurative,
+rewrite: "It sounded like something waiting for instructions."
+
+**4. "a thing of X and Y" descriptor frame.** "a thing of jagged edges and
+creeping shadow", "things of beauty and horror". Max 1 per chapter. Use a
+concrete object with specific detail instead: "jagged black stone, edges
+sticky with shadow".
+
+**5. Cross-chapter phrase recycling.** A distinctive image or metaphor used
+in an earlier chapter is spent. "The bruise-colored sky" in chapter 1 means
+chapter 5 must find another sky. The pipeline tracks these; if a phrase
+appears in this list, do not use it or any close variant.
+
+**6. Aphorism capstones.** Sentences that snap shut with a grand summary
+("It was the sound of something waiting to be told what to be." / "Mercy.")
+as paragraph or scene enders. Max 1 per scene. Let the scene end on action
+or specific detail instead of thesis statements.
+
+**7. The judge's feedback.** If the evaluator flagged specific sentences or
+patterns in a prior attempt, those exact constructions are now radioactive.
+Fix them verbatim, not in spirit.
+
 ### Structural slop patterns
 
 These are the shapes that betray machine origin. Avoid them in any voice.

@@ -753,6 +753,7 @@ def run_drafting(state: dict) -> dict:
         best_word_count = 0
         best_attempt_num = 0
         attempt_log_paths = {}  # attempt_num -> eval log path for that attempt
+        retry_feedback = ""
 
         for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
             step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
@@ -761,6 +762,14 @@ def run_drafting(state: dict) -> dict:
             quality_attempt = False
             for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
                 cmd = f"\"{sys.executable}\" draft_chapter.py {ch}"
+                if retry_feedback:
+                    # Quote-safe: shlex.split() in run_tool handles spaces, but
+                    # the feedback may contain newlines/quotes -- write to a
+                    # temp file and pass the path instead.
+                    fb_path = utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
+                    fb_path.write_text(retry_feedback, encoding="utf-8")
+                    cmd = (f"\"{sys.executable}\" draft_chapter.py {ch} "
+                           f"--retry-feedback \"{fb_path}\"")
                 draft_result = run_tool(cmd, timeout=900, check=False)
                 if draft_result.returncode != 0:
                     step(f"Draft failed (exit {draft_result.returncode}), retrying...")
@@ -798,6 +807,8 @@ def run_drafting(state: dict) -> dict:
                 attempt_log_paths[attempt] = eval_log_path
 
             if score >= CHAPTER_THRESHOLD:
+                fb_path = utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
+                fb_path.unlink(missing_ok=True)
                 commit_hash = git_add_commit(
                     f"ch{ch:02d}: score {score}, {word_count}w")
                 log_result(commit_hash, f"ch{ch:02d}", score, word_count,
@@ -821,6 +832,11 @@ def run_drafting(state: dict) -> dict:
                 step(f"Score {score} < {CHAPTER_THRESHOLD}, discarding attempt")
                 log_result("discarded", f"ch{ch:02d}", score, word_count,
                            "discard", f"Chapter {ch} attempt {attempt}")
+                # Feed the judge's findings back into the next attempt
+                retry_feedback = build_eval_feedback(eval_log_path)
+                if retry_feedback:
+                    step(f"Built retry feedback for Ch {ch} attempt {attempt + 1} "
+                         f"({len(retry_feedback)} chars)")
                 # Remove the bad chapter file so next attempt starts fresh
                 if ch_file.exists():
                     rel_path = f"chapters/ch_{ch:02d}.md"
@@ -864,6 +880,7 @@ def run_drafting(state: dict) -> dict:
                               f"or word count {best_word_count} below {min_words}")
                 step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts ({reason}). "
                      f"Marking chapter as SKIPPED in state — it will be absent from the manuscript.")
+                (utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt").unlink(missing_ok=True)
                 log_result("skipped", f"ch{ch:02d}", best_score, best_word_count,
                            "skipped", reason)
                 state["chapters_drafted"] = ch
@@ -891,6 +908,53 @@ def run_drafting(state: dict) -> dict:
 # ---------------------------------------------------------------------------
 # PHASE 3 — REVISION
 # ---------------------------------------------------------------------------
+
+def build_eval_feedback(eval_log_path):
+    """Build targeted retry feedback from a failed chapter eval JSON.
+
+    Extracts the judge's AI-pattern findings, top-3 revisions, and the
+    mechanical slop tic report so the next draft attempt can address them.
+    Returns a string to pass as --retry-feedback, or "" if unavailable.
+    """
+    try:
+        if not eval_log_path or not Path(eval_log_path).exists():
+            return ""
+        data = json.loads(Path(eval_log_path).read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+
+    lines = []
+
+    ai_patterns = data.get("ai_patterns_detected") or []
+    if ai_patterns:
+        lines.append("AI PATTERNS THE JUDGE DETECTED IN YOUR PREVIOUS DRAFT (eliminate these):")
+        for p in ai_patterns:
+            lines.append(f"  - {p}")
+
+    revisions = data.get("top_3_revisions") or []
+    if revisions:
+        lines.append("JUDGE'S PRIORITY REVISIONS:")
+        for r in revisions:
+            lines.append(f"  - {r}")
+
+    slop = data.get("slop") or {}
+    tics = slop.get("prose_tics") or []
+    if tics:
+        lines.append("MECHANICAL TIC REPORT (density per 3000 words — rewrite these constructions "
+                     "with varied syntax; one use is fine, clusters are not):")
+        for t in tics:
+            lines.append(f"  - {t['tic']}: {t['count']}x ({t['per_3k']} per 3k words)")
+
+    struct = slop.get("structural_ai_tics") or []
+    if struct:
+        lines.append("STRUCTURAL FORMULAIC PATTERNS:")
+        for name, cnt in struct:
+            lines.append(f"  - {name} ({cnt}x)")
+
+    if not lines:
+        return ""
+    return "\n".join(lines)
+
 
 def parse_panel_consensus(panel_path: Path) -> list[dict]:
     """
