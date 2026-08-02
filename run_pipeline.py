@@ -1122,9 +1122,11 @@ def run_revision(
                 # -- Step 1: Adversarial editing pass (parallel per chapter) --
                 step("Running adversarial editing on all chapters...")
                 total_ch = get_total_chapters(state)
-                base_url = os.getenv("ANTHROPIC_BASE_URL", "")
-                is_local = "localhost" in base_url or "127.0.0.1" in base_url
-                max_workers = 1 if is_local else 4
+                # Parallelism: default 4 workers even for local proxies —
+                # build_arc_summary/build_outline already run 4-12 concurrent
+                # LLM calls against the same endpoint. Override with
+                # AUTONOVEL_MAX_WORKERS (e.g. =1 for weak single-request models).
+                max_workers = int(os.getenv("AUTONOVEL_MAX_WORKERS", "4"))
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
                         pool.submit(uv_run, f"adversarial_edit.py {ch}", 600): ch
@@ -1291,9 +1293,10 @@ def run_revision(
                 except Exception as e:
                     return {"ch_num": ch_num, "error": str(e)}
 
-            base_url = os.getenv("ANTHROPIC_BASE_URL", "")
-            is_local = "localhost" in base_url or "127.0.0.1" in base_url
-            max_workers = 1 if is_local else max(1, len(consensus_items))
+            # Parallelism: default 4 workers even for local proxies —
+            # override with AUTONOVEL_MAX_WORKERS (e.g. =1 for weak models).
+            max_workers = int(os.getenv("AUTONOVEL_MAX_WORKERS", "4"))
+            max_workers = max(1, min(max_workers, len(consensus_items)))
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 futures = {pool.submit(_revise_one, item): item for item in consensus_items}
                 results = []
