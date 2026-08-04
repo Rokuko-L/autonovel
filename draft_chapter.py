@@ -390,6 +390,7 @@ Write the chapter now. Full text, beginning to end.
     target_words = _est_words // _chapter_count
     max_tokens = None
     trunc_retries_left = MAX_TRUNC_RETRIES
+    result = None
 
     for attempt in range(1, MAX_REP_ATTEMPTS + 1):
         print(f"Drafting Chapter {chapter_num} (regen check {attempt}/{MAX_REP_ATTEMPTS})...", file=sys.stderr)
@@ -418,6 +419,12 @@ Write the chapter now. Full text, beginning to end.
         # Build targeted feedback for regen
         repetition_feedback = "\n\nREPETITION FIX REQUIRED:\n" + "\n".join(rep_feedback)
         print(f"  Structural repetition detected — retrying...", file=sys.stderr)
+
+    if result is None:
+        # Every rep attempt ended in truncation (each 'continue' burned a retry
+        # but never reached sys.exit) — never reach the save with no draft.
+        print("TRUNCATION_DETECTED: all attempts truncated — no draft produced", file=sys.stderr)
+        sys.exit(2)
 
     # Save
     out_path = chapters_dir / f"ch_{chapter_num:02d}.md"

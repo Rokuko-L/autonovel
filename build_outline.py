@@ -23,6 +23,9 @@ def call_model(prompt, max_tokens=1500):
     return call_anthropic(prompt=prompt, system="You produce structured outline entries for novel chapters. Be precise about what HAPPENS, what CHANGES, and what threads are planted/harvested. Output valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.1, timeout=120)
 
 def process_chapter_outline(path, ch, text, wc, title_line):
+    import time
+    from utils import TruncationError
+
     prompt = f"""Analyze this chapter and produce a structured outline entry.
 
 CHAPTER {ch}: "{title_line}" ({wc} words)
@@ -45,21 +48,34 @@ Return JSON with these fields:
 
 JSON only, no other text."""
 
-    raw_data = call_model(prompt)
-    data = parse_json(raw_data)
+    # Transient proxy/LLM failures (truncation, unparseable JSON) must not
+    # nuke the whole export — retry each chapter a few times.
+    data = None
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            raw_data = call_model(prompt)
+            data = parse_json(raw_data)
+            break
+        except (TruncationError, ValueError, Exception) as e:
+            last_err = e
+            print(f"  [RETRY] Ch {ch} outline summary failed (attempt {attempt}/3): {e}", file=sys.stderr)
+            time.sleep(3 * attempt)
+    if data is None:
+        raise last_err
+
     data["num"] = ch
     data["words"] = wc
-    
+
     # Extract title cleanly from the first line of the file, bypassing LLM parsing inconsistency
     if ': ' in title_line:
         _, subtitle = title_line.split(': ', 1)
         data["title"] = subtitle.strip()
     else:
         data["title"] = title_line
-        
+
     print(f"  {ch:2d}. {data['title']} ({wc}w)")
     return data
-
 def main():
     # Load supporting docs for context
     characters = utils.get_characters_path().read_text(encoding="utf-8")[:3000]
