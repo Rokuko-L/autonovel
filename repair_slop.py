@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
-"""Targeted mechanical-slop repair for a single chapter.
+"""Targeted mechanical-slop repair for a single chapter (JSON-patch protocol).
 
 When a chapter's raw judge score is good but the mechanical slop detector
 (staccato runs, "not X but Y", stacked negation, x_of_y frames, etc.) drags
 the final score below the keep bar, blind regeneration wastes attempts and
 often regresses content quality. Instead, repair IN PLACE:
 
-1. Detect flagged paragraphs + the exact offending phrases, with line numbers.
-2. Wrap each flagged paragraph in unique markers (<<<SLOP_N>>> ... <<</SLOP_N>>>)
-   and ask the LLM to rewrite ONLY the marked paragraphs, keeping markers intact.
-3. Verify every marker survives the round trip (guards against the LLM
-   dropping or merging paragraphs).
-4. Mechanically splice the cleaned paragraphs back into the chapter.
-5. Run evaluate.py --chapter=N so the pipeline can re-judge the repair.
+1. LOCAL PRE-PASS (deterministic, zero LLM cost): mechanically fix the
+   trivially-safe patterns — whole-paragraph staccato runs get merged into
+   single compound sentences. Only the residue goes to the LLM.
+2. JSON CONTRACT: send the LLM a mapping of paragraph IDs to their exact
+   original text plus the offending patterns; it returns a JSON object
+   {id: rewritten_text}. No inline markers in prose to corrupt.
+3. STRUCTURAL VERIFICATION (stronger than marker round-trips):
+   - every requested ID present, no extra IDs
+   - no empty replacements
+   - no no-op replacements (rewritten == original means the LLM dodged)
+   - length ratio sanity check (blocks truncation or runaway expansion)
+4. CONTENT-ANCHORED SPLICE: replace each original paragraph by locating
+   its exact text in the chapter — the caller owns the anchors, so the
+   wrong paragraph can never be patched.
+5. LOCAL RE-SCORE GATE: rerun the deterministic detector on the patched
+   chapter BEFORE any judge call; accept only if the mechanical penalty
+   actually dropped. This keeps the loop self-verifying without spending
+   judge tokens on failed repairs.
+6. ITERATIVE: up to 2 LLM passes, each repairing what remains flagged.
 
 Usage: python repair_slop.py <chapter_number>
-Exit code 0 = repair applied (caller should re-evaluate); 1 = nothing to repair
-or LLM output invalid (caller falls back to regeneration).
+Exit code 0 = repair applied and gate passed (caller should re-evaluate);
+1 = nothing to repair or repair failed (caller falls back to regen).
 """
 import re
 import sys
@@ -32,9 +44,10 @@ from evaluate import (
     TIER2_SUSPICIOUS,
     TIER3_FILLER,
     TRANSITION_OPENERS,
+    slop_score,
 )
 
-OPEN, CLOSE = "<<<SLOP_{i}>>>", "<<</SLOP_{i}>>>"
+MAX_LLM_PASSES = 2
 
 ALL_PATTERNS = (
     [("prose_tic", name, pat) for name, pat in PROSE_TIC_PATTERNS]
@@ -104,30 +117,126 @@ def transition_opener_paragraph(para_text: str) -> bool:
     return first in TRANSITION_OPENERS
 
 
-def build_repair_prompt(flagged: list, chapter_num: int, title_line: str) -> str:
+def flag_paragraphs(text: str):
+    """Return list of (start_line, end_line, para_text, reasons) with any slop."""
+    flagged = []
+    for start_line, end_line, para_text in split_paragraphs(text):
+        if start_line == 1 and para_text.lstrip().startswith("#"):
+            continue  # markdown title header, not prose
+        reasons = []
+        stacc = staccato_paragraph(para_text)
+        if stacc >= 1:
+            reasons.append((f"staccato_runs:{stacc}", f"{stacc} run(s) of 3+ consecutive short sentences"))
+        if transition_opener_paragraph(para_text):
+            reasons.append(("transition_opener", "paragraph starts with a transition word"))
+        reasons += scan_paragraph(para_text)
+        if reasons:
+            flagged.append((start_line, end_line, para_text, reasons))
+    return flagged
+
+
+def fix_staccato_only_paragraph(para_text: str) -> str:
+    """Deterministic fix: if the WHOLE paragraph is one staccato run (every
+    sentence <=4 words, all plain declaratives, no dialogue), merge the
+    sentences into one compound sentence. Conservative on purpose — anything
+    risky is left for the LLM pass."""
+    para = para_text.strip()
+    if not para or '"' in para or "'" in para:
+        return para_text
+    parts = re.split(r"(?<=[.!?])\s+", para)
+    if len(parts) < 3:
+        return para_text
+    for p in parts:
+        if not p.endswith("."):
+            return para_text
+        wc = len(p.rstrip(".").split())
+        if wc > 4 or wc < 2:
+            return para_text  # single words ("A. B. C.") are emphatic, not staccato
+    joined = ", ".join(p.rstrip(".") for p in parts)
+    return joined + "."
+
+
+def deterministic_prepass(text: str):
+    """Apply local fixes paragraph by paragraph; return (new_text, n_fixed)."""
+    lines = text.split("\n")
+    fixed = 0
+    for start_line, end_line, para_text in split_paragraphs(text):
+        if start_line == 1 and para_text.lstrip().startswith("#"):
+            continue
+        new = fix_staccato_only_paragraph(para_text)
+        if new != para_text:
+            lines[start_line - 1:end_line] = new.split("\n")
+            fixed += 1
+    return "\n".join(lines), fixed
+
+
+def local_mech_penalty(text: str) -> float:
+    """Mechanical slop penalty exactly as the evaluator computes it."""
+    s = slop_score(text)
+    return (s.get("slop_penalty", 0) or 0) + (s.get("prose_tic_penalty", 0) or 0)
+
+
+def build_patch_prompt(flagged: list, chapter_num: int, title_line: str) -> str:
     blocks = []
     for i, (start_line, _, para_text, reasons) in enumerate(flagged, start=1):
-        reason_lines = "\n".join(f"  - {lab}: '{ph}'" for lab, ph in reasons[:6])
-        if not reason_lines:
-            reason_lines = "  - mechanical pattern (see paragraph)"
+        reason_lines = "\n".join(f"  - {lab}: '{ph}'" for lab, ph in reasons[:6]) or "  - mechanical pattern"
         blocks.append(
-            f"{OPEN.format(i=i)} (original lines {start_line}-?)\n"
-            f"{para_text}\n"
-            f"{CLOSE.format(i=i)}\n"
-            f"REASONS (lines {start_line}):\n{reason_lines}"
+            f'p{i} (lines {start_line}-?):\n{para_text}\nPATTERNS:\n{reason_lines}'
         )
-    return f"""You are a surgical prose editor. Rewrite the following paragraphs from Chapter {chapter_num} ("{title_line}") of a novel to remove the listed mechanical AI-slop patterns.
+    return f"""You are a surgical prose editor. Rewrite the following paragraphs from Chapter {chapter_num} ("{title_line}") of a novel to remove the listed mechanical AI-slop patterns (staccato runs, "not X, but Y", stacked negation, "the X of Y" abstract frames, tier words, etc.).
+
+Return a SINGLE JSON object mapping each paragraph ID to its rewritten text, e.g.:
+{{"p1": "rewritten paragraph one", "p2": "rewritten paragraph two"}}
 
 HARD RULES:
-- Rewrite ONLY the text between each pair of markers (<<<SLOP_N>>> ... <<</SLOP_N>>>).
-- Do NOT add, remove, reorder, rename, or merge the markers. Every marker must appear EXACTLY once, in the SAME order, in your output.
-- Preserve the meaning, the scene content, the emotional register, the characters, dialogue, and roughly the same length. Tighten where the pattern demanded it.
-- Convert banned constructions to natural, varied prose (positive statements instead of stacked negation; concrete detail instead of 'the X of Y' frames; break staccato runs by merging or expanding).
-- Do NOT change anything else in the chapter. Only output the marked paragraphs, one marker block after another.
+- Every paragraph ID above MUST appear as a key. No extra keys.
+- The rewritten text MUST differ from the original (no unchanged paragraphs).
+- Preserve meaning, scene content, emotional register, characters, dialogue, and roughly the same length. Tighten only where the pattern demanded it.
+- Convert banned constructions to natural, varied prose: positive statements instead of stacked negation; concrete detail instead of 'the X of Y' frames; break staccato runs by merging or expanding.
+- JSON only — no markdown fences, no commentary, no keys beyond the IDs.
 
-MARKED PARAGRAPHS:
+PARAGRAPHS:
 {chr(10).join(blocks)}
 """
+
+
+def parse_and_verify(raw: str, originals: dict):
+    """Parse the LLM JSON and structurally verify it. Returns (data, error)."""
+    try:
+        data = utils.parse_json_response(raw)
+    except Exception as e:
+        return None, f"unparseable JSON: {e}"
+    if not isinstance(data, dict):
+        return None, "response is not a JSON object"
+
+    ids = set(originals.keys())
+    missing = ids - set(data.keys())
+    extra = set(data.keys()) - ids
+    if missing or extra:
+        return None, f"ID mismatch — missing {sorted(missing)}, extra {sorted(extra)}"
+
+    for pid, orig in originals.items():
+        new = data.get(pid)
+        if not isinstance(new, str) or not new.strip():
+            return None, f"empty replacement for {pid}"
+        if new.strip() == orig.strip():
+            return None, f"no-op replacement for {pid} (unchanged text)"
+        ratio = len(new) / max(len(orig), 1)
+        if ratio < 0.3 or ratio > 3.5:
+            return None, f"suspicious length ratio for {pid}: {ratio:.1f}x"
+    return data, None
+
+
+def splice_by_content(text: str, flagged: list, data: dict) -> str:
+    """Replace each flagged paragraph by locating its EXACT original text."""
+    result = text
+    for i, (_, _, para_text, _) in enumerate(flagged, start=1):
+        pid = f"p{i}"
+        idx = result.find(para_text)
+        if idx == -1:
+            raise ValueError(f"anchor paragraph lost for {pid}")
+        result = result[:idx] + data[pid] + result[idx + len(para_text):]
+    return result
 
 
 def main():
@@ -144,71 +253,62 @@ def main():
     text = ch_path.read_text(encoding="utf-8")
     title_line = text.strip().split("\n")[0].lstrip("#* ").strip()
 
-    paragraphs = split_paragraphs(text)
-    flagged = []
-    for start_line, end_line, para_text in paragraphs:
-        if start_line == 1 and para_text.lstrip().startswith("#"):
-            continue  # markdown title header, not prose
-        hits = scan_paragraph(para_text)
-        stacc = staccato_paragraph(para_text)
-        trans = transition_opener_paragraph(para_text)
-        reasons = []
-        if stacc >= 1:
-            reasons.append((f"staccato_runs:{stacc}", f"{stacc} run(s) of 3+ consecutive short sentences"))
-        if trans:
-            reasons.append(("transition_opener", "paragraph starts with a transition word"))
-        reasons += hits
-        if reasons:
-            flagged.append((start_line, end_line, para_text, reasons))
+    # Stage 1: deterministic pre-pass
+    text, n_pre = deterministic_prepass(text)
+    if n_pre:
+        print(f"PREPASS Chapter {chapter_num}: {n_pre} paragraph(s) fixed locally", file=sys.stderr)
 
-    if not flagged:
+    # Stage 2: iterative LLM passes (capped)
+    total_llm = 0
+    for pass_no in range(1, MAX_LLM_PASSES + 1):
+        flagged = flag_paragraphs(text)
+        if not flagged:
+            break
+        originals = {f"p{i}": para for i, (_, _, para, _) in enumerate(flagged, start=1)}
+        before = local_mech_penalty(text)
+        print(f"REPAIR PASS {pass_no} Chapter {chapter_num}: {len(flagged)} flagged paragraph(s)", file=sys.stderr)
+        for start_line, _, _, reasons in flagged:
+            print(f"  lines {start_line}: {', '.join(lab for lab, _ in reasons[:4])}", file=sys.stderr)
+
+        prompt = build_patch_prompt(flagged, chapter_num, title_line)
+        raw = utils.call_anthropic(
+            prompt=prompt,
+            model_key="writer",
+            max_tokens=6000,
+            temperature=0.6,
+            timeout=300,
+        )
+        if not raw or len(raw.strip()) < 20:
+            print("REPAIR_FAILED empty LLM response", file=sys.stderr)
+            sys.exit(1)
+
+        data, err = parse_and_verify(raw, originals)
+        if err:
+            print(f"REPAIR_FAILED {err}", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            new_text = splice_by_content(text, flagged, data)
+        except ValueError as e:
+            print(f"REPAIR_FAILED {e}", file=sys.stderr)
+            sys.exit(1)
+
+        after = local_mech_penalty(new_text)
+        print(f"  local mech penalty: {before:.2f} -> {after:.2f}", file=sys.stderr)
+        if after >= before:
+            print("REPAIR_FAILED local gate: slop penalty did not drop", file=sys.stderr)
+            sys.exit(1)
+
+        text = new_text
+        total_llm += len(flagged)
+
+    if n_pre == 0 and total_llm == 0:
         print(f"NO_SLOP Chapter {chapter_num} — nothing to repair", file=sys.stderr)
         sys.exit(1)
 
-    print(f"REPAIR Chapter {chapter_num}: {len(flagged)} flagged paragraph(s)", file=sys.stderr)
-    for start_line, _, _, reasons in flagged:
-        labels = ", ".join(lab for lab, _ in reasons[:4])
-        print(f"  lines {start_line}: {labels}", file=sys.stderr)
-
-    prompt = build_repair_prompt(flagged, chapter_num, title_line)
-    raw = utils.call_anthropic(
-        prompt=prompt,
-        model_key="writer",
-        max_tokens=6000,
-        temperature=0.6,
-        timeout=300,
-    )
-    if not raw or len(raw.strip()) < 50:
-        print("REPAIR_FAILED empty LLM response", file=sys.stderr)
-        sys.exit(1)
-
-    # Verify every marker is intact, exactly once, in order
-    n = len(flagged)
-    opens = re.findall(OPEN.replace("{i}", r"(\d+)"), raw)
-    closes = re.findall(CLOSE.replace("{i}", r"(\d+)"), raw)
-    if [int(x) for x in opens] != list(range(1, n + 1)) or [int(x) for x in closes] != list(range(1, n + 1)):
-        print(f"REPAIR_FAILED marker mismatch — opens={opens} closes={closes}", file=sys.stderr)
-        sys.exit(1)
-
-    # Extract repaired blocks keyed by index
-    repaired = {}
-    for i in range(1, n + 1):
-        o = re.search(OPEN.format(i=i) + r"\n(.*?)\n" + CLOSE.format(i=i), raw, re.DOTALL)
-        if not o:
-            print(f"REPAIR_FAILED cannot extract block {i}", file=sys.stderr)
-            sys.exit(1)
-        repaired[i] = o.group(1).strip()
-
-    # Splice back mechanically: replace each flagged paragraph's line range
-    lines = text.split("\n")
-    for idx, (start_line, end_line, para_text, _) in enumerate(flagged, start=1):
-        new_text = repaired[idx]
-        # Keep paragraph spacing consistent: same leading/trailing blanks
-        lines[start_line - 1:end_line] = new_text.split("\n")
-
-    ch_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"REPAIRED Chapter {chapter_num}: {n} paragraph(s) rewritten in place", file=sys.stderr)
-    print(f"Word count: {len(('\\n'.join(lines)).split())}", file=sys.stderr)
+    ch_path.write_text(text, encoding="utf-8")
+    print(f"REPAIRED Chapter {chapter_num}: {n_pre} pre-pass + {total_llm} LLM paragraph(s)", file=sys.stderr)
+    print(f"Word count: {len(text.split())}", file=sys.stderr)
     sys.exit(0)
 
 
