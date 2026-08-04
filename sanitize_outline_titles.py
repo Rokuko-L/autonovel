@@ -168,6 +168,16 @@ def validate_titles(titles):
                 f"Chapters: {', '.join(f'Ch {c}' for c in chapters)}"
             )
 
+    # 5. Snake_case slug titles (unfilled outline codenames, e.g.
+    #    "shadow_compact_ambush") — these get printed verbatim on the PDF.
+    slug_re = re.compile(r"[a-z]_[a-z]")
+    for ch, t in sorted(titles.items()):
+        if slug_re.search(t):
+            errors.append(
+                f"Chapter {ch} title '{t}' is a snake_case codename (an unfilled outline "
+                f"slug) — replace it with a real human-readable title."
+            )
+
     return errors
 
 def main():

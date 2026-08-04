@@ -92,13 +92,18 @@ ANTI-PATTERN RULES:
 {load_genre()["generation"]["anti_pattern_rules"]}
 {ai_feedback}
 
+FORMATTING:
+Start the chapter with a single markdown H1 title line, exactly:
+`# Chapter {ch_num}: <Chapter Title>`
+Nothing else on that line — no bold, no "##", no slug/codename. Keep the existing
+title unless the brief changes it.
 Write the FULL revised chapter now."""
 
     print(f"Rewriting Chapter {ch_num}...", file=sys.stderr)
     result = call_writer(prompt)
     
     out_path = chapters_dir / f"ch_{ch_num:02d}.md"
-    out_path.write_text(result, encoding="utf-8")
+    out_path.write_text(utils.normalize_chapter_heading(result, ch_num), encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
 

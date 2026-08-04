@@ -158,22 +158,31 @@ for path in chapter_files:
         continue
     
     lines = text.strip().split('\n')
-    # Only consume the first line as the chapter title if it's actually a
-    # markdown header — otherwise the chapter's first line would be silently
-    # eaten by the published book.
-    if lines[0].lstrip().startswith('#'):
-        title_line = lines[0].lstrip('# ').strip()
+    # Consume the first line as the chapter title only if it's actually a
+    # title (markdown header or bold line) — otherwise the chapter's first
+    # line would be silently eaten by the published book.
+    title_line = None
+    first = lines[0].strip()
+    m = re.match(r'^#{1,6}\s*(.+?)\s*$', first)
+    if not m:
+        m = re.match(r'^\*\*(.+?)\*\*\s*$', first)
+    if m:
+        title_line = m.group(1).strip().strip('*').strip()
         body = '\n'.join(lines[1:]).strip()
     else:
         title_line = f"Chapter {n}"
         body = '\n'.join(lines).strip()
-    
+        print(f"WARNING: {path.name} has no markdown title line — rendering as 'Chapter {n}'")
+
     if ': ' in title_line:
         label, subtitle = title_line.split(': ', 1)
     else:
         label, subtitle = title_line, ""
-    
+
     chapter_name = subtitle if subtitle else label
+    if re.search(r"[a-z]_[a-z]", chapter_name):
+        print(f"WARNING: {path.name} title is a snake_case codename: '{chapter_name}' — "
+              f"fix the chapter file's first line before publishing")
     latex_body = md_to_latex(body)
     latex_body = make_drop_cap(latex_body)
     

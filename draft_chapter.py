@@ -374,6 +374,10 @@ WRITING INSTRUCTIONS:
 
 {structural_guardrails}
 {premise_guardrail}
+FORMATTING:
+Start the chapter with a single markdown H1 title line, exactly:
+`# Chapter {chapter_num}: <Chapter Title>`
+Nothing else on that line — no bold, no "##", no slug/codename.
 Write the chapter now. Full text, beginning to end.
 """
 
@@ -417,7 +421,7 @@ Write the chapter now. Full text, beginning to end.
 
     # Save
     out_path = chapters_dir / f"ch_{chapter_num:02d}.md"
-    out_path.write_text(result, encoding="utf-8")
+    out_path.write_text(utils.normalize_chapter_heading(result, chapter_num), encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
     print(result)

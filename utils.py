@@ -184,6 +184,37 @@ def get_arc_summary_path() -> Path:
     return get_project_dir() / "arc_summary.md"
 
 
+def normalize_chapter_heading(text: str, chapter_num: int) -> str:
+    """Normalize a chapter file's first line to '# Chapter N: <title>'.
+
+    Draft/revision LLMs sometimes emit the title as '**Chapter N: Title**',
+    '# **Title**', or with trailing emphasis residue. Unify the header format
+    so build_tex.py, build_outline.py, and the manuscript always see a
+    consistent title line. Leaves the text untouched when the first line is
+    prose, not a title.
+    """
+    stripped = text.lstrip('\n')
+    lines = stripped.split('\n', 1)
+    first = lines[0].strip()
+    rest = lines[1] if len(lines) > 1 else ''
+
+    m = re.match(r'^#{1,6}\s*(.+?)\s*$', first)
+    if not m:
+        m = re.match(r'^\*\*(.+?)\*\*\s*$', first)
+    if not m:
+        return text
+    title = m.group(1).strip().strip('*').strip()
+    # Drop a leading "Chapter N" label only when it's separated from the real
+    # title (": ", em/en dash) or is the entire title ("Chapter 20").
+    title = re.sub(
+        r'^Chapter\s+\d+\s*[:—–-]\s*', '', title, flags=re.IGNORECASE
+    ).strip()
+    if re.fullmatch(r'Chapter\s+\d+', title, flags=re.IGNORECASE):
+        title = ''
+    heading = f'# Chapter {chapter_num}: {title}' if title else f'# Chapter {chapter_num}'
+    return '\n'.join([heading, rest]).rstrip() + '\n'
+
+
 DEFAULT_MODELS = {
     "writer": "claude-sonnet-4-6",
     "judge": "claude-opus-4-6",
