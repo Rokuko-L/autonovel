@@ -396,7 +396,15 @@ def load_all_chapters():
 
 
 def call_judge(prompt, max_tokens=2000):
-    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["evaluator_system"], model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
+    genre_cfg = load_genre()
+    system = genre_cfg["identity"]["evaluator_system"]
+    perspective = genre_cfg.get("perspective", "")
+    if perspective:
+        expected = "first-person ('I/me/my' narration by the POV character)" if perspective == "first_person" else "third-person limited (he/she/they, anchored to the POV character's head)"
+        system += (f"\n\nPERSPECTIVE RULE: The novel is mandated {expected}. If the chapter drifts "
+                   "out of this narration mode, flag it under prose_quality or voice_adherence "
+                   "with a specific quote of the offending passage.")
+    return call_anthropic(prompt=prompt, system=system, model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
 
 
 def parse_json_response(text):

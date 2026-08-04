@@ -754,10 +754,10 @@ def run_drafting(state: dict) -> dict:
         best_attempt_num = 0
         attempt_log_paths = {}  # attempt_num -> eval log path for that attempt
         retry_feedback = ""
+        slop_repaired = False
 
         for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
             step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
-
             # Inner infra-retry loop: timeouts, empty files, and truncations don't burn quality attempts
             quality_attempt = False
             for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
@@ -862,6 +862,52 @@ def run_drafting(state: dict) -> dict:
                     update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
                     drafted = True
                     break
+
+                # TARGETED SLOP REPAIR: if the draft's content is fine (high raw
+                # judge score) but mechanical slop penalties dragged it under the
+                # bar, repair the flagged paragraphs IN PLACE instead of throwing
+                # the draft away and regenerating blind (which regresses raw
+                # quality — observed ch15 8.5-raw attempts bouncing 6.26->3.39).
+                if not slop_repaired and eval_log_path and eval_log_path.exists():
+                    try:
+                        ev = json.loads(eval_log_path.read_text(encoding="utf-8"))
+                        raw_judge = ev.get("raw_judge_score", 0) or 0
+                        slop = ev.get("slop") or {}
+                        mech = (slop.get("slop_penalty", 0) or 0) + (slop.get("prose_tic_penalty", 0) or 0)
+                    except Exception:
+                        raw_judge, mech = 0, 0
+                    if raw_judge >= 7.0 and mech >= 1.5 and raw_judge - score >= 1.0:
+                        slop_repaired = True
+                        step(f"SLOP-DOMINANT eval (raw {raw_judge}, mech -{mech:.1f}) — "
+                             f"repairing Ch {ch} in place instead of regenerating")
+                        rep = run_tool(
+                            f"\"{sys.executable}\" repair_slop.py {ch}",
+                            timeout=600, check=False)
+                        if rep.returncode == 0:
+                            rep_wc = len(ch_file.read_text(encoding="utf-8").split())
+                            step(f"Repaired Ch {ch} ({rep_wc}w) — re-evaluating...")
+                            rep_eval = uv_run(f"evaluate.py --chapter={ch}", timeout=300)
+                            rep_score = parse_score(rep_eval.stdout, "overall_score")
+                            step(f"Repaired Ch {ch} score: {rep_score}")
+                            if rep_score >= CHAPTER_THRESHOLD:
+                                step(f"Repair lifted Ch {ch} over the bar — keeping")
+                                fb_path = utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
+                                fb_path.unlink(missing_ok=True)
+                                commit_hash = git_add_commit(
+                                    f"ch{ch:02d}: slop-repair keep, score {rep_score}, {rep_wc}w")
+                                log_result(commit_hash, f"ch{ch:02d}", rep_score, rep_wc,
+                                           "keep", f"Chapter {ch} (slop repair, attempt {attempt})")
+                                state["chapters_drafted"] = ch
+                                save_state(state)
+                                update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                                drafted = True
+                                break
+                            elif rep_score > best_score and rep_score > 0:
+                                best_score = rep_score
+                                best_draft_content = ch_file.read_text(encoding="utf-8")
+                                best_word_count = rep_wc
+                                best_attempt_num = attempt
+                                step(f"Repaired Ch {ch} is new best fallback: {rep_score}")
 
                 # Remove the bad chapter file so next attempt starts fresh
                 if ch_file.exists():
@@ -1997,6 +2043,8 @@ def run_pipeline(args):
                         cmd += ["--words-per-chapter", str(args.words_per_chapter)]
                     if notes_for_genre:
                         cmd += ["--notes", notes_for_genre]
+                    if args.perspective:
+                        cmd += ["--perspective", args.perspective]
                     subprocess.run(cmd, check=True, timeout=900)
                     from genre import reload_genre
                     reload_genre()
@@ -2108,6 +2156,11 @@ Examples:
     parser.add_argument(
         "--skip-opus-review", action="store_true",
         help="Skip Opus review loop phase")
+    parser.add_argument(
+        "--perspective", default=os.environ.get("AUTONOVEL_PERSPECTIVE", ""),
+        choices=["", "first_person", "third_person"],
+        help="Force narrative perspective (first_person / third_person). "
+             "Empty = foundation decides.")
     parser.add_argument("--genre", default=os.environ.get("AUTONOVEL_GENRE", ""),
                         help="Genre description (e.g., 'Cyberpunk Noir')")
     parser.add_argument("--chapters", default=os.environ.get("AUTONOVEL_CHAPTERS", "24"),

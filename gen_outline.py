@@ -114,8 +114,14 @@ def main():
 
     genre_cfg = load_genre()
     genre_name = genre_cfg.get("genre_name", "Dark Political Fantasy")
-    
-    # Get total chapters from project state, default to config or 30
+    perspective = genre_cfg.get("perspective", "")
+    perspective_line = ""
+    if perspective == "first_person":
+        perspective_line = ("MANDATORY PERSPECTIVE: The novel is FIRST-PERSON. Every chapter outline "
+                            "must name a POV character and the prose will be narrated by them in 'I/me/my'.")
+    elif perspective == "third_person":
+        perspective_line = ("MANDATORY PERSPECTIVE: The novel is THIRD-PERSON (close limited). Every "
+                            "chapter outline must name a POV character whose head the narration stays in.")
     try:
         state = json.loads((utils.get_project_dir() / "state.json").read_text(encoding="utf-8"))
         total_chapters = state.get("chapters_total", 30)
@@ -126,6 +132,17 @@ def main():
 
     beats = genre_cfg.get("framework", {}).get("premise_arc_beats", [])
     numbered_beats = "\n".join(f"{i+1}. {b}" for i, b in enumerate(beats))
+
+    # Calibrate scene-beat count to the per-chapter word budget: the outline
+    # writer must not cram 6 fat beats into a 3000-word chapter — each beat is
+    # roughly one scene (3-4 sentences), so cap beats by words_per_chapter.
+    try:
+        est_words = genre_cfg["generation"]["outline"]["estimated_words"]
+        wpc = est_words // max(total_chapters, 1)
+    except (KeyError, ZeroDivisionError):
+        wpc = 3000
+    beats_per_chapter = max(3, min(6, round(wpc / 650)))   # 3000w→5, 2400w→4, 4000w→6
+    words_per_beat = max(250, wpc // beats_per_chapter)
 
     # Phase 1: High-Level Roadmap
     roadmap_path = utils.get_project_dir() / ".outline_roadmap.md"
@@ -152,12 +169,13 @@ VOICE STYLE GUIDE:
 CRAFT GUIDELINES:
 {craft}
 
+{perspective_line}
 TOTAL CHAPTERS: {total_chapters}
 PREMISE ARC BEATS:
 {numbered_beats}
 
 TASK:
-1. Create a high-level roadmap of the entire book. For each chapter from 1 to {total_chapters}, write a 1-to-2 sentence summary of the key event or beat in that chapter. You must distribute the premise arc beats logically across all chapters.
+1. Create a high-level roadmap of the entire book. For each chapter from 1 to {total_chapters}, write a 1-to-2 sentence summary of the key event or beat in that chapter. You must distribute the premise arc beats logically across all chapters. Each chapter is {wpc} words — keep each chapter's roadmap summary focused on ONE main event plus at most one supporting thread, so the chapter can actually fit its word budget.
 2. Create a "Global Plot Threads Ledger" listing 3 to 6 major plot threads, and specifying which chapters they are established (planted) and resolved (harvested). Use simple, lowercase slug identifiers for the threads (e.g. "silver_locket", "dead_king_secret").
 
 FORMAT REQUIREMENT:
@@ -262,6 +280,7 @@ CHARACTER REGISTRY:
 VOICE STYLE GUIDE:
 {voice_part2}
 
+{perspective_line}
 ACTIVE PLANTS (open threads from previous chapters that need harvesting/resolution):
 {active_plants_text}
 
@@ -277,13 +296,18 @@ For EACH chapter in this range, you must output:
 4. Summary: [2-3 sentences of what happens]
 5. Orientation Facts: [A bulleted list of 2-4 concrete, statable facts the outline commits to reveal/establish in this chapter for orientation, e.g. relationships, setting details, background context. Especially critical for Chapter 1 and character introduction chapters]
 6. Scene Stakes: [One sentence describing what concrete external stakes are at play or could change by the end of this specific chapter]
-7. Scene Beats: A numbered list of 4 to 6 sequential scene beats. Each beat MUST have a detailed paragraph (3-4 sentences) describing the events.
+7. Scene Beats: A numbered list of EXACTLY {beats_per_chapter} sequential scene beats (no more, no less). Each beat MUST have a detailed paragraph (3-4 sentences) describing the events. Budget each beat to roughly {words_per_beat} words of prose — the whole chapter is only {wpc} words, so keep the beat count and per-beat depth matched to the word budget. Do not add extra beats beyond {beats_per_chapter}; if the story needs more, make the beats denser instead.
 8. Plants & Harvests: List of plants and harvests, tagged exactly as `[Plant: slug_name - "Description"]` or `[Harvest: slug_name - "Description"]`.
 
 CRITICAL RULES:
 - Use standard slug identifiers matching the Global Plot Threads Ledger where applicable (e.g. silver_locket, dead_king_secret).
 - Generate exactly Chapters {start} through {end}. Do not skip any chapters. Do not write outlines for chapters outside this range.
 - Start each chapter outline with a header: "### Chapter N: [Title]"
+- If you are writing Chapter 1, it MUST include a "PREMISE BEATS" section with a bullet line per premise arc beat, in this exact format:
+    PREMISE BEATS:
+    - beat_label: scene description
+  using these beat labels IN ORDER: {numbered_beats}
+  Each bullet's scene description is 1-2 sentences. Put this section right after the "Emotional Arc" line and before the other fields. Then continue with the remaining fields (Summary, Scene Stakes, Scene Beats, Plants & Harvests).
 """
         # Append retry feedback if editing Block 1
         if start == 1 and args.retry_feedback:

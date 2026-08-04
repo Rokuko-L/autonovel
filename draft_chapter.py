@@ -17,6 +17,16 @@ load_dotenv()
 def call_writer(prompt, max_tokens=None):
     genre_cfg = load_genre()
     chapter_system = genre_cfg["identity"]["chapter_system"]
+    perspective = genre_cfg.get("perspective", "")
+    if perspective:
+        if perspective == "first_person":
+            chapter_system += ("\n\nMANDATORY PERSPECTIVE: Write this chapter in STRICT FIRST-PERSON "
+                               "limited narration from the POV character ('I/me/my'). The POV "
+                               "character narrates everything; no third-person narration anywhere.")
+        else:
+            chapter_system += ("\n\nMANDATORY PERSPECTIVE: Write this chapter in STRICT THIRD-PERSON "
+                               "limited narration anchored to the POV character ('he/she/they' or the "
+                               "character's name). Never switch to first-person narration.")
     estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
     chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
     target_words = estimated_words // chapter_count

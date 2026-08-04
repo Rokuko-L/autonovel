@@ -183,7 +183,8 @@ Generate the complete content generation configuration block ("generation") as v
     - Stylistic logs (e.g., a diary record, or at most ONE system diagnostic log like 'system_diagnostic_failed' if the genre features technology/systems, but do not mix system log names into general examples of normal title beginnings).
     Give the writer model the flexibility to choose or blend these styles creatively.
     * CRITICAL: Vary your chapter title beginnings — do not start every title with "The" or "A" / "An". Instruct the model that NO MORE than 30% of the chapters should start with the word "The". Show alternative structural formats (e.g., gerunds like "Gaslighting the Inquisition", direct questions, prepositional starters, or starting directly with nouns/characters).
-- "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a detailed, structured entry for every single chapter in the outline. For each chapter, the outline MUST include: (1) POV characters, (2) Emotional arc, (3) A brief summary, (4) A list of 4 to 6 sequential scene beats, and (5) Specific plants and harvests. This high level of detail is mandatory to ensure the chapter drafting model has enough pacing material to write a full chapter of approximately {words_per_chapter} words.
+- "gen_outline_prompt" and "gen_outline_part2_prompt" MUST explicitly instruct the outline writer to generate a detailed, structured entry for every single chapter in the outline. For each chapter, the outline MUST include: (1) POV characters, (2) Emotional arc, (3) A brief summary, (4) A list of scene beats CALIBRATED TO THE WORD BUDGET, and (5) Specific plants and harvests. This high level of detail is mandatory to ensure the chapter drafting model has enough pacing material to write a full chapter of approximately {words_per_chapter} words.
+- The scene beat count MUST be matched to the word budget: ~1 beat per 600-700 words of chapter prose, at most 6 beats, at least 3. For {words_per_chapter}-word chapters that is {beats_per_chapter} beats. Instruct the outline writer to write EXACTLY {beats_per_chapter} scene beats per chapter (never more — a chapter that crams more beats than its word budget can carry forces the drafter to compress, and compression is what produces staccato AI-slop prose). Each beat should be budgeted at roughly {words_per_beat} words.
 - "gen_outline_prompt" MUST instruct the outline writer that Chapter 1's entry MUST include a parseable "PREMISE BEATS" section containing one bullet per beat from the premise_arc_beats list (passed as {{premise_arc_beats}}). Required format:
     PREMISE BEATS:
     - {{beat_label}}: {{scene summary}}
@@ -256,6 +257,8 @@ def main():
                         help="Number of chapters (or 'short story', 'novella', 'epic 40-chapter saga')")
     parser.add_argument("--words-per-chapter", type=int, default=3200,
                         help="Target word count per chapter (default: 3200)")
+    parser.add_argument("--perspective", default="", choices=["", "first_person", "third_person"],
+                        help="Force narrative perspective (first_person / third_person). Empty = let foundation decide.")
     parser.add_argument("--notes", default=os.environ.get("AUTONOVEL_NOTES", ""),
                         help="User's specific ideas: character names, plot twists, Chekhov's guns")
     args = parser.parse_args()
@@ -288,6 +291,8 @@ def main():
             chapter_count = 24
 
     estimated_words = chapter_count * args.words_per_chapter
+    beats_per_chapter = max(3, min(6, round(args.words_per_chapter / 650)))
+    words_per_beat = max(250, args.words_per_chapter // beats_per_chapter)
 
     # Build user directives block
     if args.notes:
@@ -296,6 +301,25 @@ def main():
     else:
         user_block = ""
         user_field = ""
+
+    perspective_directive = ""
+    if args.perspective:
+        if args.perspective == "first_person":
+            perspective_directive = (
+                "\n=== MANDATORY PERSPECTIVE ===\n"
+                "The novel MUST be written in FIRST-PERSON narration. All chapters are narrated "
+                "by the POV character using 'I/me/my', in close first-person limited. The outline "
+                "writer must assign a POV character per chapter and the draft instructions must "
+                "require strict first-person. Never use third-person narration in any chapter."
+            )
+        else:
+            perspective_directive = (
+                "\n=== MANDATORY PERSPECTIVE ===\n"
+                "The novel MUST be written in THIRD-PERSON narration. All chapters are narrated in "
+                "close third-person limited, anchored to the assigned POV character ('he/she/they', "
+                "character name). The outline writer must assign a POV character per chapter and the "
+                "draft instructions must require strict third-person. Never switch to first-person."
+            )
 
     print(f"Generating genre config for: {args.genre} ({chapter_count} chapters, {estimated_words:,} words)...", file=sys.stderr)
     if args.notes:
@@ -309,7 +333,9 @@ def main():
         chapter_count=chapter_count,
         estimated_words=estimated_words,
         words_per_chapter=args.words_per_chapter,
-        user_directives_block=user_block
+        beats_per_chapter=beats_per_chapter,
+        words_per_beat=words_per_beat,
+        user_directives_block=user_block + perspective_directive
     )
 
     config1 = None
@@ -379,7 +405,9 @@ def main():
         chapter_count=chapter_count,
         estimated_words=estimated_words,
         words_per_chapter=args.words_per_chapter,
-        user_directives_block=user_block
+        beats_per_chapter=beats_per_chapter,
+        words_per_beat=words_per_beat,
+        user_directives_block=user_block + perspective_directive
     )
 
     config2 = None
@@ -406,6 +434,7 @@ def main():
             merged_config = dict(config1)
             merged_config["generation"] = config2["generation"]
             merged_config["user_directives"] = user_field
+            merged_config["perspective"] = args.perspective or ""
 
             # Correct chapter counts and estimated words
             if "outline" in merged_config["generation"]:

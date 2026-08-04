@@ -13,7 +13,18 @@ from genre import load_genre
 load_dotenv()
 
 def call_writer(prompt, max_tokens=16000):
-    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["revision_system"], model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
+    genre_cfg = load_genre()
+    system = genre_cfg["identity"]["revision_system"]
+    perspective = genre_cfg.get("perspective", "")
+    if perspective:
+        if perspective == "first_person":
+            system += ("\n\nMANDATORY PERSPECTIVE: Keep the chapter in STRICT FIRST-PERSON "
+                       "limited narration from the POV character ('I/me/my'). No third-person narration.")
+        else:
+            system += ("\n\nMANDATORY PERSPECTIVE: Keep the chapter in STRICT THIRD-PERSON "
+                       "limited narration anchored to the POV character ('he/she/they' or the "
+                       "character's name). Never switch to first-person narration.")
+    return call_anthropic(prompt=prompt, system=system, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
 
 def main():
     ch_num = int(sys.argv[1])
