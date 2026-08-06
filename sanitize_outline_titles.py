@@ -66,12 +66,22 @@ def extract_titles(outline_text):
     """Parse chapter numbers and titles from outline.md."""
     titles = {}
     for line in outline_text.splitlines():
-        # Strip markdown formatting (*, _) before matching to be robust against styled headers
-        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        raw_line = line.strip()
+        # Strip markdown formatting (*, _) for the header MATCH only, so styled
+        # headers (e.g. **Chapter 1:**) still parse. The title itself is read
+        # from the raw line: stripping '_' globally used to destroy snake_case
+        # slugs (crumble_conspiracy_report -> crumbleconspiracyreport), which
+        # silently disabled the slug detector below.
+        cleaned_line = raw_line.replace('*', '').replace('_', '')
         m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\s*:\s*(.+)$', cleaned_line, re.IGNORECASE)
         if m:
             ch_num = int(m.group(1))
-            titles[ch_num] = m.group(2).strip()
+            # Recover the title from the raw line: everything after the first
+            # ':' following "Chapter N" (strip only trailing markdown).
+            colon = raw_line.find(':')
+            title = re.sub(r'^[*_\s]+', '', raw_line[colon + 1:])
+            title = re.sub(r'[*_\s]+$', '', title).strip()
+            titles[ch_num] = title
     return titles
 
 def clean_words(text):
