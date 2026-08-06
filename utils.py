@@ -192,6 +192,11 @@ def normalize_chapter_heading(text: str, chapter_num: int) -> str:
     so build_tex.py, build_outline.py, and the manuscript always see a
     consistent title line. Leaves the text untouched when the first line is
     prose, not a title.
+
+    The title itself is overridden by the foundation outline's title for the
+    chapter (when one exists) — the outline is the single source of truth for
+    chapter titles, so drafter/revision LLM title drift (slug codenames,
+    'The X' inflation) is mechanically corrected at write time.
     """
     stripped = text.lstrip('\n')
     lines = stripped.split('\n', 1)
@@ -211,8 +216,41 @@ def normalize_chapter_heading(text: str, chapter_num: int) -> str:
     ).strip()
     if re.fullmatch(r'Chapter\s+\d+', title, flags=re.IGNORECASE):
         title = ''
+
+    foundation_title = _foundation_chapter_title(chapter_num)
+    if foundation_title:
+        title = foundation_title
+
     heading = f'# Chapter {chapter_num}: {title}' if title else f'# Chapter {chapter_num}'
     return '\n'.join([heading, rest]).rstrip() + '\n'
+
+
+def _foundation_chapter_title(chapter_num: int) -> str:
+    """Return the foundation outline's title for a chapter, or ''.
+
+    Scoped to the DETAILED section so a HIGH-LEVEL ROADMAP one-liner is never
+    picked instead of the real entry. Handles both '### Chapter N:' (fresh
+    outlines) and '### Ch N:' (rebuilt post-export outlines).
+    """
+    outline_path = get_outline_path()
+    if not outline_path.exists():
+        return ''
+    try:
+        outline_text = outline_path.read_text(encoding='utf-8')
+    except Exception:
+        return ''
+    if '## DETAILED CHAPTER OUTLINES' in outline_text:
+        outline_text = outline_text.split('## DETAILED CHAPTER OUTLINES', 1)[1]
+    pattern = rf'^###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b.*?[:—–][ \t]*(.+?)[ \t]*$'
+    m = re.search(pattern, outline_text, re.IGNORECASE | re.MULTILINE)
+    if not m:
+        return ''
+    title = m.group(1).strip().strip('*').strip()
+    # Reject snake_case codenames and empty labels so a sanitize failure can't
+    # propagate slug titles into the manuscript.
+    if re.search(r'[a-z]_[a-z]', title):
+        return ''
+    return title
 
 
 DEFAULT_MODELS = {
