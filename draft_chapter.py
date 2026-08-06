@@ -409,8 +409,20 @@ Write the chapter now. Full text, beginning to end.
         except TruncationError as e:
             if trunc_retries_left > 0:
                 trunc_retries_left -= 1
+                # Grow the budget ONCE to a hard ceiling instead of compounding
+                # 1.5x indefinitely. Unbounded growth licensed runaway chapters
+                # (observed: 11,005 words for a 3,200 target -> length penalty
+                # 5.25 destroyed an otherwise 7.0-raw chapter). Ceiling ~3.9x
+                # target still permits a full-length chapter plus margin.
                 base = int(target_words * 3.25) if max_tokens is None else max_tokens
-                max_tokens = int(base * 1.5)
+                max_tokens = min(int(base * 1.2), int(target_words * 3.9))
+                # Tell the writer it over-ran and must compress to target.
+                repetition_feedback = (
+                    "\n\nTRUNCATION FIX REQUIRED: your previous attempt was cut off "
+                    f"before finishing (target ~{int(target_words * 1.15)} words). "
+                    "The chapter ran too long. Rewrite it tighter: hit the target "
+                    "word count, finish all outline beats, and end decisively."
+                )
                 print(f"TRUNCATION_DETECTED: {e} — retrying with max_tokens={max_tokens} "
                       f"({trunc_retries_left} retries left)", file=sys.stderr)
                 continue

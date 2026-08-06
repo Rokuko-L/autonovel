@@ -1027,6 +1027,14 @@ def build_eval_feedback(eval_log_path):
         for name, cnt in struct:
             lines.append(f"  - {name} ({cnt}x)")
 
+    length_penalty = data.get("length_penalty") or 0.0
+    if length_penalty > 0.5:
+        lines.append(
+            f"LENGTH: your draft was over the chapter's word budget (length penalty "
+            f"-{length_penalty:.1f}). Rewrite it tighter: hit the target word count, "
+            "finish every outline beat, and end decisively. Compression beats expansion."
+        )
+
     # Near-clean detection: the draft missed the keep bar by a hair with
     # negligible mechanical penalties (raw judge score high, tic/slop
     # penalties tiny). In this state a blind retry (draft deleted, fresh
@@ -1786,6 +1794,24 @@ Rules:
                             step("WARNING: LLM returned invalid or empty LaTeX for fix.")
                     except Exception as e:
                         step(f"WARNING: LLM auto-debug API call failed: {e}")
+
+                if not compiled:
+                    # LLM debugging failed (observed: 3 attempts on a missing
+                    # brace). Fall back to the deterministic default template —
+                    # a known-good wrapper — and retry once before giving up.
+                    step("LLM auto-debug failed to fix novel.tex. Falling back to "
+                         "the deterministic default template...")
+                    try:
+                        utils.generate_default_novel_tex(novel_tex)
+                        res = run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
+                        if res.returncode == 0 and pdf_out.exists() and pdf_out.stat().st_size > 1000:
+                            step(f"PDF generated from default template: {pdf_out} "
+                                 f"({pdf_out.stat().st_size // 1024} KB)")
+                            compiled = True
+                        else:
+                            step("WARNING: default template also failed to typeset.")
+                    except Exception as e:
+                        step(f"WARNING: default-template fallback failed: {e}")
 
                 if not compiled:
                     step("WARNING: tectonic typesetting failed — novel.pdf not produced")

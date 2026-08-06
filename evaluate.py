@@ -185,6 +185,18 @@ def prose_tics(text):
             over = per_3k - threshold
             extra_penalty += min(over * PROSE_TIC_PENALTY_PER_INSTANCE[name],
                                  PROSE_TIC_CAPS[name])
+    # Non-Latin script (CJK, Cyrillic, Arabic, etc.) injected mid-prose by
+    # multilingual writer models. EBGaramond has no glyphs for these — they
+    # render as blanks in the PDF. Flag as a tic so the retry loop removes them.
+    non_latin_hits = re.findall(
+        r'[\u2E80-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF\u0900-\u097F\u3040-\u30FF\u0E00-\u0E7F]+',
+        text,
+    )
+    if non_latin_hits:
+        count = len(non_latin_hits)
+        per_3k = count * scale
+        tics.append(('non_latin_script', count, round(per_3k, 2)))
+        extra_penalty += min(per_3k * 0.15, 1.5)
     return tics, round(extra_penalty, 2)
 
 
