@@ -40,7 +40,18 @@ def main():
     voice_part2 = '\n'.join(voice_lines[part2_start:])
 
     genre = load_genre()
+    perspective_line = ""
+    perspective = genre.get("perspective", "")
+    if perspective == "first_person":
+        perspective_line = ("MANDATORY PERSPECTIVE: The novel is FIRST-PERSON. The world bible must "
+                            "state Kaelen narrates in first-person 'I/me/my'. Do not describe the "
+                            "narration as third-person or limited-third.")
+    elif perspective == "third_person":
+        perspective_line = ("MANDATORY PERSPECTIVE: The novel is THIRD-PERSON (close limited). The "
+                            "world bible must state the narration stays in the POV character's head.")
     prompt = format_prompt(genre["generation"]["gen_world_prompt"], seed=seed, voice_part2=voice_part2)
+    if perspective_line:
+        prompt = f"{perspective_line}\n\n{prompt}"
 
     print("Calling writer model...", file=sys.stderr)
     for attempt in range(2):
