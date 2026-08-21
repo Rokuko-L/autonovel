@@ -8,11 +8,11 @@ Usage:
   uv run python seed.py --riff "magic costs memories"  # Riff on an idea
 """
 
+from llm import call_anthropic
 import argparse
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-from utils import call_anthropic
 from genre import load_genre
 
 BASE_DIR = Path(__file__).resolve().parent

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Generate outline.md in a robust, act-by-act chunked fashion."""
+from llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from paths import format_prompt
 import argparse
 import os
 import sys
@@ -7,8 +9,6 @@ import re
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -60,7 +60,7 @@ def verify_tonal_drift(roadmap_text, seed_concept, genre_name):
     JSON only, no formatting/preamble outside the JSON object."""
     
     try:
-        from utils import parse_json_response
+        from llm import parse_json_response
         raw = call_anthropic(prompt=prompt, system="You are a meticulous book editor who outputs valid JSON only.", model_key="judge", max_tokens=2000, temperature=0.1)
         data = parse_json_response(raw)
         has_drift = data.get("has_drift", False)
@@ -83,14 +83,14 @@ def main():
                         help="Error feedback from previous attempt (missing/out-of-order premise beats)")
     args = parser.parse_args()
 
-    root = utils.get_root_dir()
+    root = paths.get_root_dir()
     required = {
-        "seed.txt": utils.get_seed_path(),
-        "world.md": utils.get_world_path(),
-        "characters.md": utils.get_characters_path(),
+        "seed.txt": paths.get_seed_path(),
+        "world.md": paths.get_world_path(),
+        "characters.md": paths.get_characters_path(),
         "MYSTERY.md": root / "MYSTERY.md",
         "CRAFT.md": root / "CRAFT.md",
-        "voice.md": utils.get_voice_path(),
+        "voice.md": paths.get_voice_path(),
     }
     for name, p in required.items():
         if not p.exists():
@@ -123,7 +123,7 @@ def main():
         perspective_line = ("MANDATORY PERSPECTIVE: The novel is THIRD-PERSON (close limited). Every "
                             "chapter outline must name a POV character whose head the narration stays in.")
     try:
-        state = json.loads((utils.get_project_dir() / "state.json").read_text(encoding="utf-8"))
+        state = json.loads((paths.get_project_dir() / "state.json").read_text(encoding="utf-8"))
         total_chapters = state.get("chapters_total", 30)
         title = state.get("title", "Untitled Novel")
     except Exception:
@@ -145,7 +145,7 @@ def main():
     words_per_beat = max(250, wpc // beats_per_chapter)
 
     # Phase 1: High-Level Roadmap
-    roadmap_path = utils.get_project_dir() / ".outline_roadmap.md"
+    roadmap_path = paths.get_project_dir() / ".outline_roadmap.md"
     
     if args.retry_feedback and roadmap_path.exists():
         print("Retry detected: keeping existing high-level roadmap and regenerating Block 1.", file=sys.stderr)
@@ -218,7 +218,7 @@ Each chapter entry must start with "### Chapter N:".
     detailed_outlines = {}
     
     # Load any already existing detailed outlines if we are resuming or retrying
-    outline_path = utils.get_outline_path()
+    outline_path = paths.get_outline_path()
     if outline_path.exists():
         existing_text = outline_path.read_text(encoding="utf-8")
         # Extract existing chapters to see what we can keep (only from the Detailed section)
@@ -396,7 +396,7 @@ CRITICAL RULES:
     outline_path.write_text(full_outline_text, encoding="utf-8")
     
     # Save a copy as .outline_part1.md for backwards compatibility
-    (utils.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
+    (paths.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
     
     print("Outline generation complete!", file=sys.stderr)
 

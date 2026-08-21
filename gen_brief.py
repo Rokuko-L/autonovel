@@ -9,12 +9,12 @@ Usage:
   python gen_brief.py --cuts 12     # brief from adversarial cuts for ch 12
   python gen_brief.py --auto        # auto-detect weakest chapter and generate
 """
+import paths
 import argparse
 import json
 import re
 import sys
 from pathlib import Path
-import utils
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ def load_json(path: Path) -> dict:
 
 
 def chapter_path(ch: int) -> Path:
-    return utils.get_chapters_dir() / f"ch_{ch:02d}.md"
+    return paths.get_chapters_dir() / f"ch_{ch:02d}.md"
 
 
 def chapter_text(ch: int) -> str:
@@ -57,7 +57,7 @@ def word_count(text: str) -> int:
 
 def extract_voice_rules() -> list[str]:
     """Pull the key guardrail / voice rules from voice.md Part 1 + Part 2."""
-    voice_path = utils.get_voice_path()
+    voice_path = paths.get_voice_path()
     if not voice_path.exists():
         return ["(voice.md not found)"]
     voice = voice_path.read_text(encoding="utf-8")
@@ -147,7 +147,7 @@ def analyze_writing_sample(sample_text: str) -> list[str]:
 
 def latest_full_eval() -> Path | None:
     """Find the most recent *_full.json in eval_logs/."""
-    eval_logs_dir = utils.get_eval_logs_dir()
+    eval_logs_dir = paths.get_eval_logs_dir()
     if not eval_logs_dir.exists():
         return None
     fulls = sorted(eval_logs_dir.glob("*_full.json"))
@@ -156,7 +156,7 @@ def latest_full_eval() -> Path | None:
 
 def latest_chapter_eval(ch: int) -> Path | None:
     """Find the most recent per-chapter eval for ch N."""
-    eval_logs_dir = utils.get_eval_logs_dir()
+    eval_logs_dir = paths.get_eval_logs_dir()
     if not eval_logs_dir.exists():
         return None
     pattern = f"*_ch{ch:02d}.json"
@@ -168,14 +168,14 @@ def latest_chapter_eval(ch: int) -> Path | None:
 
 
 def load_panel() -> dict | None:
-    p = utils.get_edit_logs_dir() / "reader_panel.json"
+    p = paths.get_edit_logs_dir() / "reader_panel.json"
     if not p.exists():
         return None
     return load_json(p)
 
 
 def load_cuts(ch: int) -> dict | None:
-    p = utils.get_edit_logs_dir() / f"ch{ch:02d}_cuts.json"
+    p = paths.get_edit_logs_dir() / f"ch{ch:02d}_cuts.json"
     if not p.exists():
         return None
     return load_json(p)
@@ -956,7 +956,7 @@ def main():
         return
 
     # Save
-    briefs_dir = utils.get_briefs_dir()  # also creates the directory
+    briefs_dir = paths.get_briefs_dir()  # also creates the directory
     out_path = briefs_dir / f"ch{ch:02d}_{suffix}.md"
     out_path.write_text(brief_text, encoding="utf-8")
     print(f"Saved: {out_path}", file=sys.stderr)

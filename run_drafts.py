@@ -9,6 +9,7 @@ Usage:
   uv run python run_drafts.py --from 11 --to 24
   uv run python run_drafts.py --project mynovel --from 1 --to 8 --spot 4 8
 """
+import paths
 import _utf8
 import argparse
 import json
@@ -17,7 +18,6 @@ import shlex
 import subprocess
 import sys
 
-import utils
 from paths import get_chapters_dir, get_state_path
 
 
@@ -71,7 +71,7 @@ def main():
     args = parser.parse_args()
 
     if args.project:
-        utils.set_project_name(args.project)
+        paths.set_project_name(args.project)
 
     results = []
     for ch in range(args.first, args.last + 1):

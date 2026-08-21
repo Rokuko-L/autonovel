@@ -9,13 +9,13 @@ Usage:
   python apply_cuts.py all --dry-run                       # show what would be cut
 """
 
+import paths
 import _utf8
 import argparse
 import json
 import re
 import sys
 from pathlib import Path
-import utils
 
 VALID_TYPES = {"OVER-EXPLAIN", "REDUNDANT", "FAT", "TELL", "STRUCTURAL", "GENERIC", "STACCATO"}
 MIN_QUOTE_LEN = 25
@@ -23,7 +23,7 @@ MIN_QUOTE_LEN = 25
 
 def load_cuts(chapter_num: int) -> dict | None:
     """Load the cuts JSON for a given chapter number. Returns None if missing."""
-    cuts_file = utils.get_edit_logs_dir() / f"ch{chapter_num:02d}_cuts.json"
+    cuts_file = paths.get_edit_logs_dir() / f"ch{chapter_num:02d}_cuts.json"
     if not cuts_file.exists():
         return None
     try:
@@ -35,7 +35,7 @@ def load_cuts(chapter_num: int) -> dict | None:
 
 
 def chapter_path(chapter_num: int) -> Path:
-    return utils.get_chapters_dir() / f"ch_{chapter_num:02d}.md"
+    return paths.get_chapters_dir() / f"ch_{chapter_num:02d}.md"
 
 
 def find_and_remove(text: str, quote: str) -> tuple[str, bool, str]:
@@ -82,7 +82,7 @@ def collapse_blank_lines(text: str) -> str:
 def discover_chapters() -> list[int]:
     """Return sorted list of chapter numbers that have both a chapter file and a cuts file."""
     nums = set()
-    for p in utils.get_edit_logs_dir().glob("ch*_cuts.json"):
+    for p in paths.get_edit_logs_dir().glob("ch*_cuts.json"):
         m = re.match(r"ch(\d+)_cuts\.json", p.name)
         if m:
             nums.add(int(m.group(1)))

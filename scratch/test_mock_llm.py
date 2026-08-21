@@ -5,6 +5,8 @@ Run: uv run python -m unittest scratch.test_mock_llm -v
 No network, no API key required.
 """
 
+import llm
+import paths
 import json
 import os
 import shutil
@@ -14,7 +16,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import utils
 import paths
 import validation
 from mock_llm import MockLLM
@@ -25,27 +26,27 @@ class MockLLMTest(unittest.TestCase):
         mock = MockLLM()
         mock.add("first").add("second")
         with mock.install():
-            self.assertEqual(utils.call_anthropic("p1"), "first")
-            self.assertEqual(utils.call_anthropic("p2"), "second")
+            self.assertEqual(llm.call_anthropic("p1"), "first")
+            self.assertEqual(llm.call_anthropic("p2"), "second")
         # restored after context exit
-        self.assertIsNot(utils.call_anthropic, mock)
+        self.assertIsNot(llm.call_anthropic, mock)
 
     def test_match_substring(self):
         mock = MockLLM()
         mock.add("compare-response", match="Compare these")
         mock.add("fallback")
         with mock.install():
-            self.assertEqual(utils.call_anthropic("random prompt"), "fallback")
-            self.assertEqual(utils.call_anthropic("Compare these two chapters"), "compare-response")
+            self.assertEqual(llm.call_anthropic("random prompt"), "fallback")
+            self.assertEqual(llm.call_anthropic("Compare these two chapters"), "compare-response")
 
     def test_unexpected_call_raises(self):
         mock = MockLLM()
         with mock.install():
             with self.assertRaises(AssertionError):
-                utils.call_anthropic("not planned")
+                llm.call_anthropic("not planned")
 
     def test_rebinds_import_time_references(self):
-        """Modules that did 'from utils import call_anthropic' get the mock too."""
+        """Modules that did 'from llm import call_anthropic' get the mock too."""
         import llm
         import evaluate  # binds call_anthropic into its own namespace at import
         mock = MockLLM()
@@ -111,7 +112,7 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
         orig_name = paths._project_name
         try:
             paths.set_project_name(project)
-            ch_dir = utils.get_chapters_dir()
+            ch_dir = paths.get_chapters_dir()
             (ch_dir / "ch_01.md").write_text("# Chapter 1: Alpha\n\nFirst chapter text.", encoding="utf-8")
             (ch_dir / "ch_02.md").write_text("# Chapter 2: Beta\n\nSecond chapter text.", encoding="utf-8")
 
@@ -130,7 +131,7 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
         finally:
             paths._project_name = orig_name
             os.environ.pop("AUTONOVEL_PROJECT", None)
-            shutil.rmtree(utils.get_project_dir(), ignore_errors=True)
+            shutil.rmtree(paths.get_project_dir(), ignore_errors=True)
 
 
 if __name__ == "__main__":

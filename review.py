@@ -11,6 +11,8 @@ Usage:
   python review.py --output reviews.md  # Also save human-readable copy
   python review.py --parse            # Parse last review into actionable items
 """
+from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+import paths
 import os
 import sys
 import json
@@ -19,14 +21,12 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-import utils
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
 load_dotenv()
 
 # Use Opus for reviews — it's the best at literary analysis
 
-REVIEW_PROMPT = utils.load_prompt("review_manuscript")
+REVIEW_PROMPT = paths.load_prompt("review_manuscript")
 
 
 def call_opus(prompt, max_tokens=16000):
@@ -38,13 +38,13 @@ def call_opus(prompt, max_tokens=16000):
 
 def get_title():
     """Extract novel title from first chapter or outline."""
-    outline = utils.get_outline_path()
+    outline = paths.get_outline_path()
     if outline.exists():
         first_line = outline.read_text().split("\n")[0]
         title = first_line.lstrip("# ").strip()
         if title:
             return title
-    ch1 = utils.get_chapters_dir() / "ch_01.md"
+    ch1 = paths.get_chapters_dir() / "ch_01.md"
     if ch1.exists():
         first_line = ch1.read_text().split("\n")[0]
         return first_line.lstrip("# ").strip()
@@ -53,7 +53,7 @@ def get_title():
 
 def build_manuscript():
     """Concatenate all chapters into a single text."""
-    chapters = sorted(utils.get_chapters_dir().glob("ch_*.md"))
+    chapters = sorted(paths.get_chapters_dir().glob("ch_*.md"))
     if not chapters:
         print("ERROR: No chapters found.", file=sys.stderr)
         sys.exit(1)
@@ -197,7 +197,7 @@ def cmd_review(args):
     review_text = call_opus(prompt)
     
     # Save raw review
-    logs_dir = utils.get_edit_logs_dir()
+    logs_dir = paths.get_edit_logs_dir()
     logs_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = logs_dir / f"{timestamp}_review.json"
@@ -230,7 +230,7 @@ def cmd_review(args):
 
 def cmd_parse(args):
     """Parse the most recent review into actionable items."""
-    logs_dir = utils.get_edit_logs_dir()
+    logs_dir = paths.get_edit_logs_dir()
     logs_dir.mkdir(exist_ok=True)
     reviews = sorted(logs_dir.glob("*_review.json"), reverse=True)
     if not reviews:

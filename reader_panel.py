@@ -6,14 +6,14 @@ The disagreements between readers are where editorial decisions live.
 
 Usage: python reader_panel.py
 """
+from llm import call_anthropic
+import paths
 import sys
 import json
 import re
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic
 from genre import load_genre
 
 load_dotenv()
@@ -139,7 +139,7 @@ Respond with JSON:
 
 def call_reader(reader_key, arc_summary):
     reader = READERS[reader_key]
-    ch_files = sorted(utils.get_chapters_dir().glob("ch_*.md"))
+    ch_files = sorted(paths.get_chapters_dir().glob("ch_*.md"))
     chapter_count = len(ch_files)
     word_count = sum(len(f.read_text(encoding="utf-8").split()) for f in ch_files) if ch_files else 0
     cut_words = int(word_count * 0.1) if word_count else 7000
@@ -147,7 +147,7 @@ def call_reader(reader_key, arc_summary):
     raw = call_anthropic(prompt=prompt, system=reader["system"], model_key="judge", max_tokens=4000, timeout=300, temperature=0.7)
     
     # Parse JSON
-    return utils.parse_json_response(raw)
+    return llm.parse_json_response(raw)
 
 def find_disagreements(results):
     """Find where readers disagree -- that's where the editorial decisions live."""
@@ -181,7 +181,7 @@ def find_disagreements(results):
     return disagreements
 
 def main():
-    arc_summary = utils.get_arc_summary_path().read_text(encoding="utf-8")
+    arc_summary = paths.get_arc_summary_path().read_text(encoding="utf-8")
     
     results = {}
     for reader_key, reader_info in READERS.items():
@@ -240,7 +240,7 @@ def main():
         "disagreements": disagreements,
         "timestamp": datetime.now().isoformat()
     }
-    out_path = utils.get_edit_logs_dir() / "reader_panel.json"
+    out_path = paths.get_edit_logs_dir() / "reader_panel.json"
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)
     print(f"\nSaved to {out_path}")

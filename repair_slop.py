@@ -30,12 +30,13 @@ Usage: python repair_slop.py <chapter_number>
 Exit code 0 = repair applied and gate passed (caller should re-evaluate);
 1 = nothing to repair or repair failed (caller falls back to regen).
 """
+import llm
+import paths
 import re
 import sys
 from pathlib import Path
 
 import _utf8
-import utils
 from evaluate import (
     PROSE_TIC_PATTERNS,
     FICTION_AI_TELLS,
@@ -203,7 +204,7 @@ PARAGRAPHS:
 def parse_and_verify(raw: str, originals: dict):
     """Parse the LLM JSON and structurally verify it. Returns (data, error)."""
     try:
-        data = utils.parse_json_response(raw)
+        data = llm.parse_json_response(raw)
     except Exception as e:
         return None, f"unparseable JSON: {e}"
     if not isinstance(data, dict):
@@ -245,7 +246,7 @@ def main():
         sys.exit(1)
     chapter_num = int(sys.argv[1])
 
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     ch_path = chapters_dir / f"ch_{chapter_num:02d}.md"
     if not ch_path.exists():
         print(f"ERROR: {ch_path} not found", file=sys.stderr)
@@ -271,7 +272,7 @@ def main():
             print(f"  lines {start_line}: {', '.join(lab for lab, _ in reasons[:4])}", file=sys.stderr)
 
         prompt = build_patch_prompt(flagged, chapter_num, title_line)
-        raw = utils.call_anthropic(
+        raw = llm.call_anthropic(
             prompt=prompt,
             model_key="writer",
             max_tokens=6000,

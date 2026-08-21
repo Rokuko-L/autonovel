@@ -7,6 +7,9 @@ Usage: uv run python gen_novel_tex.py
        uv run python gen_novel_tex.py --project brothersister
 """
 
+from llm import call_anthropic
+import paths
+from paths import get_novel_title
 import re
 import sys
 import json
@@ -14,8 +17,6 @@ import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 
-import utils
-from utils import call_anthropic, get_novel_title
 
 load_dotenv()
 
@@ -53,7 +54,7 @@ def extract_title(seed_text: str, state: dict) -> str:
     first_line = seed_text.strip().split('\n')[0] if seed_text.strip() else ""
     if first_line.startswith("#"):
         return first_line.lstrip("#").strip()
-    return utils.get_project_name().replace("_", " ").title()
+    return paths.get_project_name().replace("_", " ").title()
 
 
 def get_author() -> str:
@@ -147,9 +148,9 @@ def build_prompt(
     return "\n\n".join(parts)
 
 
-SYSTEM_PROMPT = utils.load_prompt("gen_novel_tex_system")
+SYSTEM_PROMPT = paths.load_prompt("gen_novel_tex_system")
 
-PROMPT_TEMPLATE = utils.load_prompt("gen_novel_tex_template")
+PROMPT_TEMPLATE = paths.load_prompt("gen_novel_tex_template")
 
 
 def main():
@@ -158,23 +159,23 @@ def main():
         idx = sys.argv.index("--project")
         if idx + 1 < len(sys.argv):
             project_name = sys.argv[idx + 1]
-            utils.set_project_name(project_name)
+            paths.set_project_name(project_name)
 
     # Load project context
-    seed_text = load_file(utils.get_seed_path())
-    voice_text = load_file(utils.get_voice_path())
-    world_text = load_file(utils.get_world_path())
-    char_text = load_file(utils.get_characters_path())
+    seed_text = load_file(paths.get_seed_path())
+    voice_text = load_file(paths.get_voice_path())
+    world_text = load_file(paths.get_world_path())
+    char_text = load_file(paths.get_characters_path())
 
     state = {}
     try:
-        state = json.loads(load_file(utils.get_state_path()))
+        state = json.loads(load_file(paths.get_state_path()))
     except (json.JSONDecodeError, ValueError):
         print("ERROR: state.json is corrupted or unparseable — the title page may get a wrong title.", file=sys.stderr)
 
     genre_cfg = {}
     try:
-        genre_cfg = json.loads(load_file(utils.get_active_genre_path()))
+        genre_cfg = json.loads(load_file(paths.get_active_genre_path()))
     except (json.JSONDecodeError, ValueError):
         print("ERROR: active_genre.json is corrupted or unparseable — genre context will be empty.", file=sys.stderr)
 
@@ -203,7 +204,7 @@ def main():
     print(f"  Context size: {len(context)} chars", file=sys.stderr)
 
     # Write to typeset directory
-    typeset_dir = utils.get_typeset_dir()
+    typeset_dir = paths.get_typeset_dir()
     dest = typeset_dir / "novel.tex"
 
     # Call LLM

@@ -7,6 +7,8 @@ Produces a true rank order from round-robin tournament.
 Usage: python compare_chapters.py          # full tournament
        python compare_chapters.py 1 10     # single matchup
 """
+from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+import paths
 import os
 import sys
 import json
@@ -15,8 +17,6 @@ import random
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-import utils
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 import validation
 
 load_dotenv()
@@ -25,12 +25,12 @@ def call_judge(prompt, max_tokens=4000):
     return call_anthropic(prompt=prompt, system="You are a literary editor comparing two chapters of the same novel. You pick the better one. You are not allowed to call it a tie. You quote specific passages to justify your choice. Respond with valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.2, timeout=300)
 
 def parse_json(text):
-    return utils.parse_json_response(text)
+    return llm.parse_json_response(text)
 
-COMPARE_PROMPT = utils.load_prompt("compare_chapters")
+COMPARE_PROMPT = paths.load_prompt("compare_chapters")
 
 def compare(ch_a, ch_b):
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     text_a = (chapters_dir / f"ch_{ch_a:02d}.md").read_text()
     text_b = (chapters_dir / f"ch_{ch_b:02d}.md").read_text()
     
@@ -118,7 +118,7 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         # Full tournament
-        chapters = sorted([int(m.group(1)) for p in utils.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
+        chapters = sorted([int(m.group(1)) for p in paths.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
         ranking, elo, matchups = run_tournament(chapters)
         
         print(f"\n{'='*50}")
@@ -134,7 +134,7 @@ def main():
             "matchups": matchups,
             "timestamp": datetime.now().isoformat()
         }
-        out_path = utils.get_edit_logs_dir() / "tournament_results.json"
+        out_path = paths.get_edit_logs_dir() / "tournament_results.json"
         with open(out_path, "w") as f:
             json.dump(results, f, indent=2)
         print(f"\nSaved to {out_path}")

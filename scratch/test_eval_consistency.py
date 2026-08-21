@@ -11,7 +11,6 @@ os.environ["AUTONOVEL_PROJECT"] = "serious"
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-import utils
 import evaluate
 
 def run_evaluation(call_num):

@@ -4,14 +4,15 @@ sanitize_outline_titles.py — Programmatic gatekeeper for chapter titles in out
 Ensures title diversity (limits 'The', 'In Which', duplicates, and repeated comedic phrasing).
 Runs an LLM feedback loop if violations are found.
 """
+from llm import call_anthropic, parse_json_response
+import paths
+from paths import format_prompt
 import json
 import re
 import sys
 import math
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, format_prompt, parse_json_response
 from genre import load_genre
 
 load_dotenv()
@@ -26,7 +27,7 @@ COMMON_WORDS = {
     "anyone", "anything", "nobody", "nothing", "everything", "everyone", "everybody"
 }
 
-DEFAULT_REWRITER_PROMPT = utils.load_prompt("sanitize_titles_rewriter")
+DEFAULT_REWRITER_PROMPT = paths.load_prompt("sanitize_titles_rewriter")
 
 def extract_titles(outline_text):
     """Parse chapter numbers and titles from outline.md."""
@@ -157,12 +158,12 @@ def validate_titles(titles):
     return errors
 
 def main():
-    outline_path = utils.get_outline_path()
+    outline_path = paths.get_outline_path()
     if not outline_path.exists():
         print(f"ERROR: outline.md not found at {outline_path}", file=sys.stderr)
         sys.exit(1)
 
-    seed_path = utils.get_seed_path()
+    seed_path = paths.get_seed_path()
     seed_text = seed_path.read_text(encoding="utf-8") if seed_path.exists() else ""
     outline_text = outline_path.read_text(encoding="utf-8")
 

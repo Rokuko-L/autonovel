@@ -3,11 +3,13 @@
 Revision chapter generator. Rewrites a chapter from a specific revision brief.
 Usage: python gen_revision.py <chapter_num> <brief_file>
 """
+from llm import call_anthropic
+from paths import get_novel_title
+import outline
+import textstats
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, get_novel_title
 from genre import load_genre
 
 load_dotenv()
@@ -30,17 +32,17 @@ def main():
     ch_num = int(sys.argv[1])
     brief_file = sys.argv[2]
     
-    voice = utils.get_voice_path().read_text(encoding="utf-8")
-    characters = utils.get_characters_path().read_text(encoding="utf-8")
-    world = utils.get_world_path().read_text(encoding="utf-8")
+    voice = paths.get_voice_path().read_text(encoding="utf-8")
+    characters = paths.get_characters_path().read_text(encoding="utf-8")
+    world = paths.get_world_path().read_text(encoding="utf-8")
     brief = Path(brief_file).read_text(encoding="utf-8")
     
     # Load adjacent chapters for continuity (sentence-boundary trimmed)
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     prev_path = chapters_dir / f"ch_{ch_num - 1:02d}.md"
     next_path = chapters_dir / f"ch_{ch_num + 1:02d}.md"
-    prev_tail = utils.tail_context(prev_path.read_text(encoding="utf-8"), max_words=600) if prev_path.exists() else "(first chapter)"
-    next_head = utils.head_context(next_path.read_text(encoding="utf-8"), max_words=300) if next_path.exists() else "(last chapter)"
+    prev_tail = textstats.tail_context(prev_path.read_text(encoding="utf-8"), max_words=600) if prev_path.exists() else "(first chapter)"
+    next_head = textstats.head_context(next_path.read_text(encoding="utf-8"), max_words=300) if next_path.exists() else "(last chapter)"
     
     # Load old version if exists
     old_path = chapters_dir / f"ch_{ch_num:02d}.md"
@@ -51,7 +53,7 @@ def main():
     # Pull the latest eval's AI-pattern findings so the revision removes them
     ai_feedback = ""
     try:
-        eval_dir = utils.get_eval_logs_dir()
+        eval_dir = paths.get_eval_logs_dir()
         candidates = sorted(
             (p for p in eval_dir.glob(f"*_ch{ch_num:02d}.json")),
             key=lambda p: p.stat().st_mtime, reverse=True)
@@ -114,7 +116,7 @@ Write the FULL revised chapter now."""
     result = call_writer(prompt)
     
     out_path = chapters_dir / f"ch_{ch_num:02d}.md"
-    out_path.write_text(utils.normalize_chapter_heading(result, ch_num), encoding="utf-8")
+    out_path.write_text(outline.normalize_chapter_heading(result, ch_num), encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
 

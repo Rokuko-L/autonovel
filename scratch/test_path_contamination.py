@@ -2,7 +2,7 @@
 """
 test_path_contamination.py — Verifies no pipeline files leak to root.
 
-Mocks all LLM calls via unittest.mock.patch on utils.call_anthropic.
+Mocks all LLM calls via unittest.mock.patch on llm.call_anthropic.
 Runs path helpers in isolation and asserts zero new files appear in the
 root codebase directory (outside of projects/).
 
@@ -19,7 +19,7 @@ from unittest.mock import patch, MagicMock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import utils
+import llm
 import paths
 
 PASS = "[PASS]"
@@ -65,27 +65,27 @@ def test_no_root_contamination(tmp_root: Path, project_name: str = "contaminatio
     orig_root = paths._root_dir
     orig_name = paths._project_name
     paths._root_dir = tmp_root
-    utils.set_project_name(project_name)
+    paths.set_project_name(project_name)
 
     # Snapshot root BEFORE
     before = snapshot_root(tmp_root, exclude={"projects", ".git"})
 
     # Simulate path helpers being called (as they would be during a pipeline run)
-    chapters_dir = utils.get_chapters_dir()
-    edit_logs_dir = utils.get_edit_logs_dir()
-    eval_logs_dir = utils.get_eval_logs_dir()
-    briefs_dir = utils.get_briefs_dir()
-    typeset_dir = utils.get_typeset_dir()
+    chapters_dir = paths.get_chapters_dir()
+    edit_logs_dir = paths.get_edit_logs_dir()
+    eval_logs_dir = paths.get_eval_logs_dir()
+    briefs_dir = paths.get_briefs_dir()
+    typeset_dir = paths.get_typeset_dir()
 
     # Simulate writing project files
     (chapters_dir / "ch_01.md").write_text("# Chapter 1\n\nContent.", encoding="utf-8")
     (edit_logs_dir / "ch01_cuts.json").write_text('{"cuts": []}', encoding="utf-8")
     (eval_logs_dir / "20250101_foundation.json").write_text('{"overall_score": 8.0}', encoding="utf-8")
     (briefs_dir / "ch01_panel.md").write_text("# Brief\n\nDetails.", encoding="utf-8")
-    utils.get_outline_path().write_text("# Outline", encoding="utf-8")
-    utils.get_state_path().write_text('{"phase": "foundation"}', encoding="utf-8")
-    utils.get_world_path().write_text("# World", encoding="utf-8")
-    utils.get_reviews_path().write_text("# Review", encoding="utf-8")
+    paths.get_outline_path().write_text("# Outline", encoding="utf-8")
+    paths.get_state_path().write_text('{"phase": "foundation"}', encoding="utf-8")
+    paths.get_world_path().write_text("# World", encoding="utf-8")
+    paths.get_reviews_path().write_text("# Review", encoding="utf-8")
 
     # Snapshot root AFTER, excluding projects/ and .git/
     after = snapshot_root(tmp_root, exclude={"projects", ".git"})
@@ -95,7 +95,7 @@ def test_no_root_contamination(tmp_root: Path, project_name: str = "contaminatio
           f"Leaked files: {new_files}")
 
     # Verify files ARE in projects/ subdirectory
-    proj_dir = utils.get_project_dir()
+    proj_dir = paths.get_project_dir()
     check("project dir is inside projects/",
           str(proj_dir).startswith(str(tmp_root / "projects")))
     check("chapter file is inside project dir",
@@ -116,14 +116,14 @@ def test_two_projects_no_cross_contamination(tmp_root: Path):
 
     try:
         # Set up project A
-        utils.set_project_name("project_a")
-        ch_a = utils.get_chapters_dir()
+        paths.set_project_name("project_a")
+        ch_a = paths.get_chapters_dir()
         (ch_a / "ch_01.md").write_text("# Alpha Chapter 1", encoding="utf-8")
         (ch_a / "ch_02.md").write_text("# Alpha Chapter 2", encoding="utf-8")
 
         # Set up project B
-        utils.set_project_name("project_b")
-        ch_b = utils.get_chapters_dir()
+        paths.set_project_name("project_b")
+        ch_b = paths.get_chapters_dir()
         ch_b.mkdir(parents=True, exist_ok=True)
 
         # Project B's chapters dir should not contain project A's files
@@ -132,11 +132,11 @@ def test_two_projects_no_cross_contamination(tmp_root: Path):
               len(b_files) == 0, f"Found: {b_files}")
 
         # Project A's world.md should not be visible from B
-        utils.set_project_name("project_a")
-        utils.get_world_path().write_text("# Alpha World", encoding="utf-8")
+        paths.set_project_name("project_a")
+        paths.get_world_path().write_text("# Alpha World", encoding="utf-8")
 
-        utils.set_project_name("project_b")
-        b_world = utils.get_world_path()
+        paths.set_project_name("project_b")
+        b_world = paths.get_world_path()
         check("project B world.md does not exist (no A contamination)",
               not b_world.exists(), str(b_world))
 
@@ -146,9 +146,9 @@ def test_two_projects_no_cross_contamination(tmp_root: Path):
 
 
 def test_mock_call_anthropic():
-    """utils.call_anthropic can be patched via unittest.mock.patch."""
-    with patch("utils.call_anthropic", return_value="mocked LLM response") as mock_fn:
-        result = utils.call_anthropic("test prompt")
+    """llm.call_anthropic can be patched via unittest.mock.patch."""
+    with patch("llm.call_anthropic", return_value="mocked LLM response") as mock_fn:
+        result = llm.call_anthropic("test prompt")
         check("call_anthropic patchable via mock.patch", result == "mocked LLM response")
         check("mock was called once", mock_fn.call_count == 1)
 
@@ -160,7 +160,7 @@ def test_registry_path_is_in_projects():
         tmp_root = Path(tmp)
         paths._root_dir = tmp_root
         (tmp_root / ".env").write_text("ANTHROPIC_API_KEY=test")
-        reg_path = utils.get_registry_path()
+        reg_path = paths.get_registry_path()
         check("registry is under projects/",
               str(reg_path).startswith(str(tmp_root / "projects")),
               str(reg_path))

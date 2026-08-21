@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Refine and expand outline.md block-by-block to add foreshadowing and plants/harvests."""
+from llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from paths import format_prompt
 import os
 import sys
 import re
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -26,9 +26,9 @@ def validate_block_output(text, start, end):
     return True, ""
 
 def main():
-    root = utils.get_root_dir()
-    outline_path = utils.get_outline_path()
-    roadmap_path = utils.get_project_dir() / ".outline_roadmap.md"
+    root = paths.get_root_dir()
+    outline_path = paths.get_outline_path()
+    roadmap_path = paths.get_project_dir() / ".outline_roadmap.md"
 
     if not outline_path.exists():
         print(f"ERROR: outline.md not found at {outline_path} — run gen_outline.py first", file=sys.stderr)
@@ -37,9 +37,9 @@ def main():
     outline_text = outline_path.read_text(encoding="utf-8")
     roadmap = roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else ""
 
-    world = (utils.get_world_path()).read_text(encoding="utf-8")
-    characters = (utils.get_characters_path()).read_text(encoding="utf-8")
-    voice = (utils.get_voice_path()).read_text(encoding="utf-8")
+    world = (paths.get_world_path()).read_text(encoding="utf-8")
+    characters = (paths.get_characters_path()).read_text(encoding="utf-8")
+    voice = (paths.get_voice_path()).read_text(encoding="utf-8")
     
     # Extract voice part 2
     voice_lines = voice.split('\n')
@@ -52,7 +52,7 @@ def main():
     genre_cfg = load_genre()
     
     try:
-        state = json.loads((utils.get_project_dir() / "state.json").read_text(encoding="utf-8"))
+        state = json.loads((paths.get_project_dir() / "state.json").read_text(encoding="utf-8"))
         total_chapters = state.get("chapters_total", 30)
         title = state.get("title", "Untitled Novel")
     except Exception:
@@ -164,7 +164,7 @@ Each chapter outline must start with a heading: "### Chapter N: [Chapter Title]"
     outline_path.write_text(full_outline_text, encoding="utf-8")
     
     # Save a copy as .outline_part1.md for backwards compatibility
-    (utils.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
+    (paths.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
     
     print("Outline refinement complete!", file=sys.stderr)
 

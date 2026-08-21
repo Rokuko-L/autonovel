@@ -4,11 +4,11 @@ Build a condensed arc summary for full-novel evaluation.
 For each chapter: first 150 words, last 150 words, plus any dialogue.
 Gives the reader panel enough to evaluate the ARC without 72k tokens.
 """
+from llm import TruncationError, call_anthropic
+from paths import get_novel_title
 import re
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, get_novel_title, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -64,7 +64,7 @@ def process_chapter_arc_summary(path, ch):
     return ch, entry
 
 def main():
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     chapter_files = sorted(chapters_dir.glob("ch_*.md"))
     if not chapter_files:
         print("No chapter files found!")
@@ -112,7 +112,7 @@ PREMISE: {load_genre()["generation"]["arc_summary_premise"]}
 """
     full += '\n---\n\n'.join(summaries)
     
-    out_path = utils.get_arc_summary_path()
+    out_path = paths.get_arc_summary_path()
     out_path.write_text(full, encoding="utf-8")
     print(f"\nSaved to {out_path} ({len(full.split())} words)")
 

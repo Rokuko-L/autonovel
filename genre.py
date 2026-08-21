@@ -3,6 +3,7 @@ genre.py — Genre configuration loader.
 All pipeline scripts call load_genre() to get active genre config.
 Configs are per-project in projects/{name}/active_genre.json.
 """
+import paths
 import json
 import math
 import os
@@ -137,9 +138,8 @@ def load_genre():
     global _cache
     if _cache is not None:
         return _cache
-    
-    import utils
-    project_active_path = utils.get_active_genre_path()
+
+    project_active_path = paths.get_active_genre_path()
     
     if project_active_path.exists():
         path = project_active_path

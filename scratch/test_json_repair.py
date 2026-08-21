@@ -1,14 +1,14 @@
+import llm
 import sys
 import json
 from pathlib import Path
 
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-import utils
 
 def run_test(name, raw_input, expected_dict):
     try:
-        parsed = utils.parse_json_response(raw_input)
+        parsed = llm.parse_json_response(raw_input)
         # Check keys and structure
         for k, v in expected_dict.items():
             assert parsed.get(k) == v, f"Key '{k}' mismatch: expected {v}, got {parsed.get(k)}"

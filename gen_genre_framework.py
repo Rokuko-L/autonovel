@@ -5,6 +5,8 @@ Reads genre description + chapter count + user notes, calls LLM with meta-prompt
 validates output, writes active_genre.json.
 """
 
+from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from paths import load_prompt
 import os
 import re
 import sys
@@ -16,9 +18,6 @@ BASE_DIR = Path(__file__).resolve().parent
 # Load env
 from dotenv import load_dotenv
 load_dotenv(BASE_DIR / ".env")
-
-# Import utils for thinking token handling
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic, load_prompt
 
 
 # Shared system prompt (handles identity and mapping/translation table)
@@ -443,8 +442,7 @@ def main():
                 sys.exit(1)
 
     # Success — write active_genre.json
-    import utils
-    out_path = utils.get_active_genre_path()
+    out_path = paths.get_active_genre_path()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(config1, indent=2))
     print(f"✅ Genre config written to {out_path}", file=sys.stderr)

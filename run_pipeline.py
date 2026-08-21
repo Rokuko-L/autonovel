@@ -17,6 +17,10 @@ Usage:
   python run_pipeline.py --project mynovel --max-cycles 4     # limit revision cycles
 """
 
+from llm import call_anthropic
+from outline import validate_premise_beats
+import novel_tex
+import paths
 import _utf8
 import argparse
 import json
@@ -32,9 +36,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from genre import load_genre
-from utils import call_anthropic, validate_premise_beats
 from review import should_stop as review_should_stop
-import utils
 
 load_dotenv()
 
@@ -45,7 +47,7 @@ from pipeline_infra import _chapter_num_key  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
-# Constants  (all path-dependent values are resolved at runtime via utils)
+# Constants  (all path-dependent values are resolved at runtime via paths)
 # ---------------------------------------------------------------------------
 
 
@@ -167,7 +169,7 @@ def run_foundation(state: dict) -> dict:
         uv_run("gen_outline.py", timeout=900)
 
         # Validate Chapter 1 premise beats (pre-draft gate)
-        outline_path = utils.get_outline_path()
+        outline_path = paths.get_outline_path()
         genre_cfg = load_genre()
         required_beats = genre_cfg.get("framework", {}).get("premise_arc_beats", [])
         premise_passed = False
@@ -192,7 +194,7 @@ def run_foundation(state: dict) -> dict:
             uv_run(f'gen_outline.py --retry-feedback "{error}.{format_hint}"', timeout=900)
 
         # Write premise validation sidecar
-        prem_val_path = utils.get_project_dir() / "premise_validation.json"
+        prem_val_path = paths.get_project_dir() / "premise_validation.json"
         prem_val_path.write_text(json.dumps({
             "passed": premise_passed,
             "attempts": oa if premise_passed else MAX_OUTLINE_ATTEMPTS,
@@ -211,12 +213,12 @@ def run_foundation(state: dict) -> dict:
 
         # Validate plants & harvests consistency and extract active debts
         outline_text = outline_path.read_text(encoding="utf-8")
-        ph_passed, ph_error = utils.validate_plants_harvests(outline_text)
+        ph_passed, ph_error = outline.validate_plants_harvests(outline_text)
         if not ph_passed:
             step(f"WARNING: Outline plants/harvests validation issues found:\n{ph_error}")
         
         state = load_state()
-        debts = utils.extract_outline_debts(outline_text)
+        debts = outline.extract_outline_debts(outline_text)
         state["debts"] = debts
         save_state(state)
         step(f"Logged {len(debts)} active narrative debts in project state.")
@@ -283,7 +285,7 @@ def update_canon_from_eval(ch: int, attempt_num: int = None, eval_log_path=None)
             eval_path = Path(eval_log_path)
         else:
             eval_log_pattern = f"*_ch{ch:02d}.json"
-            eval_logs = sorted(utils.get_eval_logs_dir().glob(eval_log_pattern))
+            eval_logs = sorted(paths.get_eval_logs_dir().glob(eval_log_pattern))
             if not eval_logs:
                 return
             if attempt_num is not None and attempt_num <= len(eval_logs):
@@ -307,7 +309,7 @@ def update_canon_from_eval(ch: int, attempt_num: int = None, eval_log_path=None)
                 (core_entries if scope == "core" else inc_entries).append(fact)
 
         if core_entries or inc_entries or unexplained:
-            canon_path = utils.get_canon_path()
+            canon_path = paths.get_canon_path()
             canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
             with canon_path.open("a", encoding="utf-8") as f:
                 if core_entries:
@@ -360,7 +362,7 @@ def run_drafting(state: dict) -> dict:
     # we do NOT ship sub-garbage as canon.
     force_keep_floor = CHAPTER_THRESHOLD - 2.0
 
-    chapters_dir = utils.get_chapters_dir()  # also creates the directory
+    chapters_dir = paths.get_chapters_dir()  # also creates the directory
 
     for ch in range(start_chapter, total + 1):
         banner(f"Drafting Chapter {ch}/{total}", "-")
@@ -383,7 +385,7 @@ def run_drafting(state: dict) -> dict:
                     # Quote-safe: shlex.split() in run_tool handles spaces, but
                     # the feedback may contain newlines/quotes -- write to a
                     # temp file and pass the path instead.
-                    fb_path = utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
+                    fb_path = paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
                     fb_path.write_text(retry_feedback, encoding="utf-8")
                     cmd = (f"\"{sys.executable}\" draft_chapter.py {ch} "
                            f"--retry-feedback \"{fb_path}\"")
@@ -424,7 +426,7 @@ def run_drafting(state: dict) -> dict:
                 attempt_log_paths[attempt] = eval_log_path
 
             if score >= CHAPTER_THRESHOLD:
-                fb_path = utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
+                fb_path = paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
                 fb_path.unlink(missing_ok=True)
                 commit_hash = git_add_commit(
                     f"ch{ch:02d}: score {score}, {word_count}w")
@@ -508,7 +510,7 @@ def run_drafting(state: dict) -> dict:
                             step(f"Repaired Ch {ch} score: {rep_score}")
                             if rep_score >= CHAPTER_THRESHOLD:
                                 step(f"Repair lifted Ch {ch} over the bar — keeping")
-                                fb_path = utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
+                                fb_path = paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
                                 fb_path.unlink(missing_ok=True)
                                 commit_hash = git_add_commit(
                                     f"ch{ch:02d}: slop-repair keep, score {rep_score}, {rep_wc}w")
@@ -531,13 +533,13 @@ def run_drafting(state: dict) -> dict:
                     rel_path = f"chapters/ch_{ch:02d}.md"
                     res = subprocess.run(
                         shlex.split(f"git ls-files --error-unmatch {rel_path}"),
-                        cwd=str(utils.get_project_dir()),
+                        cwd=str(paths.get_project_dir()),
                         capture_output=True,
                         text=True,
                         shell=False
                     )
                     if res.returncode == 0:
-                        run_tool(f"git checkout -- {rel_path}", cwd=str(utils.get_project_dir()))
+                        run_tool(f"git checkout -- {rel_path}", cwd=str(paths.get_project_dir()))
                     else:
                         ch_file.unlink(missing_ok=True)
 
@@ -569,7 +571,7 @@ def run_drafting(state: dict) -> dict:
                               f"or word count {best_word_count} below {min_words}")
                 step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts ({reason}). "
                      f"Marking chapter as SKIPPED in state — it will be absent from the manuscript.")
-                (utils.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt").unlink(missing_ok=True)
+                (paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt").unlink(missing_ok=True)
                 log_result("skipped", f"ch{ch:02d}", best_score, best_word_count,
                            "skipped", reason)
                 state["chapters_drafted"] = ch
@@ -765,8 +767,8 @@ def run_revision(
     """
     banner("PHASE 3: REVISION", "=")
 
-    briefs_dir = utils.get_briefs_dir()        # also creates the directory
-    edit_logs_dir = utils.get_edit_logs_dir()  # also creates the directory
+    briefs_dir = paths.get_briefs_dir()        # also creates the directory
+    edit_logs_dir = paths.get_edit_logs_dir()  # also creates the directory
 
     prev_score = state.get("novel_score", 0.0)
     start_cycle = state.get("revision_cycle", 0) + 1
@@ -777,7 +779,7 @@ def run_revision(
 
         # Check if we should run adversarial editing or mechanical cuts
         run_adv = not skip_adversarial_editing
-        apply_cuts = utils.get_root_dir() / "apply_cuts.py"
+        apply_cuts = paths.get_root_dir() / "apply_cuts.py"
         run_cuts = not skip_mechanical_cuts and apply_cuts.exists()
 
         if run_adv or run_cuts:
@@ -820,7 +822,7 @@ def run_revision(
                 
                 # Validation check with tolerance
                 if post_adv_score >= (cycle_baseline_score - tolerance):
-                    run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                    run_tool("git add -A", cwd=str(paths.get_project_dir()))
                     commit_hash = git_add_commit(
                         f"revision cycle {cycle}: apply adversarial edits {cycle_baseline_score}->{post_adv_score}"
                     )
@@ -851,7 +853,7 @@ def run_revision(
                 step(f"Mechanical cuts score shift: {post_adv_score} -> {post_cuts_score}")
                 
                 if post_cuts_score >= (post_adv_score - 0.05):
-                    run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                    run_tool("git add -A", cwd=str(paths.get_project_dir()))
                     commit_hash = git_add_commit(
                         f"revision cycle {cycle}: apply mechanical cuts {post_adv_score}->{post_cuts_score}"
                     )
@@ -913,7 +915,7 @@ def run_revision(
                     pre_score = parse_score(pre_eval.stdout, "overall_score")
 
                     brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
-                    gen_brief_py = utils.get_root_dir() / "gen_brief.py"
+                    gen_brief_py = paths.get_root_dir() / "gen_brief.py"
                     if gen_brief_py.exists():
                         run_tool(f"uv run python gen_brief.py --panel {ch_num}", timeout=300)
                         brief_candidates = sorted(
@@ -941,7 +943,7 @@ def run_revision(
                     post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
                     post_score = parse_score(post_eval.stdout, "overall_score")
 
-                    ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                    ch_file = paths.get_chapters_dir() / f"ch_{ch_num:02d}.md"
                     word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
 
                     hist_best_score, hist_best_commit = get_historical_best_for_chapter(ch_num)
@@ -985,7 +987,7 @@ def run_revision(
                     continue
                 ch_num = r["ch_num"]
                 if r["post_score"] >= (r["baseline"] - tolerance):
-                    run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                    run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(paths.get_project_dir()))
                     commit_hash = git_commit_staged(
                         f"revision cycle {cycle}: ch{ch_num:02d} "
                         f"{r['question']} {r['pre_score']}->{r['post_score']}")
@@ -994,18 +996,18 @@ def run_revision(
                                f"Cycle {cycle}: {r['question']} improved {r['pre_score']}->{r['post_score']}")
                 else:
                     step(f"Ch {ch_num}: score dropped ({r['post_score']} < {r['baseline'] - tolerance}), reverting")
-                    ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                    ch_file = paths.get_chapters_dir() / f"ch_{ch_num:02d}.md"
                     if r["hist_best_commit"] == "HEAD":
                         tracked_res = run_tool(
                             f"git ls-files --error-unmatch chapters/ch_{ch_num:02d}.md",
-                            cwd=str(utils.get_project_dir())
+                            cwd=str(paths.get_project_dir())
                         )
                         if tracked_res.returncode == 0:
-                            run_tool(f"git checkout HEAD -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                            run_tool(f"git checkout HEAD -- chapters/ch_{ch_num:02d}.md", cwd=str(paths.get_project_dir()))
                         else:
                             ch_file.unlink(missing_ok=True)
                     else:
-                        run_tool(f"git checkout {r['hist_best_commit']} -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                        run_tool(f"git checkout {r['hist_best_commit']} -- chapters/ch_{ch_num:02d}.md", cwd=str(paths.get_project_dir()))
                     log_result("reverted", f"rev-ch{ch_num:02d}", r["post_score"],
                                r["word_count"], "discard",
                                f"Cycle {cycle}: {r['question']} regressed {r['pre_score']}->{r['post_score']}")
@@ -1081,7 +1083,7 @@ def run_revision(
     # =========================================================
     # PHASE 3b: OPUS REVIEW LOOP (deep, prose-level refinement)
     # =========================================================
-    review_py = utils.get_root_dir() / "review.py"
+    review_py = paths.get_root_dir() / "review.py"
     if not skip_opus_review and review_py.exists():
         banner("PHASE 3b: OPUS REVIEW LOOP", "=")
         
@@ -1092,7 +1094,7 @@ def run_revision(
             # Step 1: Generate the review
             step("Sending manuscript to Opus for review...")
             review_result = uv_run(
-                f'review.py --output "{utils.get_reviews_path()}"', timeout=900)
+                f'review.py --output "{paths.get_reviews_path()}"', timeout=900)
             
             # Step 2: Parse the review
             step("Parsing review...")
@@ -1102,7 +1104,7 @@ def run_revision(
             
             # Step 3: Check stopping condition (uses review.py's should_stop)
             review_logs = sorted(
-                utils.get_edit_logs_dir().glob("*_review.json"), reverse=True)
+                paths.get_edit_logs_dir().glob("*_review.json"), reverse=True)
             total_items = 0
             if review_logs:
                 try:
@@ -1129,13 +1131,13 @@ def run_revision(
                 step("No actionable items from review — skipping revision, running mechanical cleanup only")
             else:
                 step("Generating revision briefs from review...")
-                gen_brief_py = utils.get_root_dir() / "gen_brief.py"
+                gen_brief_py = paths.get_root_dir() / "gen_brief.py"
                 if gen_brief_py.exists():
                     run_tool("uv run python gen_brief.py --auto", timeout=300)
                 
                 # Find any generated briefs and apply the top one
                 recent_briefs = sorted(
-                    utils.get_briefs_dir().glob("*_auto.md"),
+                    paths.get_briefs_dir().glob("*_auto.md"),
                     key=lambda p: p.stat().st_mtime, reverse=True)
                 if recent_briefs:
                     brief = recent_briefs[0]
@@ -1163,12 +1165,12 @@ def run_revision(
                         
                         step(f"Ch {ch_num} Review Revision: {pre_score} -> {post_score} (Historical best: {hist_best_score}, Baseline: {baseline})")
                         
-                        ch_file = utils.get_chapters_dir() / f"ch_{ch_num:02d}.md"
+                        ch_file = paths.get_chapters_dir() / f"ch_{ch_num:02d}.md"
                         word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
                         
                         if post_score >= (baseline - tolerance):
                             # Stage specifically
-                            run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                            run_tool(f"git add chapters/ch_{ch_num:02d}.md", cwd=str(paths.get_project_dir()))
                             commit_hash = git_commit_staged(
                                 f"review round {rnd}: revise ch{ch_num:02d} from Opus feedback {pre_score}->{post_score}")
                             log_result(commit_hash, f"rev-ch{ch_num:02d}-review", post_score,
@@ -1180,14 +1182,14 @@ def run_revision(
                             if hist_best_commit == "HEAD":
                                 tracked_res = run_tool(
                                     f"git ls-files --error-unmatch chapters/ch_{ch_num:02d}.md",
-                                    cwd=str(utils.get_project_dir())
+                                    cwd=str(paths.get_project_dir())
                                 )
                                 if tracked_res.returncode == 0:
-                                    run_tool(f"git checkout HEAD -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                                    run_tool(f"git checkout HEAD -- chapters/ch_{ch_num:02d}.md", cwd=str(paths.get_project_dir()))
                                 else:
                                     ch_file.unlink(missing_ok=True)
                             else:
-                                run_tool(f"git checkout {hist_best_commit} -- chapters/ch_{ch_num:02d}.md", cwd=str(utils.get_project_dir()))
+                                run_tool(f"git checkout {hist_best_commit} -- chapters/ch_{ch_num:02d}.md", cwd=str(paths.get_project_dir()))
                             log_result("reverted", f"rev-ch{ch_num:02d}-review", post_score,
                                        word_count, "discard",
                                        f"Round {rnd}: {brief.name} regressed {pre_score}->{post_score}")
@@ -1195,7 +1197,7 @@ def run_revision(
             # Step 5: Mechanical fixes from review
             # Run slop pass on any mentioned patterns
             step("Running mechanical cleanup pass...")
-            apply_cuts_py = utils.get_root_dir() / "apply_cuts.py"
+            apply_cuts_py = paths.get_root_dir() / "apply_cuts.py"
             if apply_cuts_py.exists():
                 # Evaluate score before cuts
                 pre_cuts_eval = uv_run("evaluate.py --full", timeout=600)
@@ -1212,7 +1214,7 @@ def run_revision(
                 step(f"Mechanical cuts score shift: {pre_cuts_score} -> {post_cuts_score}")
 
                 if post_cuts_score >= (pre_cuts_score - 0.05):
-                    run_tool("git add -A", cwd=str(utils.get_project_dir()))
+                    run_tool("git add -A", cwd=str(paths.get_project_dir()))
                     git_add_commit(f"review round {rnd}: mechanical cleanup {pre_cuts_score}->{post_cuts_score}")
                 else:
                     step(f"Mechanical cuts made the novel worse ({post_cuts_score} < {pre_cuts_score - 0.05}), reverting cuts")
@@ -1249,9 +1251,9 @@ def run_export(state: dict) -> dict:
     banner("PHASE 4: EXPORT", "=")
 
     import shutil
-    root_dir = utils.get_root_dir()
-    chapters_dir = utils.get_chapters_dir()
-    typeset_dir = utils.get_typeset_dir()
+    root_dir = paths.get_root_dir()
+    chapters_dir = paths.get_chapters_dir()
+    typeset_dir = paths.get_typeset_dir()
 
     # 1. Rebuild outline from chapters
     build_outline = root_dir / "build_outline.py"
@@ -1277,7 +1279,7 @@ def run_export(state: dict) -> dict:
 
     # 4. Concatenate chapters into manuscript.md (written into project dir)
     step("Building manuscript.md...")
-    manuscript = utils.get_manuscript_path()
+    manuscript = paths.get_manuscript_path()
     chapter_files = sorted(chapters_dir.glob("ch_*.md"), key=_chapter_num_key)
 
     total_planned = state.get("chapters_total", 0)
@@ -1304,7 +1306,7 @@ def run_export(state: dict) -> dict:
     if build_tex.exists():
         step("Building LaTeX content...")
         # Run with cwd set to project typeset dir so aux files stay isolated
-        run_tool(f'uv run python "{build_tex}"', timeout=120, cwd=str(utils.get_typeset_dir()))
+        run_tool(f'uv run python "{build_tex}"', timeout=120, cwd=str(paths.get_typeset_dir()))
 
         # 5. Typeset with tectonic (if available)
         novel_tex = typeset_dir / "novel.tex"
@@ -1324,7 +1326,7 @@ def run_export(state: dict) -> dict:
                     step(f"LLM tex generation attempt {tex_attempt+1}/3 failed ({e})")
             if not novel_tex.exists() or novel_tex.stat().st_size < 100:
                 step("Falling back to default template...")
-                utils.generate_default_novel_tex(novel_tex)
+                novel_tex.generate_default_novel_tex(novel_tex)
 
         compiled = False
         if novel_tex.exists():
@@ -1346,7 +1348,7 @@ def run_export(state: dict) -> dict:
 
                     # Use explicit bundle to avoid DNS/network connection failure
                     cmd = f"tectonic --bundle https://archive.org/services/purl/net/pkgwpub/tectonic-default {novel_tex.name}"
-                    res = run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
+                    res = run_tool(cmd, timeout=300, cwd=str(paths.get_typeset_dir()))
                     
                     pdf_out = typeset_dir / "novel.pdf"
                     if res.returncode == 0 and pdf_out.exists() and pdf_out.stat().st_size > 1000:
@@ -1413,8 +1415,8 @@ Rules:
                     step("LLM auto-debug failed to fix novel.tex. Falling back to "
                          "the deterministic default template...")
                     try:
-                        utils.generate_default_novel_tex(novel_tex)
-                        res = run_tool(cmd, timeout=300, cwd=str(utils.get_typeset_dir()))
+                        novel_tex.generate_default_novel_tex(novel_tex)
+                        res = run_tool(cmd, timeout=300, cwd=str(paths.get_typeset_dir()))
                         if res.returncode == 0 and pdf_out.exists() and pdf_out.stat().st_size > 1000:
                             step(f"PDF generated from default template: {pdf_out} "
                                  f"({pdf_out.stat().st_size // 1024} KB)")
@@ -1457,7 +1459,7 @@ def sanity_check(args):
     """Run pre-flight checks. Exit 1 on critical failures."""
     ok = True
     notes_provided = bool(args.notes)
-    root_dir = utils.get_root_dir()
+    root_dir = paths.get_root_dir()
 
     # 1. .env exists
     if not (root_dir / ".env").exists():
@@ -1477,13 +1479,13 @@ def sanity_check(args):
         print(f"WARN: {base} unreachable — continuing anyway", file=sys.stderr)
 
     # 4. At least one of seed.txt or --notes exists
-    if not (root_dir / "seed.txt").exists() and not utils.get_seed_path().exists() and not notes_provided:
+    if not (root_dir / "seed.txt").exists() and not paths.get_seed_path().exists() and not notes_provided:
         print("FAIL: provide --notes or place a seed.txt in the project root or project folder", file=sys.stderr)
         ok = False
 
     # 5. Genre is specified (skip if already configured from a previous run)
     if not args.genre and not os.getenv("AUTONOVEL_GENRE"):
-        if not utils.get_active_genre_path().exists() and not (root_dir / "active_genre.json").exists():
+        if not paths.get_active_genre_path().exists() and not (root_dir / "active_genre.json").exists():
             print("FAIL: provide --genre or set AUTONOVEL_GENRE in .env", file=sys.stderr)
             ok = False
 
@@ -1499,7 +1501,7 @@ def sanity_check(args):
                 print(f"WARN: --chapters '{args.chapters}' looks unusual", file=sys.stderr)
 
     # active_genre.json valid if present
-    active_path = utils.get_active_genre_path()
+    active_path = paths.get_active_genre_path()
     if not active_path.exists():
         active_path = root_dir / "active_genre.json"
     if active_path.exists():
@@ -1509,7 +1511,7 @@ def sanity_check(args):
             print(f"WARN: {active_path.name} is corrupted — delete it and re-run", file=sys.stderr)
 
     # state.json valid if present and not in --from-scratch mode
-    state_path = utils.get_state_path()
+    state_path = paths.get_state_path()
     if state_path.exists() and not args.from_scratch:
         try:
             json.loads(state_path.read_text(encoding="utf-8"))
@@ -1528,14 +1530,14 @@ def run_pipeline(args):
     """Run the full pipeline or a specific phase."""
 
     # Set active project FIRST so all path helpers resolve correctly
-    utils.set_project_name(args.project)
-    project_dir = utils.get_project_dir()
+    paths.set_project_name(args.project)
+    project_dir = paths.get_project_dir()
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Tee stdout/stderr to a per-run log file in projects/<name>/logs/
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    log_path = utils.get_logs_dir() / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pipeline.log"
+    log_path = paths.get_logs_dir() / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pipeline.log"
     log_fh = open(log_path, "w", encoding="utf-8")
     sys.stdout = Tee(log_fh, sys.stdout)
     sys.stderr = Tee(log_fh, sys.stderr)
@@ -1547,7 +1549,7 @@ def run_pipeline(args):
 
     sanity_check(args)
 
-    root_dir = utils.get_root_dir()
+    root_dir = paths.get_root_dir()
 
     # Load or initialize state
     if args.from_scratch:
@@ -1572,7 +1574,7 @@ def run_pipeline(args):
                         print(f"WARN: Failed to remove file {name}: {e}", file=sys.stderr)
 
         # Initialize project-specific seed
-        seed_dest = utils.get_seed_path()
+        seed_dest = paths.get_seed_path()
         if not args.notes:
             if not seed_dest.exists():
                 global_seed = root_dir / "seed.txt"
@@ -1594,7 +1596,7 @@ def run_pipeline(args):
         # Copy template voice.md file to project directory if it exists in root
         voice_template = root_dir / "voice.md"
         if voice_template.exists():
-            shutil.copy2(voice_template, utils.get_voice_path())
+            shutil.copy2(voice_template, paths.get_voice_path())
                 
         save_state(state)
     else:
@@ -1613,10 +1615,10 @@ def run_pipeline(args):
         pass  # pre-foundation — no genre config yet, use default or --chapters
 
     # Ensure directories exist (helpers create them)
-    utils.get_chapters_dir()
-    utils.get_briefs_dir()
-    utils.get_edit_logs_dir()
-    utils.get_eval_logs_dir()
+    paths.get_chapters_dir()
+    paths.get_briefs_dir()
+    paths.get_edit_logs_dir()
+    paths.get_eval_logs_dir()
 
     # Apply revision_cycles override (with legacy support for max_cycles)
     revision_cycles = args.max_cycles if args.max_cycles is not None else args.revision_cycles
@@ -1659,7 +1661,7 @@ def run_pipeline(args):
                 notes_for_genre = None
                 if args.notes:
                     notes_for_genre = process_notes(args.notes, args.genre)
-                seed_path = utils.get_seed_path()
+                seed_path = paths.get_seed_path()
                 if not seed_path.exists():
                     print(f"ERROR: seed.txt not found at {seed_path}", file=sys.stderr)
                     sys.exit(1)
@@ -1668,7 +1670,7 @@ def run_pipeline(args):
                 # starting from chapter 1.
 
                 # Step 1: Initialize genre configuration
-                active_genre_path = utils.get_active_genre_path()
+                active_genre_path = paths.get_active_genre_path()
                 if (not active_genre_path.exists() or args.from_scratch or args.genre) and args.genre:
                     banner("STEP 1: Initializing genre configuration")
                     cmd = [sys.executable, str(root_dir / "gen_genre_framework.py")]

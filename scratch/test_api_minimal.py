@@ -1,3 +1,4 @@
+import llm
 import httpx
 import os
 import sys
@@ -39,8 +40,7 @@ try:
         for k, v in resp.headers.items():
             print(f"  {k}: {v}")
         print("Response Content:")
-        import utils
-        parsed_text = utils.extract_text_from_response(resp)
+        parsed_text = llm.extract_text_from_response(resp)
         print("="*40)
         print("Parsed Text:")
         print(repr(parsed_text))

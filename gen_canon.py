@@ -2,12 +2,14 @@
 """
 Generate canon.md by extracting all hard facts from world.md + characters.md.
 """
+from llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+import paths
+from paths import format_prompt
+import outline
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, get_max_tokens_with_thinking, format_prompt, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -15,14 +17,14 @@ load_dotenv()
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
     return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, timeout=300)
 
-FOUNDATION_CANON_PROMPT = utils.load_prompt("foundation_canon")
+FOUNDATION_CANON_PROMPT = paths.load_prompt("foundation_canon")
 
 
 def main():
     required = {
-        "world.md": utils.get_world_path(),
-        "characters.md": utils.get_characters_path(),
-        "seed.txt": utils.get_seed_path(),
+        "world.md": paths.get_world_path(),
+        "characters.md": paths.get_characters_path(),
+        "seed.txt": paths.get_seed_path(),
     }
     for name, p in required.items():
         if not p.exists():
@@ -43,7 +45,7 @@ def main():
             print(f"  WARN: {e}, retrying...", file=sys.stderr)
             continue
         try:
-            utils.validate_generator_output(result, "gen_canon.py", min_len=100, expected_headers=None)
+            outline.validate_generator_output(result, "gen_canon.py", min_len=100, expected_headers=None)
             break
         except RuntimeError as e:
             if attempt == 0:
@@ -52,7 +54,7 @@ def main():
                 raise
 
     result = "## Foundation (background truth, not yet revealed to readers)\n\n" + result
-    utils.get_canon_path().write_text(result, encoding="utf-8")
+    paths.get_canon_path().write_text(result, encoding="utf-8")
     print(result)
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ subprocess helpers, score parsing, and shared constants.
 Extracted from run_pipeline.py; the phase functions and CLI stay there.
 """
 
+import paths
 import _utf8
 import json
 import os
@@ -16,7 +17,6 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-import utils
 
 load_dotenv()
 
@@ -78,7 +78,7 @@ PHASE_ORDER = ["foundation", "drafting", "revision", "export"]
 
 def ensure_gitignore_projects():
     """Ensure root .gitignore contains a rule for projects/ to prevent nested-repo commits."""
-    root = utils.get_root_dir()
+    root = paths.get_root_dir()
     gi_path = root / ".gitignore"
     entry = "projects/"
     if gi_path.exists():
@@ -111,7 +111,7 @@ def ensure_project_git(project_dir: Path):
 
 def load_registry() -> dict:
     """Load the project registry JSON. Returns empty dict if not found."""
-    reg_path = utils.get_registry_path()
+    reg_path = paths.get_registry_path()
     if reg_path.exists():
         try:
             return json.loads(reg_path.read_text(encoding="utf-8"))
@@ -123,11 +123,11 @@ def update_registry(project_name: str, metadata: dict):
     """Atomically update registry.json with project metadata."""
     registry = load_registry()
     registry[project_name] = metadata
-    utils.save_registry(registry, utils.get_registry_path())
+    paths.save_registry(registry, paths.get_registry_path())
 
 def load_state() -> dict:
     """Load pipeline state from the active project's state.json, creating defaults if missing."""
-    state_path = utils.get_state_path()
+    state_path = paths.get_state_path()
     if state_path.exists():
         with open(state_path, encoding="utf-8") as f:
             return json.load(f)
@@ -150,14 +150,14 @@ def default_state() -> dict:
 
 def save_state(state: dict):
     """Write state to the active project's state.json."""
-    state_path = utils.get_state_path()
+    state_path = paths.get_state_path()
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 def log_result(commit: str, phase: str, score, word_count: int,
                status: str, description: str):
     """Append a row to results.tsv in the active project directory."""
-    results_file = utils.get_results_path()
+    results_file = paths.get_results_path()
     header = "commit\tphase\tscore\tword_count\tstatus\tdescription\n"
     if not results_file.exists():
         results_file.write_text(header, encoding="utf-8")
@@ -186,7 +186,7 @@ def run_tool(cmd: str, timeout: int = 600, check: bool = False, cwd: str = None)
     step(f"RUN: {cmd}")
     try:
         cmd_norm = cmd.replace("\\", "/")
-        effective_cwd = cwd if cwd is not None else str(utils.get_root_dir())
+        effective_cwd = cwd if cwd is not None else str(paths.get_root_dir())
         result = subprocess.run(
             shlex.split(cmd_norm), shell=False, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, cwd=effective_cwd,
@@ -212,7 +212,7 @@ def uv_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
 
 def git_add_commit(message: str) -> str:
     """Stage all changes and commit. Returns short hash or empty string."""
-    project_dir = utils.get_project_dir()
+    project_dir = paths.get_project_dir()
     run_tool("git add -A", cwd=str(project_dir))
     status_result = run_tool("git status --porcelain", cwd=str(project_dir))
     if status_result.stdout.strip():
@@ -234,7 +234,7 @@ def git_reset_hard(ref: str = "HEAD~1"):
     don't silently no-op on freshly-written review/cuts artifacts.
     """
     step(f"GIT RESET: {ref}")
-    project_dir = utils.get_project_dir()
+    project_dir = paths.get_project_dir()
 
     # Preserve uncommitted canon.md appends (e.g. from a successful chapter eval
     # that hasn't been committed yet when this reset fires).
@@ -253,7 +253,7 @@ def git_reset_hard(ref: str = "HEAD~1"):
 
 def git_commit_staged(message: str) -> str:
     """Commit already-staged changes. Returns short hash or empty string."""
-    project_dir = utils.get_project_dir()
+    project_dir = paths.get_project_dir()
     status_result = run_tool("git status --porcelain", cwd=str(project_dir))
     # Check if there are staged changes (staged changes start with non-space in porcelain status)
     staged = False
@@ -276,7 +276,7 @@ def get_historical_best_for_chapter(ch_num: int) -> tuple[float, str]:
     Parses results.tsv to find the highest score kept for this chapter.
     Returns: (best_score, commit_hash)
     """
-    results_path = utils.get_results_path()
+    results_path = paths.get_results_path()
     if not results_path.exists():
         return 0.0, "HEAD"
         
@@ -317,7 +317,7 @@ def get_historical_best_for_chapter(ch_num: int) -> tuple[float, str]:
 
 def git_short_hash() -> str:
     """Get current HEAD short hash."""
-    r = run_tool("git rev-parse --short HEAD", cwd=str(utils.get_project_dir()))
+    r = run_tool("git rev-parse --short HEAD", cwd=str(paths.get_project_dir()))
     return r.stdout.strip() if r.returncode == 0 else "unknown"
 
 def parse_score(stdout: str, key: str = "overall_score") -> float:
@@ -365,7 +365,7 @@ def parse_lore_score(stdout: str) -> float:
 def count_words_in_chapters() -> int:
     """Sum word count across all chapter files in the active project."""
     total = 0
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     if chapters_dir.exists():
         for f in chapters_dir.glob("ch_*.md"):
             total += len(f.read_text(encoding="utf-8").split())
@@ -373,7 +373,7 @@ def count_words_in_chapters() -> int:
 
 def count_chapter_files() -> int:
     """Count the number of chapter files in the active project."""
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     if not chapters_dir.exists():
         return 0
     return len(list(chapters_dir.glob("ch_*.md")))
@@ -388,7 +388,7 @@ def get_total_chapters(state: dict) -> int:
     if state.get("chapters_total", 0) > 0:
         return state["chapters_total"]
     # Try to infer from outline.md
-    outline = utils.get_outline_path()
+    outline = paths.get_outline_path()
     if outline.exists():
         text = outline.read_text(encoding="utf-8")
         matches = re.findall(r'###\s*\*?\*?\s*Ch(?:apter)?\b\s*\*?\*?\s*(\d+)', text, re.IGNORECASE)
@@ -422,7 +422,7 @@ def process_notes(notes_input, genre):
     banner(f"PROCESSING NOTES ({word_count} words)", "-")
 
     # seed.txt lives in the project directory
-    seed_file = utils.get_seed_path()
+    seed_file = paths.get_seed_path()
 
     if word_count < 300:
         step(f"Notes too short ({word_count}w). Expanding to ~500 words via LLM...")

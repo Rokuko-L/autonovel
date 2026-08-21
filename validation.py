@@ -2,14 +2,14 @@
 """
 validation.py -- Pydantic validation layer for LLM JSON output.
 
-utils.parse_json_response() guarantees *syntactically valid* JSON but says
+llm.parse_json_response() guarantees *syntactically valid* JSON but says
 nothing about its shape. Every caller then does unvalidated dict access, so a
 judge that omits "overall_score" or returns it as a string silently poisons
 the pipeline (score -1.0, KeyError three phases later).
 
 This module pairs the healing parser with schema validation:
 
-    raw  -> utils.parse_json_response()   (syntax + repair)
+    raw  -> llm.parse_json_response()   (syntax + repair)
          -> <Model>.model_validate()      (shape + types)
          -> typed model instance
 
@@ -18,12 +18,12 @@ feedback string, so callers can feed it back into a self-correction retry
 (the same loop that already exists for JSON syntax errors).
 """
 
+import llm
 import json
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from dotenv import load_dotenv
 
-import utils
 
 load_dotenv()
 
@@ -112,7 +112,7 @@ def parse_validated(model_cls: type[BaseModel], text: str, context: str = "") ->
     instance of model_cls; use .model_dump() where legacy dict access is
     still expected.
     """
-    data = utils.parse_json_response(text)
+    data = llm.parse_json_response(text)
     try:
         return model_cls.model_validate(data)
     except ValidationError as exc:

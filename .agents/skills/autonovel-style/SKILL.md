@@ -9,7 +9,6 @@ description: Applies the autonovel repo's Python coding style and structural rul
 
 ```
 paths.py / llm.py / outline.py / textstats.py / novel_tex.py   core concerns
-utils.py                                                       facade only — add nothing
 validation.py                                                  LLM output schemas
 mock_llm.py                                                    test harness
 pipeline_infra.py                                              git/registry/state plumbing
@@ -18,7 +17,8 @@ prompts/*.md                                                   static prompt tem
 scratch/test_*.py                                              offline tests
 ```
 
-- **Never grow `utils.py`** — it is a facade. New shared helpers go in the
+- **Import from the concern module directly** (`from llm import call_anthropic`,
+  `import paths`) — there is no umbrella module. New shared helpers go in the
   matching concern module; a genuinely new concern gets a new module.
 - One generation task = one `gen_*.py` script, mirroring the pipeline stage.
 
@@ -31,7 +31,7 @@ scratch/test_*.py                                              offline tests
    `validation.py`, parse with `parse_validated(Model, text)`, and on
    `OutputValidationError` feed `.feedback` into the self-correction retry.
    Never re-implement regex extraction for JSON a judge already returns.
-3. **Static prompts → `prompts/*.md`.** Load with `utils.load_prompt(name)`.
+3. **Static prompts → `prompts/*.md`.** Load with `paths.load_prompt(name)`.
    Templates keep `{placeholder}` / `{{escaped}}` braces exactly as the old
    inline literals did, so `.format()` call sites are unchanged.
 4. **Atomic writes**: tmp file + `os.replace`, cleanup on failure (see

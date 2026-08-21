@@ -3,7 +3,7 @@
 mock_llm.py -- Offline mock for the LLM API layer.
 
 Every LLM call in autonovel flows through llm.call_anthropic(). Scripts bind
-it at import time ("from utils import call_anthropic"), so installing the
+it at import time ("from llm import call_anthropic"), so installing the
 mock rebinds EVERY module in sys.modules that still holds the original
 reference. Install before or after importing pipeline modules -- both work.
 
@@ -31,7 +31,7 @@ import sys
 
 
 class MockLLM:
-    """Scripted replacement for llm.call_anthropic / utils.call_anthropic."""
+    """Scripted replacement for llm.call_anthropic."""
 
     def __init__(self):
         self.rules = []   # [{"response": str, "match": str|None, "used": bool}]
@@ -87,11 +87,9 @@ class _Patched:
 
     def __enter__(self):
         import llm
-        import utils
-        original = utils.call_anthropic
+        original = llm.call_anthropic
         self._original = original
         llm.call_anthropic = self.mock
-        utils.call_anthropic = self.mock
         # Rebind in every already-imported module that holds the original.
         self._patched_modules = [
             name for name, mod in sys.modules.items()
@@ -103,9 +101,7 @@ class _Patched:
 
     def __exit__(self, *exc):
         import llm
-        import utils
         llm.call_anthropic = self._original
-        utils.call_anthropic = self._original
         for name in self._patched_modules:
             setattr(sys.modules[name], "call_anthropic", self._original)
         return False

@@ -4,6 +4,8 @@ gen_title.py — Title tournament with a per-project 4-judge panel.
 Each judge is a real LLM call with a distinct persona from the project config.
 Scores are aggregated by average across all 4 judges.
 """
+from llm import call_anthropic, parse_json_response
+import paths
 import os
 import sys
 import json
@@ -11,8 +13,6 @@ import re
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, parse_json_response
 from genre import load_genre
 
 load_dotenv()
@@ -148,7 +148,7 @@ def persist_judges(judges):
     cfg = load_genre()
     reader_panel = cfg.setdefault("evaluation", {}).setdefault("reader_panel", {})
     reader_panel["title_judges"] = judges
-    state_path = utils.get_state_path()
+    state_path = paths.get_state_path()
     genre_path = state_path.parent / "active_genre.json"
     if genre_path.exists():
         genre_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
@@ -159,12 +159,12 @@ def main():
     if "--project" in sys.argv:
         idx = sys.argv.index("--project")
         if idx + 1 < len(sys.argv):
-            utils.set_project_name(sys.argv[idx + 1])
+            paths.set_project_name(sys.argv[idx + 1])
 
     paths = {
-        "seed.txt": utils.get_seed_path(),
-        "world.md": utils.get_world_path(),
-        "characters.md": utils.get_characters_path(),
+        "seed.txt": paths.get_seed_path(),
+        "world.md": paths.get_world_path(),
+        "characters.md": paths.get_characters_path(),
     }
 
     for name, p in paths.items():
@@ -177,7 +177,7 @@ def main():
     characters = paths["characters.md"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
 
     genre_name = load_genre().get("genre_name", "Unknown")
-    project_name = utils.get_project_name()
+    project_name = paths.get_project_name()
 
     static_context = f"""<context>
 <genre>{genre_name}</genre>
@@ -343,12 +343,12 @@ Return ONLY a numbered list."""
     print(f"{'='*50}", file=sys.stderr)
 
     # Persist
-    state_path = utils.get_state_path()
+    state_path = paths.get_state_path()
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     state["title"] = winner
     state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
-    registry_path = utils.get_registry_path()
+    registry_path = paths.get_registry_path()
     registry = json.loads(registry_path.read_text(encoding="utf-8")) if registry_path.exists() else {}
 
     if project_name not in registry:
@@ -360,7 +360,7 @@ Return ONLY a numbered list."""
         }
     registry[project_name]["title"] = winner
 
-    utils.save_registry(registry, registry_path)
+    paths.save_registry(registry, registry_path)
     print(f"Saved to state.json and registry.json", file=sys.stderr)
 
 

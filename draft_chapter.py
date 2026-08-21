@@ -3,13 +3,15 @@
 Draft a single chapter using the writer model.
 Usage: python draft_chapter.py 1
 """
+from llm import TruncationError, call_anthropic
+from outline import parse_premise_beats
+from paths import get_novel_title
+from textstats import check_structural_repetition
 import json
 import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import call_anthropic, get_novel_title, parse_premise_beats, check_structural_repetition, TruncationError
 from genre import load_genre
 
 load_dotenv()
@@ -124,14 +126,7 @@ def scan_prior_chapter_crutches(chapters_dir, current_chapter, max_phrases=12):
     offenders as a do-not-reuse list.
     """
     import collections
-    stop = set()
-    try:
-        from utils import stop_words
-        stop = set(stop_words())
-    except Exception:
-        pass
-    if not stop:
-        stop = {"the", "a", "an", "and", "or", "but", "of", "in", "on", "at",
+    stop = {"the", "a", "an", "and", "or", "but", "of", "in", "on", "at",
                 "to", "for", "with", "from", "by", "her", "his", "she", "he",
                 "it", "was", "were", "had", "have", "has", "as", "so", "if",
                 "then", "that", "this", "there", "her", "their", "its", "not",
@@ -194,11 +189,11 @@ def main():
             break
     
     # Load all context
-    voice = load_file(utils.get_voice_path())
-    world = load_file(utils.get_world_path())
-    characters = load_file(utils.get_characters_path())
-    outline = load_file(utils.get_outline_path())
-    canon_text = load_file(utils.get_canon_path())
+    voice = load_file(paths.get_voice_path())
+    world = load_file(paths.get_world_path())
+    characters = load_file(paths.get_characters_path())
+    outline = load_file(paths.get_outline_path())
+    canon_text = load_file(paths.get_canon_path())
     canon_foundation, canon_core, canon_disclosure = parse_canon(canon_text)
     
     # Chapter-specific context
@@ -210,7 +205,7 @@ def main():
     active_debts_to_resolve = []
     if chapter_harvests:
         try:
-            state_path = utils.get_project_dir() / "state.json"
+            state_path = paths.get_project_dir() / "state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             debts = state.get("debts", [])
             for h_slug in chapter_harvests:
@@ -232,11 +227,11 @@ You MUST write prose in this chapter that resolves these setups naturally.
 """
     
     # Previous chapter (if exists) — full ~600-word tail starting at a sentence boundary
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     prev_path = chapters_dir / f"ch_{chapter_num - 1:02d}.md"
     if prev_path.exists():
         prev_text = prev_path.read_text(encoding="utf-8")
-        prev_tail = utils.tail_context(prev_text, max_words=600)
+        prev_tail = textstats.tail_context(prev_text, max_words=600)
     else:
         prev_tail = "(first chapter -- no previous)"
 
@@ -302,7 +297,7 @@ Write continuous prose with no section breaks between beats — the transition
 between beats should be a natural prose transition, not a labeled divider.
 """
         # Check premise validation flag
-        prem_val_path = utils.get_project_dir() / "premise_validation.json"
+        prem_val_path = paths.get_project_dir() / "premise_validation.json"
         if prem_val_path.exists():
             prem_val = json.loads(prem_val_path.read_text(encoding="utf-8"))
             if not prem_val.get("passed"):
@@ -450,7 +445,7 @@ Write the chapter now. Full text, beginning to end.
 
     # Save
     out_path = chapters_dir / f"ch_{chapter_num:02d}.md"
-    out_path.write_text(utils.normalize_chapter_heading(result, chapter_num), encoding="utf-8")
+    out_path.write_text(outline.normalize_chapter_heading(result, chapter_num), encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
     print(result)

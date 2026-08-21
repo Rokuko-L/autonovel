@@ -5,6 +5,7 @@ Measures the things the voice doc says SHOULD be true and checks if they ARE.
 
 Outputs: voice_fingerprint.json with per-chapter metrics.
 """
+import paths
 import _utf8
 import re
 import sys
@@ -13,7 +14,6 @@ import statistics
 from pathlib import Path
 from collections import Counter
 from dotenv import load_dotenv
-import utils
 load_dotenv()
 
 # The three vocabulary wells from voice.md
@@ -144,7 +144,7 @@ def analyze_chapter(path):
 
 def main():
     results = {}
-    for ch_path in sorted(utils.get_chapters_dir().glob("ch_*.md")):
+    for ch_path in sorted(paths.get_chapters_dir().glob("ch_*.md")):
         ch_key = ch_path.stem
         results[ch_key] = analyze_chapter(ch_path)
     
@@ -197,7 +197,7 @@ def main():
             print(f"    {o}")
     
     # Save full results
-    out_path = utils.get_edit_logs_dir() / "voice_fingerprint.json"
+    out_path = paths.get_edit_logs_dir() / "voice_fingerprint.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"chapters": results, "outliers": outliers}, f, indent=2)
     print(f"\nSaved to {out_path}")

@@ -1,3 +1,4 @@
+import paths
 import sys
 import os
 import subprocess
@@ -5,7 +6,6 @@ from pathlib import Path
 
 # Add project root to path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-import utils
 import run_pipeline
 
 def main():
@@ -25,7 +25,7 @@ def main():
     
     # 2. Test Git Revert behavior
     print("\nTesting Git Revert behavior...")
-    ch1_path = utils.get_chapters_dir() / "ch_01.md"
+    ch1_path = paths.get_chapters_dir() / "ch_01.md"
     original_text = ch1_path.read_text(encoding="utf-8")
     original_wc = len(original_text.split())
     print(f"Current Ch 1 on disk before test: {original_wc} words")
@@ -42,14 +42,14 @@ def main():
     if hist_best_commit == "HEAD":
         tracked_res = run_pipeline.run_tool(
             "git ls-files --error-unmatch chapters/ch_01.md",
-            cwd=str(utils.get_project_dir())
+            cwd=str(paths.get_project_dir())
         )
         if tracked_res.returncode == 0:
-            run_pipeline.run_tool("git checkout HEAD -- chapters/ch_01.md", cwd=str(utils.get_project_dir()))
+            run_pipeline.run_tool("git checkout HEAD -- chapters/ch_01.md", cwd=str(paths.get_project_dir()))
         else:
             ch1_path.unlink(missing_ok=True)
     else:
-        run_pipeline.run_tool(f"git checkout {hist_best_commit} -- chapters/ch_01.md", cwd=str(utils.get_project_dir()))
+        run_pipeline.run_tool(f"git checkout {hist_best_commit} -- chapters/ch_01.md", cwd=str(paths.get_project_dir()))
         
     # Read the text back and verify it was restored to the historical best commit (2870 words)
     restored_text = ch1_path.read_text(encoding="utf-8")

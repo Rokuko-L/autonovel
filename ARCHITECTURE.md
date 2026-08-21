@@ -15,8 +15,6 @@ Core library (imported by every script)
 │                   plants/harvests validation, debt extraction
 ├── textstats.py    Context windows (tail/head), repetition detection
 ├── novel_tex.py    Default LaTeX novel.tex template generation
-├── utils.py        FACADE — re-exports all public names above; legacy
-│                   call sites keep working. New code: import the module directly.
 ├── validation.py   Pydantic schema layer for LLM output (parse_validated)
 └── mock_llm.py     Offline LLM mock for tests (MockLLM.install())
 
@@ -32,7 +30,7 @@ Pipeline
 └── gui.py            Desktop GUI (customtkinter)
 
 Data (per-project, under projects/<name>/)
-├── prompts/*.md      Shared prompt templates (loaded via utils.load_prompt)
+├── prompts/*.md      Shared prompt templates (loaded via paths.load_prompt)
 └── CRAFT.md, ANTI-SLOP.md, voice.md, MYSTERY.md, notes_template.md
                      PIPELINE FUEL — runtime LLM prompt material, NOT agent docs
 ```

@@ -4,19 +4,19 @@ Rebuild outline.md from the actual chapters.
 Reads each chapter, calls the LLM for a structured summary,
 and assembles into an outline that reflects the novel as-written.
 """
+from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+import paths
 import os
 import sys
 import json
 import re
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
 load_dotenv()
 
 def parse_json(text):
-    return utils.parse_json_response(text)
+    return llm.parse_json_response(text)
 
 
 def call_model(prompt, max_tokens=1500):
@@ -24,7 +24,7 @@ def call_model(prompt, max_tokens=1500):
 
 def process_chapter_outline(path, ch, text, wc, title_line):
     import time
-    from utils import TruncationError
+    from llm import TruncationError
 
     prompt = f"""Analyze this chapter and produce a structured outline entry.
 
@@ -78,9 +78,9 @@ JSON only, no other text."""
     return data
 def main():
     # Load supporting docs for context
-    characters = utils.get_characters_path().read_text(encoding="utf-8")[:3000]
+    characters = paths.get_characters_path().read_text(encoding="utf-8")[:3000]
     
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     chapter_files = sorted(chapters_dir.glob("ch_*.md"))
     if not chapter_files:
         print("No chapter files found!")
@@ -129,14 +129,14 @@ def main():
     
     # Load existing outline header info
     try:
-        old_outline = utils.get_outline_path().read_text(encoding="utf-8", errors="ignore")
+        old_outline = paths.get_outline_path().read_text(encoding="utf-8", errors="ignore")
     except Exception:
         old_outline = ""
     
     # Load dynamic title and cycle
-    title = utils.get_novel_title()
+    title = paths.get_novel_title()
     cycle_str = ""
-    state_path = utils.get_state_path()
+    state_path = paths.get_state_path()
     if state_path.is_file():
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -221,7 +221,7 @@ def main():
     lines.append(f"*Outline rebuilt from actual chapters{cycle_str}.*")
     
     out = '\n'.join(lines)
-    utils.get_outline_path().write_text(out, encoding="utf-8")
+    paths.get_outline_path().write_text(out, encoding="utf-8")
     print(f"\nSaved outline.md ({len(out.split())} words)")
 
 if __name__ == "__main__":

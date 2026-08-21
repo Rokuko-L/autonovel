@@ -6,14 +6,14 @@ What gets cut reveals what's weakest. The cut list IS the revision plan.
 Usage: python adversarial_edit.py 1        # single chapter
        python adversarial_edit.py all      # all chapters
 """
+from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+import paths
 import os
 import sys
 import json
 import re
 from pathlib import Path
 from dotenv import load_dotenv
-import utils
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
 
 load_dotenv()
 
@@ -21,20 +21,20 @@ def call_judge(prompt, max_tokens=8000):
     return call_anthropic(prompt=prompt, system="You are a ruthless literary editor. You cut fat from prose. You have no sentiment about good-enough sentences -- if a sentence isn't earning its place, it goes. You quote exactly from the text. You never invent or paraphrase. Always respond with valid JSON.", model_key="judge", max_tokens=max_tokens, temperature=0.3, timeout=300)
 
 def parse_json(text):
-    return utils.parse_json_response(text)
+    return llm.parse_json_response(text)
 
-EDIT_PROMPT = utils.load_prompt("adversarial_edit")
+EDIT_PROMPT = paths.load_prompt("adversarial_edit")
 
 def edit_chapter(ch_num):
-    chapters_dir = utils.get_chapters_dir()
-    edit_log_dir = utils.get_edit_logs_dir()
+    chapters_dir = paths.get_chapters_dir()
+    edit_log_dir = paths.get_edit_logs_dir()
     ch_path = chapters_dir / f"ch_{ch_num:02d}.md"
     text = ch_path.read_text(encoding="utf-8")
     word_count = len(text.split())
 
     # Load canon disclosure ceiling (everything revealed through prior chapters)
     canon_text = ""
-    canon_path = utils.get_canon_path()
+    canon_path = paths.get_canon_path()
     if canon_path.exists():
         raw = canon_path.read_text(encoding="utf-8")
         as_of_sections = re.findall(r'(## As of Chapter \d+.*?)(?=\n## |\Z)', raw, re.DOTALL)
@@ -94,10 +94,10 @@ def main():
     args = parser.parse_args()
 
     if args.project:
-        utils.set_project_name(args.project)
+        paths.set_project_name(args.project)
 
     if args.chapter == "all":
-        chapters = sorted([int(m.group(1)) for p in utils.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
+        chapters = sorted([int(m.group(1)) for p in paths.get_chapters_dir().glob("ch_*.md") if (m := re.match(r"ch_(\d+)\.md", p.name))])
     else:
         try:
             chapters = [int(args.chapter)]

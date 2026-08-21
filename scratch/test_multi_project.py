@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test_multi_project.py — Verifies multi-project isolation using utils helpers.
+test_multi_project.py — Verifies multi-project isolation using path helpers.
 
 Tests:
   1. Two projects get separate directories under projects/
@@ -20,7 +20,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import utils
 import paths
 
 PASS = "[PASS]"
@@ -46,15 +45,15 @@ def test_project_dir_isolation(tmp_root: Path):
     paths._root_dir = tmp_root
 
     try:
-        utils.set_project_name("alpha")
-        alpha_dir = utils.get_project_dir()
-        alpha_chapters = utils.get_chapters_dir()
-        alpha_state = utils.get_state_path()
+        paths.set_project_name("alpha")
+        alpha_dir = paths.get_project_dir()
+        alpha_chapters = paths.get_chapters_dir()
+        alpha_state = paths.get_state_path()
 
-        utils.set_project_name("beta")
-        beta_dir = utils.get_project_dir()
-        beta_chapters = utils.get_chapters_dir()
-        beta_state = utils.get_state_path()
+        paths.set_project_name("beta")
+        beta_dir = paths.get_project_dir()
+        beta_chapters = paths.get_chapters_dir()
+        beta_state = paths.get_state_path()
 
         check("alpha dir != beta dir", alpha_dir != beta_dir,
               f"{alpha_dir} vs {beta_dir}")
@@ -71,7 +70,7 @@ def test_project_dir_isolation(tmp_root: Path):
         sentinel.write_text("alpha content", encoding="utf-8")
 
         # Beta's glob should not see it
-        utils.set_project_name("beta")
+        paths.set_project_name("beta")
         beta_chapters.mkdir(parents=True, exist_ok=True)
         beta_files = list(beta_chapters.glob("ch_*.md"))
         check("alpha file not visible from beta chapters",
@@ -89,12 +88,12 @@ def test_registry_atomic_write(tmp_root: Path):
     paths._root_dir = tmp_root
 
     try:
-        reg_path = utils.get_registry_path()
+        reg_path = paths.get_registry_path()
         reg_path.parent.mkdir(parents=True, exist_ok=True)
 
         registry = {}
         registry["project_a"] = {"title": "A Novel", "phase": "foundation"}
-        utils.save_registry(registry, reg_path)
+        paths.save_registry(registry, reg_path)
 
         # Verify written correctly
         loaded = json.loads(reg_path.read_text(encoding="utf-8"))
@@ -104,7 +103,7 @@ def test_registry_atomic_write(tmp_root: Path):
 
         # Add second project atomically
         registry["project_b"] = {"title": "B Novel", "phase": "drafting"}
-        utils.save_registry(registry, reg_path)
+        paths.save_registry(registry, reg_path)
         loaded2 = json.loads(reg_path.read_text(encoding="utf-8"))
         check("registry has both projects",
               "project_a" in loaded2 and "project_b" in loaded2)
@@ -121,14 +120,14 @@ def test_path_isolation_violation():
     try:
         raised = False
         try:
-            utils.set_project_name("../escape")
+            paths.set_project_name("../escape")
         except ValueError:
             raised = True
         check("path traversal raises ValueError", raised)
 
         raised = False
         try:
-            utils.set_project_name(".")
+            paths.set_project_name(".")
         except ValueError:
             raised = True
         check("dot project name raises ValueError", raised)
@@ -140,7 +139,7 @@ def test_path_isolation_violation():
 def test_get_root_dir_raises():
     """get_root_dir should raise RuntimeError on missing markers."""
     # Can't test this in-process without messing up state, just verify happy path
-    root = utils.get_root_dir()
+    root = paths.get_root_dir()
     check("get_root_dir returns valid path", root.is_dir(), str(root))
     check("get_root_dir has pyproject.toml or .env",
           (root / "pyproject.toml").exists() or (root / ".env").exists())
@@ -152,13 +151,13 @@ def test_state_isolation(tmp_root: Path):
     paths._root_dir = tmp_root
 
     try:
-        utils.set_project_name("novel_one")
-        state_one = utils.get_state_path()
+        paths.set_project_name("novel_one")
+        state_one = paths.get_state_path()
         state_one.parent.mkdir(parents=True, exist_ok=True)
         state_one.write_text('{"phase": "foundation"}', encoding="utf-8")
 
-        utils.set_project_name("novel_two")
-        state_two = utils.get_state_path()
+        paths.set_project_name("novel_two")
+        state_two = paths.get_state_path()
         check("state files are different", state_one != state_two)
         check("novel_two state does not exist yet", not state_two.exists())
 
@@ -182,20 +181,20 @@ def test_from_scratch_cleanup(tmp_root: Path):
     paths._root_dir = tmp_root
 
     try:
-        utils.set_project_name("scratch_project")
-        project_dir = utils.get_project_dir()
+        paths.set_project_name("scratch_project")
+        project_dir = paths.get_project_dir()
         project_dir.mkdir(parents=True, exist_ok=True)
 
         # Create mock directories and files
-        chapters_dir = utils.get_chapters_dir()
+        chapters_dir = paths.get_chapters_dir()
         ch2 = chapters_dir / "ch_02.md"
         ch2.write_text("stale chapter content", encoding="utf-8")
 
-        edit_logs = utils.get_edit_logs_dir()
+        edit_logs = paths.get_edit_logs_dir()
         log = edit_logs / "ch02_cuts.json"
         log.write_text("{}", encoding="utf-8")
 
-        state = utils.get_state_path()
+        state = paths.get_state_path()
         state.write_text("{}", encoding="utf-8")
 
         # Simulate the exact cleanup logic from run_pipeline.py
@@ -216,7 +215,7 @@ def test_from_scratch_cleanup(tmp_root: Path):
                     pass
 
         # Re-create empty folders like run_pipeline.py does
-        utils.get_chapters_dir()
+        paths.get_chapters_dir()
 
         check("stale ch_02.md deleted", not ch2.exists())
         check("stale log deleted", not log.exists())

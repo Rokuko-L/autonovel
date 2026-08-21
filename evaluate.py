@@ -13,6 +13,9 @@ This file is READ-ONLY during autonomous runs. The human edits it
 to tune what "good" means. The agent treats it as a black box.
 """
 
+from llm import TruncationError, call_anthropic, extract_text_from_response, get_max_tokens_with_thinking, parse_json_response
+import paths
+import textstats
 import argparse
 import json
 import os
@@ -27,9 +30,7 @@ from pathlib import Path
 # Load .env file if present
 from dotenv import load_dotenv
 load_dotenv()
-from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic, TruncationError
 from genre import load_genre
-import utils
 import validation
 
 
@@ -382,22 +383,22 @@ def load_file(path):
 def load_layer_files():
     """Load all planning layer files from the active project directory."""
     return {
-        "voice": load_file(utils.get_voice_path()),
-        "world": load_file(utils.get_world_path()),
-        "characters": load_file(utils.get_characters_path()),
-        "outline": load_file(utils.get_outline_path()),
-        "canon": load_file(utils.get_canon_path()),
+        "voice": load_file(paths.get_voice_path()),
+        "world": load_file(paths.get_world_path()),
+        "characters": load_file(paths.get_characters_path()),
+        "outline": load_file(paths.get_outline_path()),
+        "canon": load_file(paths.get_canon_path()),
     }
 
 
 def load_chapter(n):
     """Load a single chapter file from the active project."""
-    return load_file(utils.get_chapters_dir() / f"ch_{n:02d}.md")
+    return load_file(paths.get_chapters_dir() / f"ch_{n:02d}.md")
 
 
 def load_all_chapters():
     """Load all chapter files in order from the active project."""
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     chapters = {}
     for f in sorted(glob.glob(str(chapters_dir / "ch_*.md"))):
         num = int(re.search(r'ch_(\d+)', f).group(1))
@@ -418,10 +419,6 @@ def call_judge(prompt, max_tokens=2000):
                    "out of this narration mode, flag it under prose_quality or voice_adherence "
                    "with a specific quote of the offending passage.")
     return call_anthropic(prompt=prompt, system=system, model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
-
-
-def parse_json_response(text):
-    return utils.parse_json_response(text)
 
 
 def call_judge_json(prompt, max_tokens=8000, retries=3, model=None):
@@ -801,7 +798,7 @@ def evaluate_chapter(chapter_num):
 
     # Load previous chapter tail (600-word, sentence-boundary trimmed)
     prev_text = load_chapter(chapter_num - 1) if chapter_num > 1 else "(first chapter)"
-    prev_tail = utils.tail_context(prev_text, max_words=600) if chapter_num > 1 else prev_text
+    prev_tail = textstats.tail_context(prev_text, max_words=600) if chapter_num > 1 else prev_text
 
     # Extract disclosure ceiling from canon (everything revealed through chapter N-1)
     disclosure_ceiling = ""
@@ -821,7 +818,7 @@ def evaluate_chapter(chapter_num):
     active_debts_to_resolve = []
     if chapter_harvests:
         try:
-            state_path = utils.get_project_dir() / "state.json"
+            state_path = paths.get_project_dir() / "state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             debts = state.get("debts", [])
             for h_slug in chapter_harvests:
@@ -902,7 +899,7 @@ def evaluate_chapter(chapter_num):
 
 # --- Full Novel Evaluation ---
 
-FULL_NOVEL_PROMPT = utils.load_prompt("evaluate_full_novel")
+FULL_NOVEL_PROMPT = paths.load_prompt("evaluate_full_novel")
 
 
 def evaluate_full():
@@ -953,7 +950,7 @@ def evaluate_full():
 
 def _latest_chapter_score(ch_num: int) -> float | None:
     """Look up the most recent per-chapter eval score for chapter N from eval logs."""
-    eval_log_dir = utils.get_eval_logs_dir()
+    eval_log_dir = paths.get_eval_logs_dir()
     pattern = f"*_ch{ch_num:02d}.json"
     matches = sorted(eval_log_dir.glob(pattern))
     if not matches:
@@ -980,7 +977,7 @@ def main():
     args = parser.parse_args()
 
     if args.project:
-        utils.set_project_name(args.project)
+        paths.set_project_name(args.project)
 
     if args.phase == "foundation":
         result = evaluate_foundation()
@@ -1007,7 +1004,7 @@ def main():
     # Save full eval log
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     mode = args.phase or (f"ch{args.chapter:02d}" if args.chapter else "full")
-    eval_log_dir = utils.get_eval_logs_dir()  # also creates the directory
+    eval_log_dir = paths.get_eval_logs_dir()  # also creates the directory
     log_path = eval_log_dir / f"{timestamp}_{mode}.json"
     with open(log_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
