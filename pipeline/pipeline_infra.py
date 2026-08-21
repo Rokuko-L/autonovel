@@ -414,12 +414,16 @@ def process_notes(notes_input, genre):
     if not notes_input:
         return None
 
-    notes_path = Path(notes_input)
-    if notes_path.exists():
-        notes = notes_path.read_text(encoding="utf-8")
-        step(f"Read notes from file: {notes_input}")
+    notes_str = str(notes_input)
+    # Only treat input as a filesystem path when it can plausibly be one.
+    # Long inline premises crash Path.exists() with [Errno 36] ENAMETOOLONG
+    # on Linux (255-byte filename limit).
+    looks_like_path = len(notes_str) < 260 and "\n" not in notes_str
+    if looks_like_path and Path(notes_str).is_file():
+        notes = Path(notes_str).read_text(encoding="utf-8")
+        step(f"Read notes from file: {notes_str}")
     else:
-        notes = str(notes_input)
+        notes = notes_str
 
     word_count = len(notes.split())
     genre_str = genre or "the specified genre"
