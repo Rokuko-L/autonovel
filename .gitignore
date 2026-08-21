@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 AGENTS.md
+gui_config.json
