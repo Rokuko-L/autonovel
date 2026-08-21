@@ -2,7 +2,7 @@
 
 Step-by-step guide to running autonovel.
 
-For the full technical pipeline specification, see [PIPELINE.md](PIPELINE.md).
+For the full technical pipeline specification, see [pipeline/spec.md](pipeline/spec.md).
 
 ---
 

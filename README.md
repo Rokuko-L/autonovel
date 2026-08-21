@@ -177,7 +177,7 @@ All flags can also be set via environment variables (`AUTONOVEL_GENRE`, `AUTONOV
 
 ## Project Structure
 
-> The code module map (core library, pipeline, data flow) lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+> The code module map (core library, pipeline, data flow) lives in [Docs/overview.md](Docs/overview.md).
 
 ```
 .

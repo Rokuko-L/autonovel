@@ -1,4 +1,9 @@
-# Project: Autonovel Pipeline Refactoring
+# Project: Autonovel Pipeline Refactoring (COMPLETED — historical record)
+
+> Status: all milestones shipped. Note that `utils.py` has since been split
+> into `core/` modules (`paths.py`, `llm.py`, ...) — wherever this document
+> says "utils", read the corresponding concern module. Live contracts:
+> [../core/path-resolution.md](../core/path-resolution.md).
 
 ## Architecture
 Autonovel is a fully automated novel generation pipeline. The goal of this refactoring is to support multi-project isolation so that different novels/sessions can run concurrently under `projects/<project_name>/`.

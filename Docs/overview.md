@@ -1,0 +1,95 @@
+# autonovel — Overview
+
+An autonomous pipeline that writes a complete novel from a single premise:
+genre config → world/characters/outline/canon → chapter drafts → revision
+loops → typeset PDF. Every phase scores its output and only keeps
+improvements (modify → evaluate → keep/discard).
+
+> **Start here if unsure which doc to read.** This page cross-links everything.
+
+---
+
+## Code Architecture
+
+```
+core/             Shared library — no pipeline-specific logic
+├── paths.py        Project root/state resolution, folder+file path helpers,
+│                   prompt loader (load_prompt), atomic registry writes
+├── llm.py          Anthropic client (call_anthropic), response extraction,
+│                   healing JSON parser (parse_json_response)
+├── outline.py      Outline text ops: chapter headings, premise beats,
+│                   plants/harvests validation, debt extraction
+├── textstats.py    Context windows (tail/head), repetition detection
+├── novel_tex.py    Default LaTeX novel.tex template generation
+├── genre.py        Genre config loader + validator (active_genre.json)
+├── validation.py   Pydantic schema layer for LLM output (parse_validated)
+└── mock_llm.py     Offline LLM mock for tests (MockLLM.install())
+
+pipeline/         Orchestration and per-stage tooling
+├── run_pipeline.py   Phase controller + CLI (foundation/drafting/revision/export)
+├── pipeline_infra.py Git plumbing, registry/state persistence, score parsing
+├── evaluate.py       Scoring engine: mechanical slop + LLM judge
+└── ...               drafting/revision/export stage scripts
+
+foundation/       Foundation-phase generators (one script per document)
+├── gen_genre_framework.py / gen_world.py / gen_characters.py /
+├── gen_outline.py / gen_outline_part2.py / gen_canon.py /
+└── gen_title.py / seed.py
+
+prompts/*.md      Static prompt templates (loaded via paths.load_prompt)
+projects/<name>/  Per-novel isolated workspace (gitignored; own git repo)
+scratch/          Offline test suites
+```
+
+**Data flow:**
+
+```
+gen_*/stage scripts ──call──> llm.call_anthropic() ──> raw text
+                    ──parse──> llm.parse_json_response()   (syntax heal)
+                    ──validate──> validation.parse_validated()  (schema)
+                    ──write──> paths.get_*_path() targets under projects/<name>/
+run_pipeline.py orchestrates phases via pipeline_infra (state.json checkpoints,
+git keep/discard per attempt, results.tsv score log)
+```
+
+---
+
+## Documentation Map
+
+| Doc | Contents |
+|---|---|
+| [workflow.md](workflow.md) | Step-by-step run guide |
+| [pipeline/spec.md](pipeline/spec.md) | Full pipeline process spec (phases, revision loop) |
+| [pipeline/state-and-git.md](pipeline/state-and-git.md) | state.json, registry, git keep/discard plumbing |
+| [pipeline/scoring-engine.md](pipeline/scoring-engine.md) | How chapters get scored (slop + judge + penalties) |
+| [core/path-resolution.md](core/path-resolution.md) | Project isolation, path helpers, atomic writes |
+| [core/llm-client.md](core/llm-client.md) | API client, retries, truncation, JSON repair |
+| [core/output-validation.md](core/output-validation.md) | Pydantic schemas for LLM output, self-correction retries |
+| [core/prompt-management.md](core/prompt-management.md) | prompts/ directory and loader conventions |
+| [systems/mock-testing.md](systems/mock-testing.md) | Testing pipeline code offline with MockLLM |
+| [reference/test-infra.md](reference/test-infra.md) | E2E test infrastructure |
+| [reference/test-suites.md](reference/test-suites.md) | Offline suite index + how to run |
+| [reference/project-refactor.md](reference/project-refactor.md) | Multi-project refactor record (completed) |
+
+## Pipeline Fuel — NOT documentation
+
+These root files are **runtime LLM prompt material** consumed by the code.
+Never treat them as agent docs, never "clean them up", never move them:
+
+| File | Consumed by |
+|---|---|
+| `CRAFT.md` | `gen_world.py`, `gen_outline.py` |
+| `ANTI-SLOP.md` | pattern source for `evaluate.py` judge prompts |
+| `voice.md` | template copied into each project by `run_pipeline.py` |
+| `MYSTERY.md` | foundation-phase template (author's eyes only) |
+| `notes_template.md` | user premise template |
+
+## Key Rules (short version)
+
+1. All file I/O through `paths.py` helpers — never hardcode project paths.
+2. LLM JSON → Pydantic models in `validation.py`; feed
+   `OutputValidationError.feedback` back into self-correction retries.
+3. Static prompts live in `prompts/*.md`.
+4. Tests must pass offline (`mock_llm.MockLLM`); suites in `scratch/`.
+5. Atomic JSON writes only (tmp + rename).
+6. Import from the concern module directly — there is no umbrella module.

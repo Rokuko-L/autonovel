@@ -49,7 +49,7 @@ def main():
     print("To pick a seed, copy the concept you like into seed.txt:")
     print("  nano seed.txt")
     print("Or remix several concepts into your own seed.")
-    print("Then proceed to Step 2 in WORKFLOW.md.")
+    print("Then proceed to Step 2 in Docs/workflow.md.")
 
 
 if __name__ == "__main__":

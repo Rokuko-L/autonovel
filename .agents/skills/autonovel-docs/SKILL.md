@@ -23,28 +23,37 @@ This repo's markdown splits into two groups. Confusing them is the #1 mistake:
 never "clean them up" — editing them changes what the novel-writing LLM
 produces. They are data.
 
-### 2. Agent/human docs
+### 2. Agent/human docs (Docs/)
 
 | File | Contents |
 |---|---|
+| `Docs/overview.md` | entry point: module map, data flow, key rules, links to every doc |
+| `Docs/workflow.md` | step-by-step run guide |
+| `Docs/pipeline/spec.md` | full pipeline spec (phases, scoring, revision loop) |
+| `Docs/pipeline/state-and-git.md` | state.json, registry, git keep/discard plumbing |
+| `Docs/pipeline/scoring-engine.md` | how chapters get scored |
+| `Docs/core/path-resolution.md` | project isolation, path helpers, atomic writes |
+| `Docs/core/llm-client.md` | API client, retries, truncation, JSON repair |
+| `Docs/core/output-validation.md` | Pydantic schemas for LLM output |
+| `Docs/core/prompt-management.md` | prompts/ directory conventions |
+| `Docs/systems/mock-testing.md` | offline testing with MockLLM |
+| `Docs/reference/test-infra.md` | E2E test infrastructure |
+| `Docs/reference/test-suites.md` | offline suite index |
+| `Docs/reference/project-refactor.md` | completed multi-project refactor record |
 | `README.md` | install, quick start, CLI reference |
-| `ARCHITECTURE.md` | code module map, data flow, key rules, test suites |
-| `PIPELINE.md` | full pipeline spec (phases, scoring, revision loop) |
-| `WORKFLOW.md` | step-by-step run guide |
-| `TEST_INFRA.md` | E2E test infrastructure |
-| `PROJECT.md` | refactor tracker + interface contracts |
 | `AGENTS.md` | agent runbook (gitignored, local-only) |
 
 ## When to Update What
 
 After a code change, update:
 
-1. **New module / changed module responsibility** → `ARCHITECTURE.md` module map
-2. **Changed path helper signatures or new file layout** → `PROJECT.md` interface contracts + `TEST_INFRA.md`
-3. **Changed phase behavior, retry logic, thresholds** → `PIPELINE.md`
-4. **Changed CLI flags or env vars** → `README.md` config table + `AGENTS.md`
-5. **New/changed prompt template** → the `prompts/*.md` file itself; note it in `ARCHITECTURE.md` only if it adds a rule
-6. **New event type of failure the judge can produce** → consider a Pydantic model in `validation.py`, not more regex
+1. **New module / changed module responsibility** → `Docs/overview.md` module map (+ its own doc under `Docs/core/` or `Docs/pipeline/`)
+2. **Changed path helper signatures or new file layout** → `Docs/core/path-resolution.md` + `Docs/reference/test-infra.md`
+3. **Changed phase behavior, retry logic, thresholds** → `Docs/pipeline/spec.md` or `state-and-git.md`
+4. **Changed scoring/penalties** → `Docs/pipeline/scoring-engine.md`
+5. **Changed CLI flags or env vars** → `README.md` config table + `AGENTS.md`
+6. **New/changed prompt template** → the `prompts/*.md` file itself; note it in `Docs/core/prompt-management.md`
+7. **New judge JSON contract** → a Pydantic model in `core/validation.py`, documented in `Docs/core/output-validation.md`
 
 ## Guidelines
 
