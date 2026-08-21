@@ -154,6 +154,8 @@ Known behaviors (smoke run, 4-chapter test):
     revise down scores above 7). FIXED: after 3 consecutive non-improving
     iterations the loop proceeds with the best docs (FOUNDATION_PLATEAU_ITERS);
     the gate itself is overridable via AUTONOVEL_FOUNDATION_THRESHOLD.
+    Improvement is strict (pipeline_infra.foundation_plateau): a TIED score
+    counts as a stall, so a judge returning flat scores still exits early.
   - --notes accepts inline text or a file path; path resolution only kicks
     in for plausible paths (<260 chars, single line).
   - Writer chronically undershoots Chapter 1 word budgets. MITIGATED:

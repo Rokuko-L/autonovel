@@ -24,7 +24,7 @@ explanation designed to be pasted into a self-correction retry prompt.
 
 | Model | Required | Notes |
 |---|---|---|
-| `ScoreOutput` | `overall_score: float` (0–10) | Foundation/chapter evals. Extra keys allowed (dynamic genre dimensions). Coerces `"7.5"` and strips `/10`. |
+| `ScoreOutput` | `overall_score: float` (0–10) | Foundation/chapter evals. Extra keys allowed (dynamic genre dimensions). Coerces `"7.5"` and removes a literal `/10` suffix (`"6.1"` stays 6.1, `"10"` parses). |
 | `NovelScoreOutput` | `novel_score: float` (0–10) | Full-novel eval. Same coercion. |
 | `CompareOutput` | `winner: "A"\|"B"\|<chapter#>` | Head-to-head verdicts; normalizes case, accepts chapter numbers. |
 
