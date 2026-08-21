@@ -73,6 +73,7 @@ git keep/discard per attempt, results.tsv score log)
 | [reference/test-infra.md](reference/test-infra.md) | E2E test infrastructure |
 | [reference/test-suites.md](reference/test-suites.md) | Offline suite index + how to run |
 | [reference/project-refactor.md](reference/project-refactor.md) | Multi-project refactor record (completed) |
+| [reference/archive/](reference/archive/) | Superseded docs (ANTI-PATTERNS.md, program.md) — historical only |
 
 ## Pipeline Fuel — NOT documentation
 
