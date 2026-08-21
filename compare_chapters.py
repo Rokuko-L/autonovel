@@ -17,6 +17,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import utils
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic
+import validation
 
 load_dotenv()
 
@@ -76,7 +77,9 @@ def compare(ch_a, ch_b):
         text_a=text_a, text_b=text_b
     )
     raw = call_judge(prompt)
-    result = parse_json(raw)
+    result = validation.parse_validated(
+        validation.CompareOutput, raw, context=f"Ch {ch_a} vs Ch {ch_b} verdict"
+    ).model_dump()
     result["ch_a"] = ch_a
     result["ch_b"] = ch_b
     return result

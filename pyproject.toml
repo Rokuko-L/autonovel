@@ -8,4 +8,5 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "customtkinter>=5.2.2",
     "loguru>=0.7.3",
+    "pydantic>=2.0",
 ]

@@ -30,6 +30,7 @@ load_dotenv()
 from utils import extract_text_from_response, get_max_tokens_with_thinking, call_anthropic, TruncationError
 from genre import load_genre
 import utils
+import validation
 
 
 # ---- Mechanical Slop Detection (no LLM needed) ----
@@ -423,7 +424,14 @@ def parse_json_response(text):
     return utils.parse_json_response(text)
 
 
-def call_judge_json(prompt, max_tokens=8000, retries=3):
+def call_judge_json(prompt, max_tokens=8000, retries=3, model=None):
+    """Call the judge and return its JSON as a dict.
+
+    When `model` (a validation.ScoreOutput / NovelScoreOutput subclass) is
+    given, each response is schema-validated; shape failures join syntax
+    failures in the LLM self-correction retry loop. The validated model is
+    returned as a dict so downstream dict access keeps working.
+    """
     last_raw = None
     last_error = None
     for attempt in range(1, retries + 1):
@@ -447,7 +455,11 @@ Correct the JSON syntax errors in your previous response. Respond ONLY with the 
                 raw = call_judge(fix_prompt, max_tokens_fix)
             
             last_raw = raw
-            return parse_json_response(raw)
+            result = parse_json_response(raw)
+            if model is not None:
+                validated = validation.parse_validated(model, raw, context="Judge response")
+                return validated.model_dump()
+            return result
         except TruncationError:
             # Response hit the token cap. Retrying with the SAME-or-smaller budget is
             # guaranteed to truncate again — re-ask the original prompt with more room.
@@ -530,7 +542,7 @@ def evaluate_foundation():
     prompt = build_foundation_prompt()
     for key, val in layers.items():
         prompt = prompt.replace(f"{{{key}}}", val)
-    return call_judge_json(prompt, max_tokens=16000)
+    return call_judge_json(prompt, max_tokens=16000, model=validation.ScoreOutput)
 
 
 # --- Chapter Evaluation ---
@@ -831,7 +843,7 @@ def evaluate_chapter(chapter_num):
         disclosure_ceiling=disclosure_ceiling,
         debt_warnings=active_debts_to_resolve,
     )
-    result = call_judge_json(prompt, max_tokens=8000)
+    result = call_judge_json(prompt, max_tokens=8000, model=validation.ScoreOutput)
 
     # Mechanical slop check -- adjusts score independently of judge
     slop = slop_score(chapter_text)
@@ -970,7 +982,7 @@ def evaluate_full():
         chapter_summaries="\n".join(metadata),
     )
 
-    result = call_judge_json(prompt)
+    result = call_judge_json(prompt, model=validation.NovelScoreOutput)
 
     # Apply mechanical slop penalty across the full manuscript text
     full_text = "\n\n".join(chapters.get(i, "") for i in sorted(chapters.keys()))
