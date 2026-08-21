@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ruff — undefined names + redefinitions
+        run: uv run --frozen ruff check --select F821,F811 .
+
+      - name: Offline test suite (ruff gate + import scan + unittest)
+        run: uv run --frozen python -m unittest discover -s scratch -p "test_*.py"
+
+      - name: Offline proof — suite must stay green with a black-hole API endpoint
+        run: |
+          export ANTHROPIC_BASE_URL=http://127.0.0.1:9
+          uv run --frozen python -m unittest discover -s scratch -p "test_*.py"
