@@ -40,7 +40,7 @@ import re
 import sys
 from pathlib import Path
 
-import _utf8
+from core import _utf8
 from pipeline.evaluate import (
     PROSE_TIC_PATTERNS,
     FICTION_AI_TELLS,

@@ -21,7 +21,7 @@ from core.llm import call_anthropic
 from core.outline import validate_premise_beats
 from core import novel_tex
 from core import paths
-import _utf8
+from core import _utf8
 import argparse
 import json
 import os

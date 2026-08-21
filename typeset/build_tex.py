@@ -7,7 +7,7 @@ from pathlib import Path
 # Add project root to sys.path to find _utf8 and core modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import _utf8
+from core import _utf8
 import re
 import os
 from pathlib import Path
