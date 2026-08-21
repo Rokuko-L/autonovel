@@ -143,6 +143,21 @@ Key learnings:
   - Canon should have 400+ entries before exiting foundation
   - Voice discovery is a separate sub-loop: write trial passages,
     evaluate, select, refine
+
+Known behaviors (smoke run, 4-chapter test):
+  - Genre-framework Pass 2 requires generated prompt templates to contain
+    literal placeholders ({voice_part2}, {seed}, ...). Models sometimes drop
+    them; the meta-prompt ends with a FINAL CHECK checklist and missing
+    placeholders are auto-repaired deterministically instead of failing.
+  - Foundation scores can plateau below the 7.5 exit threshold when the
+    LLM-generated rubric for a genre is calibrated harshly (observed:
+    identical 6.0 across 5 consecutive iterations). The loop then churns
+    until MAX_FOUNDATION_ITERS. Workaround used in the field: bump
+    state.json foundation_score above threshold and resume — the pipeline's
+    own prev-best logic then exits after one more iteration. Proper fix
+    (foundation plateau detection, mirroring the revision loop) is pending.
+  - --notes accepts inline text or a file path; path resolution only kicks
+    in for plausible paths (<260 chars, single line).
 ```
 
 ### Phase 2: First Draft

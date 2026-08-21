@@ -27,6 +27,14 @@ uv run python run_pipeline.py --from-scratch
 > **Project Isolation & Seed Requirement**:
 > On the first run of a new project using `--from-scratch`, the pipeline requires either the `--notes` argument (which dynamically generates a project-specific seed) or a pre-existing project-specific seed at `projects/<project_name>/seed.txt`. If neither is provided, the pipeline will log a `[CONTAMINATION RISK]` warning and fall back to copying the root `seed.txt` template to the project space, or fail loudly if no template exists.
 
+> [!NOTE]
+> **`--notes` accepts a raw string or a file path.** Input is treated as a
+> path only when it plausibly is one (under 260 chars, single line);
+> anything else — including long inline premises — is used as the premise
+> text directly. Short notes (<300 words) are LLM-expanded, long ones
+> (>1500 words) are LLM-summarized for the genre framework while the full
+> text lands in the project's `seed.txt`.
+
 
 The pipeline will:
 1. Build the world, characters, outline, and voice (Phase 1)
