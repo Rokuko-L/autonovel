@@ -144,6 +144,8 @@ def run_foundation(state: dict) -> dict:
 
     best_score = state.get("foundation_score", 0.0)
     iteration = state.get("iteration", 0)
+    threshold = float(os.getenv("AUTONOVEL_FOUNDATION_THRESHOLD", str(FOUNDATION_THRESHOLD)))
+    stall_count = state.get("foundation_stall_count", 0)
 
     if iteration == 0:
         git_add_commit("initial project setup (seed, config)")
@@ -245,16 +247,31 @@ def run_foundation(state: dict) -> dict:
             best_score = score
             state["foundation_score"] = score
             state["lore_score"] = lore
+            stall_count = 0
             save_state(state)
         else:
             step(f"Score did not improve ({score} <= {best_score}), discarding")
             git_reset_hard("HEAD")
+            stall_count += 1
             log_result("discarded", "foundation", score, 0, "discard",
                        f"Iteration {i}: no improvement ({score} <= {best_score})")
 
-        # 4. Check exit condition
-        if best_score >= FOUNDATION_THRESHOLD:
-            step(f"Foundation score {best_score} >= {FOUNDATION_THRESHOLD} — PASSED")
+        state["foundation_stall_count"] = stall_count
+        save_state(state)
+
+        # 4. Check exit conditions: threshold pass, or plateau — the judge
+        # prompts instruct it to revise down scores above 7, so a harsh genre
+        # rubric can make the threshold structurally unreachable (observed:
+        # identical 6.0 across 5 iterations). Proceed with best docs instead
+        # of burning iterations.
+        if best_score >= threshold:
+            step(f"Foundation score {best_score} >= {threshold} — PASSED")
+            break
+        if stall_count >= FOUNDATION_PLATEAU_ITERS:
+            step(f"Foundation PLATEAU: {stall_count} consecutive iterations without "
+                 f"improvement (best {best_score} vs threshold {threshold}) — "
+                 f"proceeding to drafting with the best docs. Lower "
+                 f"AUTONOVEL_FOUNDATION_THRESHOLD to keep pushing.")
             break
     else:
         step(f"WARNING: max iterations ({MAX_FOUNDATION_ITERS}) reached "

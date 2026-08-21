@@ -60,6 +60,7 @@ class Tee:
         return self.original.fileno()
 
 FOUNDATION_THRESHOLD = 7.5
+FOUNDATION_PLATEAU_ITERS = 3   # consecutive non-improving iterations -> proceed with best docs
 
 CHAPTER_THRESHOLD = 6.5
 
