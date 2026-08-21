@@ -238,23 +238,24 @@ def run_foundation(state: dict) -> dict:
 
         step(f"Foundation score: {score}  (lore: {lore}, prev best: {best_score})")
 
-        # 3. Keep or discard
-        if score >= best_score:
+        # 3. Keep or discard (strict improvement — ties are stalls, else a
+        # flat-score judge never trips the plateau exit below)
+        prev_best = best_score
+        keep, best_score, stall_count = foundation_plateau(
+            score, best_score, stall_count)
+        if keep:
             commit_hash = git_add_commit(
                 f"foundation iter {i}: score {score} (lore {lore})")
             log_result(commit_hash, "foundation", score, 0, "keep",
-                       f"Iteration {i}: score improved {best_score} -> {score}")
-            best_score = score
+                       f"Iteration {i}: score improved {prev_best} -> {score}")
             state["foundation_score"] = score
             state["lore_score"] = lore
-            stall_count = 0
             save_state(state)
         else:
-            step(f"Score did not improve ({score} <= {best_score}), discarding")
+            step(f"Score did not improve ({score} <= {prev_best}), discarding")
             git_reset_hard("HEAD")
-            stall_count += 1
             log_result("discarded", "foundation", score, 0, "discard",
-                       f"Iteration {i}: no improvement ({score} <= {best_score})")
+                       f"Iteration {i}: no improvement ({score} <= {prev_best})")
 
         state["foundation_stall_count"] = stall_count
         save_state(state)

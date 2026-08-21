@@ -62,6 +62,18 @@ class Tee:
 FOUNDATION_THRESHOLD = 7.5
 FOUNDATION_PLATEAU_ITERS = 3   # consecutive non-improving iterations -> proceed with best docs
 
+
+def foundation_plateau(score: float, best_score: float, stall_count: int):
+    """Keep/discard decision for one foundation iteration.
+
+    Returns (keep, new_best_score, new_stall_count). Improvement is strict:
+    a tie counts as a stall, otherwise a judge returning flat scores (the
+    motivating plateau case) never trips FOUNDATION_PLATEAU_ITERS.
+    """
+    if score > best_score:
+        return True, score, 0
+    return False, best_score, stall_count + 1
+
 CHAPTER_THRESHOLD = 6.5
 
 MAX_FOUNDATION_ITERS = 20
