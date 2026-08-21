@@ -1685,7 +1685,7 @@ def run_pipeline(args):
                     if args.perspective:
                         cmd += ["--perspective", args.perspective]
                     subprocess.run(cmd, check=True, timeout=900)
-                    from genre import reload_genre
+                    from core.genre import reload_genre
                     reload_genre()
                     print("Genre config ready.\n")
 

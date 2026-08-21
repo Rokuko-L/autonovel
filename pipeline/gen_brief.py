@@ -261,7 +261,7 @@ def build_panel_brief(ch: int, extra_rules: list[str] | None = None) -> str:
     voice_rules = extract_voice_rules() + (extra_rules or [])
 
     # Determine brief type from dominant issue
-    from genre import load_genre
+    from core.genre import load_genre
     genre_cfg = load_genre()
     outline_cfg = genre_cfg.get("generation", {}).get("outline", {})
     estimated_words = outline_cfg.get("estimated_words", 32000)

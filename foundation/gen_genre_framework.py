@@ -224,7 +224,7 @@ def validate_placeholders(config):
 
 def validate_output(config):
     """Basic validation before writing. Returns list of errors."""
-    from genre import validate as full_validate
+    from core.genre import validate as full_validate
     errors = []
     try:
         full_validate(config)
@@ -367,7 +367,7 @@ def main():
                 "canon_categories": [],
                 "arc_summary_premise": "temp template with at least fifty characters in length to pass validations"
             }
-            from genre import validate as full_validate
+            from core.genre import validate as full_validate
             full_validate(temp_config)
             
             print("  Pass 1 successful.", file=sys.stderr)

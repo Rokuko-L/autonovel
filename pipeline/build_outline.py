@@ -28,7 +28,7 @@ def call_model(prompt, max_tokens=1500):
 
 def process_chapter_outline(path, ch, text, wc, title_line):
     import time
-    from llm import TruncationError
+    from core.llm import TruncationError
 
     prompt = f"""Analyze this chapter and produce a structured outline entry.
 
