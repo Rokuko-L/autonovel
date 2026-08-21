@@ -3,7 +3,7 @@ from pathlib import Path
 
 # Add parent dir to path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-import evaluate
+import pipeline.evaluate as evaluate
 
 def main():
     test_file = Path("scratch/test_utf16_dummy.md")

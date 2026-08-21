@@ -3,17 +3,18 @@
 import sys
 from pathlib import Path
 
-# Add project root to sys.path to find _utf8 and utils
+# Add project root to sys.path to find _utf8 and core modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import _utf8
+from core import paths
+
+from core import _utf8
 import re
 import os
 from pathlib import Path
-import utils
 
-CHAPTERS_DIR = utils.get_chapters_dir()
-OUT_DIR = utils.get_typeset_dir()
+CHAPTERS_DIR = paths.get_chapters_dir()
+OUT_DIR = paths.get_typeset_dir()
 
 def latex_escape(t):
     # Single-pass character escaping. Multi-pass .replace() chains re-scan their
@@ -187,7 +188,7 @@ for path in chapter_files:
     latex_body = make_drop_cap(latex_body)
     
     # Check for chapter ornament (prefer vector PDF over raster PNG)
-    art_base = str(utils.get_project_dir())
+    art_base = str(paths.get_project_dir())
     pdf_path = os.path.join(art_base, "art", "pdf", f"ornament_ch{n:02d}.pdf")
     png_path = os.path.join(art_base, "art", f"ornament_ch{n:02d}.png")
     ornament_tex = ""

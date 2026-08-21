@@ -134,6 +134,7 @@ Copy `.env.example` to `.env` and set:
 | `AUTONOVEL_CHAPTERS` | `24` | Default chapter count |
 | `AUTONOVEL_NOTES` | — | Default story premise |
 | `AUTONOVEL_PROJECT` | `default` | Active project name |
+| `AUTONOVEL_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
 
 ### Example: DeepSeek `.env`
 
@@ -177,50 +178,55 @@ All flags can also be set via environment variables (`AUTONOVEL_GENRE`, `AUTONOV
 
 ## Project Structure
 
+> The full module map and data flow live in [Docs/overview.md](Docs/overview.md).
+
 ```
 .
-├── active_genre.json        — Genre configuration (LLM-generated)
-├── seed.txt                 — Expanded story premise
-├── state.json               — Pipeline state tracker
-├── chapters/                — Drafted chapter files (ch_01.md, ...)
-├── briefs/                  — Revision briefs
-├── edit_logs/               — Evaluations and voice fingerprints
-├── typeset/                 — LaTeX build files (novel.tex, chapters_content.tex)
-├── projects/                — Multi-project workspaces
+├── core/                    Shared library (paths, llm, outline, textstats,
+│                            novel_tex, genre, validation, mock_llm)
+├── pipeline/                Stage scripts (evaluate, draft_chapter, review,
+│                            reader_panel, adversarial_edit, apply_cuts,
+│                            repair_slop, build_*, gen_brief, gen_revision,
+│                            sanitize_outline_titles, voice_fingerprint,
+│                            gen_novel_tex, pipeline_infra)
+├── foundation/              Foundation generators (gen_genre_framework,
+│                            gen_world, gen_characters, gen_outline*,
+│                            gen_canon, gen_title, seed)
+├── prompts/                 Static prompt templates
+├── Docs/                    Documentation (start at overview.md)
+├── projects/                Multi-project workspaces (gitignored)
 │   ├── registry.json
-│   ├── default/
-│   └── <project_name>/
-├── genres/                  — Genre configuration templates
-├── gen_*.py                 — Pipeline scripts (one per generation task)
-├── run_pipeline.py          — Full pipeline orchestrator
-├── evaluate.py              — Scoring engine (slop + LLM)
-├── install_fonts.py         — EB Garamond font installer
-└── gen_novel_tex.py         — LLM-powered LaTeX template generator
+│   └── <project_name>/      state.json, chapters/, eval_logs/, typeset/...
+├── scratch/                 Offline test suites
+├── typeset/                 LaTeX build helper
+├── run_pipeline.py          Pipeline orchestrator (entry point)
+├── gui.py                   Desktop GUI (entry point)
+└── install_fonts.py         EB Garamond font installer
 ```
 
 ## Scripts Reference
 
 | Script | Phase | Purpose |
 |--------|-------|---------|
-| `gen_genre_framework.py` | Foundation | Initialize genre config via 2-pass LLM meta-prompt |
-| `gen_world.py` | Foundation | Seed → world bible |
-| `gen_characters.py` | Foundation | Seed + world → character registry |
-| `gen_outline.py` | Foundation | Chapter-by-chapter outline |
-| `gen_outline_part2.py` | Foundation | Foreshadowing ledger |
-| `gen_canon.py` | Foundation | Cross-reference hard facts |
-| `voice_fingerprint.py` | Foundation | Quantitative prose analysis |
-| `draft_chapter.py` | Drafting | Write one chapter |
-| `run_drafts.py` | Drafting | Batch sequential drafter |
-| `evaluate.py` | All | Mechanical slop scorer + LLM judge |
-| `adversarial_edit.py` | Revision | "Cut 500 words" analysis |
-| `apply_cuts.py` | Revision | Batch cut applicator |
-| `reader_panel.py` | Revision | 4-persona evaluation |
-| `gen_brief.py` | Revision | Auto-generate revision briefs |
-| `gen_revision.py` | Revision | Rewrite from a brief |
-| `review.py` | Revision | Full-manuscript dual-persona review |
-| `build_arc_summary.py` | Revision | Generate arc summary |
-| `compare_chapters.py` | Revision | Head-to-head Elo tournament |
-| `gen_novel_tex.py` | Export | Generate custom LaTeX template via LLM |
+| `foundation/gen_genre_framework.py` | Foundation | Initialize genre config via 2-pass LLM meta-prompt |
+| `foundation/gen_world.py` | Foundation | Seed → world bible |
+| `foundation/gen_characters.py` | Foundation | Seed + world → character registry |
+| `foundation/gen_outline.py` | Foundation | Chapter-by-chapter outline |
+| `foundation/gen_outline_part2.py` | Foundation | Foreshadowing ledger |
+| `foundation/gen_canon.py` | Foundation | Cross-reference hard facts |
+| `pipeline/voice_fingerprint.py` | Foundation | Quantitative prose analysis |
+| `pipeline/draft_chapter.py` | Drafting | Write one chapter |
+| `pipeline/run_drafts.py` | Drafting | Batch sequential drafter |
+| `pipeline/evaluate.py` | All | Mechanical slop scorer + LLM judge |
+| `pipeline/adversarial_edit.py` | Revision | "Cut 500 words" analysis |
+| `pipeline/apply_cuts.py` | Revision | Batch cut applicator |
+| `pipeline/reader_panel.py` | Revision | 4-persona evaluation |
+| `pipeline/gen_brief.py` | Revision | Auto-generate revision briefs |
+| `pipeline/gen_revision.py` | Revision | Rewrite from a brief |
+| `pipeline/review.py` | Revision | Full-manuscript dual-persona review |
+| `pipeline/build_arc_summary.py` | Revision | Generate arc summary |
+| `pipeline/compare_chapters.py` | Revision | Head-to-head Elo tournament |
+| `pipeline/gen_novel_tex.py` | Export | Generate custom LaTeX template via LLM |
 | `run_pipeline.py` | Orchestration | Full pipeline controller |
 | `gui.py` | — | Desktop GUI (customtkinter) |
 

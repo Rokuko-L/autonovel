@@ -1,3 +1,5 @@
+from core.llm import call_anthropic
+from core import paths
 import os
 import sys
 import re
@@ -6,13 +8,11 @@ import json
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import utils
-from utils import call_anthropic
 
-utils.set_project_name("serious")
+paths.set_project_name("serious")
 
 def get_current_chapters():
-    chapters_dir = utils.get_chapters_dir()
+    chapters_dir = paths.get_chapters_dir()
     return sorted(chapters_dir.glob("ch_*.md"))
 
 def generate_title(ch_num, summary):
@@ -37,7 +37,7 @@ def main():
     chapters = get_current_chapters()
     
     # Load outline.md to parse current summaries
-    outline_path = utils.get_outline_path()
+    outline_path = paths.get_outline_path()
     outline_text = outline_path.read_text(encoding="utf-8")
     
     # Simple regex to extract summaries from outline

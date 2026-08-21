@@ -1,0 +1,456 @@
+"""Outline text operations: headings, premise beats, plants/harvests."""
+
+import re
+import sys
+
+from core.paths import get_outline_path
+
+
+def normalize_chapter_heading(text: str, chapter_num: int) -> str:
+    """Normalize a chapter file's first line to '# Chapter N: <title>'.
+
+    Draft/revision LLMs sometimes emit the title as '**Chapter N: Title**',
+    '# **Title**', or with trailing emphasis residue. Unify the header format
+    so build_tex.py, build_outline.py, and the manuscript always see a
+    consistent title line. Leaves the text untouched when the first line is
+    prose, not a title.
+
+    The title itself is overridden by the foundation outline's title for the
+    chapter (when one exists) — the outline is the single source of truth for
+    chapter titles, so drafter/revision LLM title drift (slug codenames,
+    'The X' inflation) is mechanically corrected at write time.
+    """
+    stripped = text.lstrip('\n')
+    lines = stripped.split('\n', 1)
+    first = lines[0].strip()
+    rest = lines[1] if len(lines) > 1 else ''
+
+    m = re.match(r'^#{1,6}\s*(.+?)\s*$', first)
+    if not m:
+        m = re.match(r'^\*\*(.+?)\*\*\s*$', first)
+    if not m:
+        return text
+    title = m.group(1).strip().strip('*').strip()
+    # Drop a leading "Chapter N" label only when it's separated from the real
+    # title (": ", em/en dash) or is the entire title ("Chapter 20").
+    title = re.sub(
+        r'^Chapter\s+\d+\s*[:—–-]\s*', '', title, flags=re.IGNORECASE
+    ).strip()
+    if re.fullmatch(r'Chapter\s+\d+', title, flags=re.IGNORECASE):
+        title = ''
+
+    foundation_title = _foundation_chapter_title(chapter_num)
+    if foundation_title:
+        title = foundation_title
+
+    heading = f'# Chapter {chapter_num}: {title}' if title else f'# Chapter {chapter_num}'
+    return '\n'.join([heading, rest]).rstrip() + '\n'
+
+def _foundation_chapter_title(chapter_num: int) -> str:
+    """Return the foundation outline's title for a chapter, or ''.
+
+    Scoped to the DETAILED section so a HIGH-LEVEL ROADMAP one-liner is never
+    picked instead of the real entry. Handles both '### Chapter N:' (fresh
+    outlines) and '### Ch N:' (rebuilt post-export outlines).
+    """
+    outline_path = get_outline_path()
+    if not outline_path.exists():
+        return ''
+    try:
+        outline_text = outline_path.read_text(encoding='utf-8')
+    except Exception:
+        return ''
+    if '## DETAILED CHAPTER OUTLINES' in outline_text:
+        outline_text = outline_text.split('## DETAILED CHAPTER OUTLINES', 1)[1]
+    pattern = rf'^###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b.*?[:—–][ \t]*(.+?)[ \t]*$'
+    m = re.search(pattern, outline_text, re.IGNORECASE | re.MULTILINE)
+    if not m:
+        return ''
+    title = m.group(1).strip().strip('*').strip()
+    # Reject snake_case codenames and empty labels so a sanitize failure can't
+    # propagate slug titles into the manuscript.
+    if re.search(r'[a-z]_[a-z]', title):
+        return ''
+    return title
+
+def validate_generator_output(content: str, name: str, min_len: int = 100, expected_headers: list[str] | None = None) -> str:
+    """Guardrail: check a foundation generator's output is non-empty, meets min length,
+    and has expected headers. Returns the stripped content on success.
+    Raises RuntimeError on failure."""
+    content = content.strip()
+    if not content:
+        raise RuntimeError(f"{name}: output is empty")
+    if len(content) < min_len:
+        raise RuntimeError(f"{name}: output too short ({len(content)} chars, minimum {min_len})")
+    if expected_headers:
+        for h in expected_headers:
+            if h not in content:
+                raise RuntimeError(f"{name}: output missing expected header '{h}'")
+    return content
+
+def _normalize_beat_label(label: str) -> str:
+    """Normalize a beat label for fuzzy matching — remove bold, POV, numbering."""
+    label = re.sub(r'\*\*', '', label)
+    label = re.sub(r'\([^)]*\)', '', label)
+    label = re.sub(r'^\d+[\.\)]\s*', '', label)
+    label = label.replace('_', ' ').replace('/', ' ').replace('-', ' ')
+    label = re.sub(r'\s+', ' ', label).strip()
+    return label.lower()
+
+def _beats_match(required: str, present: str) -> bool:
+    """Token-set containment check: all required words appear in present label."""
+    r_tokens = set(_normalize_beat_label(required).split())
+    p_tokens = set(_normalize_beat_label(present).split())
+    return r_tokens.issubset(p_tokens) and len(r_tokens) > 0
+
+def _parse_bold_numbered_beats(outline_text: str) -> list[dict]:
+    """Fallback — extract beats from bold-numbered header format.
+
+    Handles:
+      **1. beat_label (POV info)**
+      Paragraph text accumulates as scene_summary until next beat header.
+      *1. beat_label* (single-asterisk variant)
+    """
+    lines = outline_text.split('\n')
+    in_section = False
+    beats = []
+    current_beat = None
+    current_summary: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        header_match = re.match(
+            r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
+        )
+        if header_match:
+            in_section = True
+            continue
+
+        if not in_section:
+            continue
+
+        end_match = re.match(
+            r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
+        )
+        if end_match:
+            if current_beat is not None:
+                beats.append({"beat": current_beat, "scene_summary": ' '.join(current_summary).strip()})
+            break
+
+        beat_header_match = re.match(
+            r'^\s*\*+\s*\d+[\.\)]\s+(.+?)\s*\*+\s*$', stripped
+        )
+        if beat_header_match:
+            if current_beat is not None:
+                beats.append({"beat": current_beat, "scene_summary": ' '.join(current_summary).strip()})
+            current_beat = beat_header_match.group(1).strip()
+            current_summary = []
+            continue
+
+        if current_beat is not None and stripped:
+            current_summary.append(stripped)
+
+    if in_section and current_beat is not None:
+        beats.append({"beat": current_beat, "scene_summary": ' '.join(current_summary).strip()})
+
+    return beats
+
+def _parse_plain_numbered_beats(outline_text: str) -> list[dict]:
+    """Fallback — extract beats from plain numbered format:
+
+      1. beat_label: scene summary
+      2. beat_label: scene summary
+
+    Matches the style most models naturally produce when told a 'numbered list'.
+    """
+    lines = outline_text.split('\n')
+    in_section = False
+    beats = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        header_match = re.match(
+            r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
+        )
+        if header_match:
+            in_section = True
+            continue
+
+        end_match = re.match(
+            r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
+        )
+        if in_section and end_match:
+            break
+
+        if in_section:
+            numbered_match = re.match(r'^\s*\d+[\.\)]\s+(.+)$', stripped)
+            if not numbered_match:
+                continue
+            content = numbered_match.group(1).strip()
+            colon_idx = content.find(':')
+            if colon_idx == -1:
+                beats.append({"beat": content.strip(), "scene_summary": ""})
+            else:
+                beat_label = content[:colon_idx].strip()
+                scene_summary = content[colon_idx + 1:].strip()
+                beats.append({"beat": beat_label, "scene_summary": scene_summary})
+
+    return beats
+
+def parse_premise_beats(outline_text: str) -> list[dict]:
+    """
+    Extract premise beats from Chapter 1's PREMISE BEATS section in the outline.
+    Returns list of {"beat": str, "scene_summary": str} in order found.
+    Returns empty list if no PREMISE BEATS section is found.
+
+    Tries three formats in order:
+      1. Bullet lines:  - beat_label: scene summary
+      2. Plain numbered: N. beat_label: scene summary
+      3. Bold-numbered: **N. beat_label (POV info)** then paragraph
+    """
+    lines = outline_text.split('\n')
+    in_section = False
+    beats = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        header_match = re.match(
+            r'^#{0,3}\s*\**\s*PREMISE\s+BEATS\**\s*:?\**\s*$', stripped, re.IGNORECASE
+        )
+        if header_match:
+            in_section = True
+            continue
+
+        end_match = re.match(
+            r'^(?:#{1,3}\s|MAIN\s+PLOT)', stripped, re.IGNORECASE
+        )
+        if in_section and end_match:
+            break
+
+        if in_section:
+            bullet_match = re.match(r'^[-*+]\s+(.+)$', stripped)
+            if not bullet_match:
+                continue
+            content = bullet_match.group(1).strip()
+            colon_idx = content.find(':')
+            if colon_idx == -1:
+                beats.append({"beat": content.strip(), "scene_summary": ""})
+            else:
+                beat_label = content[:colon_idx].strip()
+                scene_summary = content[colon_idx + 1:].strip()
+                beats.append({"beat": beat_label, "scene_summary": scene_summary})
+
+    if not beats:
+        beats = _parse_plain_numbered_beats(outline_text)
+    if not beats:
+        beats = _parse_bold_numbered_beats(outline_text)
+
+    return beats
+
+def validate_premise_beats(required_beats: list[str], outline_text: str) -> tuple[bool, str]:
+    """
+    Validate that the required premise beats appear in the outline.
+
+    Primary path: Chapter 1's PREMISE BEATS section contains all required
+    beats in relative order (subsequence match, not exact match — extra
+    unlisted beats between required ones are allowed).  Uses token-set
+    matching so human-readable labels like "Ordinary World / Otaku Life"
+    match slug keys like "ordinary_world_otaku_life".
+
+    Fallback path: if Chapter 1 has no PREMISE BEATS section, accept beats
+    distributed across the whole outline (the roadmap writer is told to
+    spread premise beats across early chapters), checking every chapter's
+    scene-beat/summary text for each required beat.
+
+    Returns (passed: bool, error_message: str).
+    """
+    ch1 = _chapter_entry(outline_text, 1)
+    present_labels = [b["beat"] for b in parse_premise_beats(ch1)] if ch1 else []
+
+    if present_labels:
+        missing = _find_missing_beats(required_beats, present_labels)
+        if not missing:
+            return True, ""
+        return False, f"Missing premise beat(s): {', '.join(missing)}"
+
+    # No PREMISE BEATS section in Chapter 1 — scan the whole outline for
+    # each required beat's tokens appearing in any chapter's text.
+    missing = [b for b in required_beats if not _beat_tokens_in_text(b, outline_text)]
+    if not missing:
+        return True, ""
+    return False, f"Missing premise beat(s): {', '.join(missing)}"
+
+def _chapter_entry(outline_text: str, chapter_num: int) -> str:
+    """Return the detailed outline entry text for a chapter, or '' if absent."""
+    idx = re.search(
+        rf'^###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*{chapter_num}\b',
+        outline_text, re.IGNORECASE | re.MULTILINE)
+    if not idx:
+        return ""
+    start = idx.start()
+    nxt = re.search(
+        r'^###\s*\*?\*?\s*(?:Chapter|Ch\.?)\s*\*?\*?\s*\d+\b',
+        outline_text[start + 1:], re.IGNORECASE | re.MULTILINE)
+    end = start + 1 + nxt.start() if nxt else len(outline_text)
+    return outline_text[start:end]
+
+def _find_missing_beats(required_beats: list[str], present_labels: list[str]) -> list[str]:
+    """Subsequence-match required beats against present labels, return missing."""
+    missing = []
+    it = iter(present_labels)
+    for required in required_beats:
+        found = False
+        for p in it:
+            if _beats_match(required, p):
+                found = True
+                break
+        if not found:
+            missing.append(required)
+    return missing
+
+def _beat_tokens_in_text(beat_label: str, text: str) -> bool:
+    """Check that every normalized token of a beat label is present in text.
+
+    Matches exact words first, then fuzzy word matches (e.g. 'rebirth' vs
+    'reborn') via difflib, so concept drift in the outline still validates.
+    """
+    import difflib
+    tokens = _normalize_beat_label(beat_label).split()
+    if not tokens:
+        return False
+    lowered = text.lower()
+    words = set(lowered.split())
+    for t in tokens:
+        if t in lowered:
+            continue
+        if difflib.get_close_matches(t, words, n=1, cutoff=0.6):
+            continue
+        return False
+    return True
+
+def validate_plants_harvests(outline_text: str) -> tuple[bool, str]:
+    """
+    Validate that all plants and harvests in outline.md are logically consistent:
+    - Every harvest must have a corresponding plant in an earlier chapter.
+    - Matches are resolved using slugs. If a slug doesn't match exactly, 
+      token-set overlap fallback is used.
+    """
+    import re
+    
+    # Split text by Chapter headings to locate each chapter's section
+    chapters_content = {}
+    current_ch = None
+    current_lines = []
+    
+    for line in outline_text.splitlines():
+        # Match Chapter headings with/without formatting
+        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\b', cleaned_line, re.IGNORECASE)
+        if m:
+            if current_ch is not None:
+                chapters_content[current_ch] = "\n".join(current_lines)
+            current_ch = int(m.group(1))
+            current_lines = []
+        if current_ch is not None:
+            current_lines.append(line)
+            
+    if current_ch is not None:
+        chapters_content[current_ch] = "\n".join(current_lines)
+
+    # Extract all plants and harvests from each chapter
+    plants = [] # list of dict: {"chapter": int, "slug": str, "desc": str}
+    harvests = [] # list of dict: {"chapter": int, "slug": str, "desc": str}
+    
+    tag_pattern = r'\[(Plant|Harvest):\s*([a-zA-Z0-9_-]+)\s*[:-]\s*[\'"]?([^\'\"\]]+)[\'"]?\]'
+    
+    for ch, content in chapters_content.items():
+        matches = re.findall(tag_pattern, content)
+        for tag_type, slug, desc in matches:
+            slug = slug.strip().lower()
+            desc = desc.strip().lower()
+            if tag_type.lower() == "plant":
+                plants.append({"chapter": ch, "slug": slug, "desc": desc})
+            else:
+                harvests.append({"chapter": ch, "slug": slug, "desc": desc})
+
+    errors = []
+    
+    # Check each harvest
+    for h in harvests:
+        matched_plant = None
+        # Try exact slug match
+        for p in plants:
+            if p["slug"] == h["slug"]:
+                matched_plant = p
+                break
+                
+        # If no exact slug match, try fuzzy matching via token-set overlap on description
+        if not matched_plant:
+            h_words = set(w for w in h["desc"].split() if len(w) >= 4)
+            best_overlap = 0
+            best_p = None
+            for p in plants:
+                p_words = set(w for w in p["desc"].split() if len(w) >= 4)
+                overlap = len(h_words.intersection(p_words))
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_p = p
+            if best_overlap >= 3: # Require at least 3 matching words of length >= 4
+                matched_plant = best_p
+                print(f"[INFO] Fuzzy matched harvest slug '{h['slug']}' with plant slug '{best_p['slug']}' via description token overlap.", file=sys.stderr)
+
+        if not matched_plant:
+            errors.append(f"Dangling harvest: '[Harvest: {h['slug']} - \"{h['desc']}\"]' in Chapter {h['chapter']} has no corresponding plant setup in previous chapters.")
+        elif matched_plant["chapter"] >= h["chapter"]:
+            errors.append(f"Order error: '[Harvest: {h['slug']}]' in Chapter {h['chapter']} occurs before or in the same chapter as its plant setup '[Plant: {matched_plant['slug']}]' in Chapter {matched_plant['chapter']}.")
+
+    if errors:
+        return False, "\n".join(errors)
+    return True, ""
+
+def extract_outline_debts(outline_text: str) -> list[str]:
+    """Extract all active plant slugs that have no corresponding harvest in the outline."""
+    import re
+    # Match Chapter headings with/without formatting
+    chapters_content = {}
+    current_ch = None
+    current_lines = []
+    
+    for line in outline_text.splitlines():
+        cleaned_line = line.strip().replace('*', '').replace('_', '')
+        m = re.match(r'^###\s*(?:Chapter|Ch\.?)\s*(\d+)\b', cleaned_line, re.IGNORECASE)
+        if m:
+            if current_ch is not None:
+                chapters_content[current_ch] = "\n".join(current_lines)
+            current_ch = int(m.group(1))
+            current_lines = []
+        if current_ch is not None:
+            current_lines.append(line)
+            
+    if current_ch is not None:
+        chapters_content[current_ch] = "\n".join(current_lines)
+
+    plants = []
+    harvests = []
+    tag_pattern = r'\[(Plant|Harvest):\s*([a-zA-Z0-9_-]+)\s*[:-]\s*[\'"]?([^\'\"\]]+)[\'"]?\]'
+    
+    for ch, content in chapters_content.items():
+        matches = re.findall(tag_pattern, content)
+        for tag_type, slug, desc in matches:
+            slug = slug.strip().lower()
+            desc = desc.strip().lower()
+            if tag_type.lower() == "plant":
+                plants.append({"chapter": ch, "slug": slug, "desc": desc})
+            else:
+                harvests.append({"chapter": ch, "slug": slug, "desc": desc})
+
+    harvested_slugs = {h["slug"] for h in harvests}
+    debts = []
+    for p in plants:
+        if p["slug"] not in harvested_slugs:
+            debts.append(f"Ch {p['chapter']} Setup: {p['slug']} - \"{p['desc']}\"")
+            
+    return debts

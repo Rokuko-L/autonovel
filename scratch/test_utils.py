@@ -1,20 +1,20 @@
+from core import paths
 import unittest
 import os
 import shutil
 import json
 from pathlib import Path
-import utils
 
 
 class TestUtils(unittest.TestCase):
     def setUp(self):
         # Store original environment and project name
         self.orig_env_project = os.environ.get("AUTONOVEL_PROJECT")
-        self.orig_project_name = utils._project_name
-        utils._project_name = None
+        self.orig_project_name = paths._project_name
+        paths._project_name = None
 
         # Determine workspace root
-        self.root = utils.get_root_dir()
+        self.root = paths.get_root_dir()
         self.test_projects_dir = self.root / "projects"
 
     def tearDown(self):
@@ -23,7 +23,7 @@ class TestUtils(unittest.TestCase):
             os.environ["AUTONOVEL_PROJECT"] = self.orig_env_project
         elif "AUTONOVEL_PROJECT" in os.environ:
             del os.environ["AUTONOVEL_PROJECT"]
-        utils._project_name = self.orig_project_name
+        paths._project_name = self.orig_project_name
 
         # Clean up any temporary folders created in projects
         test_project_path = self.test_projects_dir / "test_temp_project"
@@ -31,7 +31,7 @@ class TestUtils(unittest.TestCase):
             shutil.rmtree(test_project_path)
 
     def test_get_root_dir(self):
-        root_dir = utils.get_root_dir()
+        root_dir = paths.get_root_dir()
         self.assertTrue(root_dir.exists())
         self.assertTrue((root_dir / "pyproject.toml").exists() or (root_dir / ".env").exists())
 
@@ -39,15 +39,15 @@ class TestUtils(unittest.TestCase):
         # Default fallback
         if "AUTONOVEL_PROJECT" in os.environ:
             del os.environ["AUTONOVEL_PROJECT"]
-        self.assertEqual(utils.get_project_name(), "default")
+        self.assertEqual(paths.get_project_name(), "default")
 
         # Fallback to env var
         os.environ["AUTONOVEL_PROJECT"] = "env_project"
-        self.assertEqual(utils.get_project_name(), "env_project")
+        self.assertEqual(paths.get_project_name(), "env_project")
 
         # Explicit set overrides env var
-        utils.set_project_name("explicit_project")
-        self.assertEqual(utils.get_project_name(), "explicit_project")
+        paths.set_project_name("explicit_project")
+        self.assertEqual(paths.get_project_name(), "explicit_project")
 
     def test_save_registry_success(self):
         test_project_path = self.test_projects_dir / "test_temp_project"
@@ -55,7 +55,7 @@ class TestUtils(unittest.TestCase):
         registry_file = test_project_path / "registry.json"
 
         data = {"projects": ["project1", "project2"]}
-        utils.save_registry(data, registry_file)
+        paths.save_registry(data, registry_file)
 
         self.assertTrue(registry_file.exists())
         with open(registry_file, "r", encoding="utf-8") as f:
@@ -75,7 +75,7 @@ class TestUtils(unittest.TestCase):
         bad_data = {"projects": {1, 2, 3}}
 
         with self.assertRaises(Exception):
-            utils.save_registry(bad_data, registry_file)
+            paths.save_registry(bad_data, registry_file)
 
         # The target file shouldn't have been created
         self.assertFalse(registry_file.exists())
@@ -85,7 +85,7 @@ class TestUtils(unittest.TestCase):
         self.assertFalse(tmp_file.exists())
 
     def test_folder_helpers_create_dirs(self):
-        utils.set_project_name("test_temp_project")
+        paths.set_project_name("test_temp_project")
         project_path = self.test_projects_dir / "test_temp_project"
 
         # Before helper runs, the folders do not exist
@@ -96,11 +96,11 @@ class TestUtils(unittest.TestCase):
         self.assertFalse((project_path / "typeset").exists())
 
         # Call folder helpers
-        chapters_dir = utils.get_chapters_dir()
-        edit_logs_dir = utils.get_edit_logs_dir()
-        eval_logs_dir = utils.get_eval_logs_dir()
-        briefs_dir = utils.get_briefs_dir()
-        typeset_dir = utils.get_typeset_dir()
+        chapters_dir = paths.get_chapters_dir()
+        edit_logs_dir = paths.get_edit_logs_dir()
+        eval_logs_dir = paths.get_eval_logs_dir()
+        briefs_dir = paths.get_briefs_dir()
+        typeset_dir = paths.get_typeset_dir()
 
         # Check paths match and directories are created
         self.assertEqual(chapters_dir, project_path / "chapters")
@@ -119,78 +119,78 @@ class TestUtils(unittest.TestCase):
         self.assertTrue(typeset_dir.exists())
 
     def test_pure_file_helpers_no_side_effects(self):
-        utils.set_project_name("test_temp_project")
+        paths.set_project_name("test_temp_project")
         project_path = self.test_projects_dir / "test_temp_project"
 
         # Check file helper returns correct path, but does NOT create files or directories
-        self.assertEqual(utils.get_outline_path(), project_path / "outline.md")
-        self.assertFalse(utils.get_outline_path().exists())
+        self.assertEqual(paths.get_outline_path(), project_path / "outline.md")
+        self.assertFalse(paths.get_outline_path().exists())
 
-        self.assertEqual(utils.get_state_path(), project_path / "state.json")
-        self.assertFalse(utils.get_state_path().exists())
+        self.assertEqual(paths.get_state_path(), project_path / "state.json")
+        self.assertFalse(paths.get_state_path().exists())
 
-        self.assertEqual(utils.get_results_path(), project_path / "results.tsv")
-        self.assertFalse(utils.get_results_path().exists())
+        self.assertEqual(paths.get_results_path(), project_path / "results.tsv")
+        self.assertFalse(paths.get_results_path().exists())
 
-        self.assertEqual(utils.get_registry_path(), self.test_projects_dir / "registry.json")
+        self.assertEqual(paths.get_registry_path(), self.test_projects_dir / "registry.json")
 
-        self.assertEqual(utils.get_world_path(), project_path / "world.md")
-        self.assertFalse(utils.get_world_path().exists())
+        self.assertEqual(paths.get_world_path(), project_path / "world.md")
+        self.assertFalse(paths.get_world_path().exists())
 
-        self.assertEqual(utils.get_voice_path(), project_path / "voice.md")
-        self.assertFalse(utils.get_voice_path().exists())
+        self.assertEqual(paths.get_voice_path(), project_path / "voice.md")
+        self.assertFalse(paths.get_voice_path().exists())
 
-        self.assertEqual(utils.get_characters_path(), project_path / "characters.md")
-        self.assertFalse(utils.get_characters_path().exists())
+        self.assertEqual(paths.get_characters_path(), project_path / "characters.md")
+        self.assertFalse(paths.get_characters_path().exists())
 
-        self.assertEqual(utils.get_canon_path(), project_path / "canon.md")
-        self.assertFalse(utils.get_canon_path().exists())
+        self.assertEqual(paths.get_canon_path(), project_path / "canon.md")
+        self.assertFalse(paths.get_canon_path().exists())
 
-        self.assertEqual(utils.get_manuscript_path(), project_path / "manuscript.md")
-        self.assertFalse(utils.get_manuscript_path().exists())
+        self.assertEqual(paths.get_manuscript_path(), project_path / "manuscript.md")
+        self.assertFalse(paths.get_manuscript_path().exists())
 
-        self.assertEqual(utils.get_reviews_path(), project_path / "reviews.md")
-        self.assertFalse(utils.get_reviews_path().exists())
+        self.assertEqual(paths.get_reviews_path(), project_path / "reviews.md")
+        self.assertFalse(paths.get_reviews_path().exists())
 
-        self.assertEqual(utils.get_arc_summary_path(), project_path / "arc_summary.md")
-        self.assertFalse(utils.get_arc_summary_path().exists())
+        self.assertEqual(paths.get_arc_summary_path(), project_path / "arc_summary.md")
+        self.assertFalse(paths.get_arc_summary_path().exists())
 
         # Ensure project folder itself wasn't created either
         self.assertFalse(project_path.exists())
 
     def test_get_novel_title(self):
-        utils.set_project_name("test_temp_project")
+        paths.set_project_name("test_temp_project")
         project_path = self.test_projects_dir / "test_temp_project"
 
         # 1. Default fallback when state.json doesn't exist
-        self.assertEqual(utils.get_novel_title(), "the novel")
+        self.assertEqual(paths.get_novel_title(), "the novel")
 
         # 2. When state.json exists and has a title
         project_path.mkdir(parents=True, exist_ok=True)
-        state_path = utils.get_state_path()
+        state_path = paths.get_state_path()
         with open(state_path, "w", encoding="utf-8") as f:
             json.dump({"title": "A Great Novel Title"}, f)
 
-        self.assertEqual(utils.get_novel_title(), "A Great Novel Title")
+        self.assertEqual(paths.get_novel_title(), "A Great Novel Title")
 
         # 3. When state.json is invalid JSON
         with open(state_path, "w", encoding="utf-8") as f:
             f.write("{invalid_json")
 
-        self.assertEqual(utils.get_novel_title(), "the novel")
+        self.assertEqual(paths.get_novel_title(), "the novel")
 
     def test_get_novel_title_directory_error(self):
         # Test error handling when state.json is a directory
-        utils.set_project_name("test_temp_project")
+        paths.set_project_name("test_temp_project")
         project_path = self.test_projects_dir / "test_temp_project"
         project_path.mkdir(parents=True, exist_ok=True)
-        state_path = utils.get_state_path()
+        state_path = paths.get_state_path()
         
         # Create state.json as a directory instead of a file
         state_path.mkdir(parents=True, exist_ok=True)
         
         # We expect get_novel_title() to return "the novel" fallback rather than raising an exception.
-        self.assertEqual(utils.get_novel_title(), "the novel")
+        self.assertEqual(paths.get_novel_title(), "the novel")
             
         # Clean up the directory state.json so tearDown can clean up the project path
         state_path.rmdir()
@@ -203,9 +203,9 @@ class TestUtils(unittest.TestCase):
         # Let's test how format_prompt behaves.
         template = "{a} {b}"
         # Case 1: kwargs ordered as a, then b
-        res1 = utils.format_prompt(template, a="{b}", b="2")
+        res1 = paths.format_prompt(template, a="{b}", b="2")
         # Case 2: kwargs ordered as b, then a
-        res2 = utils.format_prompt(template, b="2", a="{b}")
+        res2 = paths.format_prompt(template, b="2", a="{b}")
         
         # We assert that the output depends on kwargs order
         self.assertNotEqual(res1, res2)
@@ -221,9 +221,9 @@ class TestUtils(unittest.TestCase):
 
         def run_thread(name, delay):
             try:
-                utils.set_project_name(name)
+                paths.set_project_name(name)
                 time.sleep(delay)
-                self.assertEqual(utils.get_project_name(), name)
+                self.assertEqual(paths.get_project_name(), name)
             except AssertionError as e:
                 errors.append(e)
 
@@ -240,7 +240,7 @@ class TestUtils(unittest.TestCase):
 
     def test_directory_existence_checks_file_collision(self):
         # Test collision where a file exists with the name of a folder helper
-        utils.set_project_name("test_temp_project")
+        paths.set_project_name("test_temp_project")
         project_path = self.test_projects_dir / "test_temp_project"
         project_path.mkdir(parents=True, exist_ok=True)
         
@@ -250,7 +250,7 @@ class TestUtils(unittest.TestCase):
         
         # Now call get_chapters_dir() which tries to mkdir 'chapters'
         with self.assertRaises(FileExistsError):
-            utils.get_chapters_dir()
+            paths.get_chapters_dir()
             
         chapters_file.unlink()
 
@@ -265,7 +265,7 @@ class TestUtils(unittest.TestCase):
         
         data = {"projects": ["project1"]}
         with self.assertRaises(Exception):
-            utils.save_registry(data, registry_dir)
+            paths.save_registry(data, registry_dir)
             
         # Ensure temporary file .tmp was cleaned up or not created
         tmp_file = registry_dir.with_suffix(".json.tmp")
