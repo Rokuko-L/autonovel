@@ -189,6 +189,15 @@ Generate the complete content generation configuration block ("generation") as v
 - "anti_pattern_rules" MUST include: 'POV characters never use real-world publishing/genre vocabulary ("isekai," "protagonist," "trope," "genre," "plot armor," "chapter," "narrator") to describe their own situation, unless the work is explicitly metafictional. Characters should think and speak as people in their world, not as writers or readers.'
 - All section headers and focus areas must align directly with what the prompt templates require.
 
+=== FINAL CHECK (verify before responding — configs missing these are REJECTED) ===
+Each generation prompt field MUST contain its literal placeholders, character-for-character:
+- "gen_world_prompt": {{seed}} AND {{voice_part2}}
+- "gen_characters_prompt": {{seed}} AND {{world}} AND {{voice_part2}}
+- "gen_outline_prompt": {{seed}} AND {{world}} AND {{characters}} AND {{voice_part2}} AND {{premise_arc_beats}}
+- "gen_outline_part2_prompt": {{part1}}
+- "gen_canon_prompt": {{seed}} AND {{world}} AND {{characters}}
+- "gen_chapter_title_rewriter_prompt": {{outline}} AND {{seed}}
+Re-read your own JSON output and confirm every placeholder above is present.
 """
 
 
@@ -232,6 +241,45 @@ def validate_output(config):
         errors.append(str(e))
     errors.extend(validate_placeholders(config))
     return errors
+
+
+# Deterministic last-resort repair: if the writer model drops a required
+# placeholder from a template, append a labeled block for it instead of
+# failing the whole foundation phase. The appended block is exactly what
+# the prompt rules asked the model to weave in anyway.
+PLACEHOLDER_REPAIR_BLOCKS = {
+    "{seed}": "\n\nSEED CONCEPT:\n{seed}",
+    "{world}": "\n\nWORLD BIBLE:\n{world}",
+    "{characters}": "\n\nCHARACTER REGISTRY:\n{characters}",
+    "{voice_part2}": "\n\nVOICE STYLE GUIDE (follow this voice strictly):\n{voice_part2}",
+    "{outline}": "\n\nCURRENT OUTLINE:\n{outline}",
+    "{part1}": "\n\nPART 1:\n{part1}",
+    "{premise_arc_beats}": "\n\nREQUIRED PREMISE ARC BEATS (in order):\n{premise_arc_beats}",
+}
+
+
+def repair_missing_placeholders(config):
+    """Append missing required placeholders to generation templates.
+
+    Returns a list of human-readable repairs applied. Only touches fields
+    that already exist; structural problems are left for validate_output.
+    """
+    applied = []
+    generation = config.get("generation", {})
+    for field, required in REQUIRED_PLACEHOLDERS.items():
+        prompt_str = generation.get(field)
+        if not isinstance(prompt_str, str):
+            continue
+        for ph in required:
+            doubled = ph.replace("{", "{{").replace("}", "}}")
+            if ph not in prompt_str and doubled not in prompt_str:
+                block = PLACEHOLDER_REPAIR_BLOCKS.get(ph)
+                if block is None:
+                    continue
+                generation[field] = prompt_str + block
+                prompt_str = generation[field]
+                applied.append(f"{field}: auto-appended {ph}")
+    return applied
 
 
 def main():
@@ -427,8 +475,17 @@ def main():
                 merged_config["generation"]["outline"]["estimated_chapters"] = chapter_count
                 merged_config["generation"]["outline"]["estimated_words"] = estimated_words
 
-            # Run full validation including placeholder checks
+            # Run full validation including placeholder checks. Missing
+            # placeholders are repaired deterministically instead of burning
+            # a retry — the model dropping {voice_part2} 3/3 times at
+            # temperature 0.7 killed whole runs (observed in smoke test).
             errors = validate_output(merged_config)
+            if errors:
+                repairs = repair_missing_placeholders(merged_config)
+                if repairs:
+                    for r in repairs:
+                        print(f"  Pass 2 auto-repair: {r}", file=sys.stderr)
+                    errors = validate_output(merged_config)
             if errors:
                 raise ValueError("\n".join(errors))
 
