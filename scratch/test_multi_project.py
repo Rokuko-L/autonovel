@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import utils
+import paths
 
 PASS = "[PASS]"
 FAIL = "[FAIL]"
@@ -41,8 +42,8 @@ def check(label, condition, detail=""):
 def test_project_dir_isolation(tmp_root: Path):
     """Projects A and B should have completely separate directories."""
     # Override root to tmp
-    orig_root = utils._root_dir
-    utils._root_dir = tmp_root
+    orig_root = paths._root_dir
+    paths._root_dir = tmp_root
 
     try:
         utils.set_project_name("alpha")
@@ -78,14 +79,14 @@ def test_project_dir_isolation(tmp_root: Path):
               f"beta glob returned: {beta_files}")
 
     finally:
-        utils._root_dir = orig_root
-        utils._project_name = None
+        paths._root_dir = orig_root
+        paths._project_name = None
 
 
 def test_registry_atomic_write(tmp_root: Path):
     """Registry should be written atomically and contain both projects."""
-    orig_root = utils._root_dir
-    utils._root_dir = tmp_root
+    orig_root = paths._root_dir
+    paths._root_dir = tmp_root
 
     try:
         reg_path = utils.get_registry_path()
@@ -110,13 +111,13 @@ def test_registry_atomic_write(tmp_root: Path):
         check("no .tmp file leftover", not reg_path.with_suffix(".json.tmp").exists())
 
     finally:
-        utils._root_dir = orig_root
-        utils._project_name = None
+        paths._root_dir = orig_root
+        paths._project_name = None
 
 
 def test_path_isolation_violation():
     """set_project_name should raise on path traversal attempts."""
-    orig_name = utils._project_name
+    orig_name = paths._project_name
     try:
         raised = False
         try:
@@ -133,7 +134,7 @@ def test_path_isolation_violation():
         check("dot project name raises ValueError", raised)
 
     finally:
-        utils._project_name = orig_name
+        paths._project_name = orig_name
 
 
 def test_get_root_dir_raises():
@@ -147,8 +148,8 @@ def test_get_root_dir_raises():
 
 def test_state_isolation(tmp_root: Path):
     """State files for different projects should be independent."""
-    orig_root = utils._root_dir
-    utils._root_dir = tmp_root
+    orig_root = paths._root_dir
+    paths._root_dir = tmp_root
 
     try:
         utils.set_project_name("novel_one")
@@ -171,14 +172,14 @@ def test_state_isolation(tmp_root: Path):
               data_one["phase"] == "foundation" and data_two["phase"] == "drafting")
 
     finally:
-        utils._root_dir = orig_root
-        utils._project_name = None
+        paths._root_dir = orig_root
+        paths._project_name = None
 
 
 def test_from_scratch_cleanup(tmp_root: Path):
     """from_scratch should clean up stale folders and files in the project workspace."""
-    orig_root = utils._root_dir
-    utils._root_dir = tmp_root
+    orig_root = paths._root_dir
+    paths._root_dir = tmp_root
 
     try:
         utils.set_project_name("scratch_project")
@@ -223,8 +224,8 @@ def test_from_scratch_cleanup(tmp_root: Path):
         check("chapters directory empty", len(list(chapters_dir.glob("*"))) == 0)
 
     finally:
-        utils._root_dir = orig_root
-        utils._project_name = None
+        paths._root_dir = orig_root
+        paths._project_name = None
 
 
 def main():

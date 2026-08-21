@@ -4,14 +4,15 @@ import shutil
 import json
 from pathlib import Path
 import utils
+import paths
 
 
 class TestUtils(unittest.TestCase):
     def setUp(self):
         # Store original environment and project name
         self.orig_env_project = os.environ.get("AUTONOVEL_PROJECT")
-        self.orig_project_name = utils._project_name
-        utils._project_name = None
+        self.orig_project_name = paths._project_name
+        paths._project_name = None
 
         # Determine workspace root
         self.root = utils.get_root_dir()
@@ -23,7 +24,7 @@ class TestUtils(unittest.TestCase):
             os.environ["AUTONOVEL_PROJECT"] = self.orig_env_project
         elif "AUTONOVEL_PROJECT" in os.environ:
             del os.environ["AUTONOVEL_PROJECT"]
-        utils._project_name = self.orig_project_name
+        paths._project_name = self.orig_project_name
 
         # Clean up any temporary folders created in projects
         test_project_path = self.test_projects_dir / "test_temp_project"

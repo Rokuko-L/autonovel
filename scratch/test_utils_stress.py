@@ -6,13 +6,14 @@ import time
 import threading
 from pathlib import Path
 import utils
+import paths
 
 class TestUtilsStress(unittest.TestCase):
     def setUp(self):
         # Store original environment and project name
         self.orig_env_project = os.environ.get("AUTONOVEL_PROJECT")
-        self.orig_project_name = utils._project_name
-        utils._project_name = None
+        self.orig_project_name = paths._project_name
+        paths._project_name = None
 
         self.root = utils.get_root_dir()
         self.test_projects_dir = self.root / "projects"
@@ -27,7 +28,7 @@ class TestUtilsStress(unittest.TestCase):
             os.environ["AUTONOVEL_PROJECT"] = self.orig_env_project
         elif "AUTONOVEL_PROJECT" in os.environ:
             del os.environ["AUTONOVEL_PROJECT"]
-        utils._project_name = self.orig_project_name
+        paths._project_name = self.orig_project_name
 
         # Clean up any temporary folders created in projects
         if self.test_project_path.exists():

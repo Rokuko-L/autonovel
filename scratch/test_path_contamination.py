@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import utils
+import paths
 
 PASS = "[PASS]"
 FAIL = "[FAIL]"
@@ -61,9 +62,9 @@ def test_no_root_contamination(tmp_root: Path, project_name: str = "contaminatio
     After a mock pipeline run, zero new files should exist in tmp_root
     outside of the projects/ and .git/ directories.
     """
-    orig_root = utils._root_dir
-    orig_name = utils._project_name
-    utils._root_dir = tmp_root
+    orig_root = paths._root_dir
+    orig_name = paths._project_name
+    paths._root_dir = tmp_root
     utils.set_project_name(project_name)
 
     # Snapshot root BEFORE
@@ -103,15 +104,15 @@ def test_no_root_contamination(tmp_root: Path, project_name: str = "contaminatio
           proj_dir.is_relative_to(tmp_root / "projects"))
 
     # Restore
-    utils._root_dir = orig_root
-    utils._project_name = orig_name
+    paths._root_dir = orig_root
+    paths._project_name = orig_name
 
 
 def test_two_projects_no_cross_contamination(tmp_root: Path):
     """Files from project A should not appear in project B's directory."""
-    orig_root = utils._root_dir
-    orig_name = utils._project_name
-    utils._root_dir = tmp_root
+    orig_root = paths._root_dir
+    orig_name = paths._project_name
+    paths._root_dir = tmp_root
 
     try:
         # Set up project A
@@ -140,8 +141,8 @@ def test_two_projects_no_cross_contamination(tmp_root: Path):
               not b_world.exists(), str(b_world))
 
     finally:
-        utils._root_dir = orig_root
-        utils._project_name = orig_name
+        paths._root_dir = orig_root
+        paths._project_name = orig_name
 
 
 def test_mock_call_anthropic():
@@ -154,16 +155,16 @@ def test_mock_call_anthropic():
 
 def test_registry_path_is_in_projects():
     """Registry path should always resolve inside projects/, never at root."""
-    orig_root = utils._root_dir
+    orig_root = paths._root_dir
     with tempfile.TemporaryDirectory(prefix="autonovel_reg_") as tmp:
         tmp_root = Path(tmp)
-        utils._root_dir = tmp_root
+        paths._root_dir = tmp_root
         (tmp_root / ".env").write_text("ANTHROPIC_API_KEY=test")
         reg_path = utils.get_registry_path()
         check("registry is under projects/",
               str(reg_path).startswith(str(tmp_root / "projects")),
               str(reg_path))
-    utils._root_dir = orig_root
+    paths._root_dir = orig_root
 
 
 def main():
