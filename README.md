@@ -134,6 +134,7 @@ Copy `.env.example` to `.env` and set:
 | `AUTONOVEL_CHAPTERS` | `24` | Default chapter count |
 | `AUTONOVEL_NOTES` | — | Default story premise |
 | `AUTONOVEL_PROJECT` | `default` | Active project name |
+| `AUTONOVEL_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
 
 ### Example: DeepSeek `.env`
 

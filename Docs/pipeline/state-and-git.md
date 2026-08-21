@@ -7,7 +7,8 @@ phase functions and CLI; this module holds everything they share.
 
 | Constant | Meaning |
 |---|---|
-| `FOUNDATION_THRESHOLD = 7.5` | Foundation loop exits above this |
+| `FOUNDATION_THRESHOLD = 7.5` | Foundation loop exits above this (override: `AUTONOVEL_FOUNDATION_THRESHOLD` env) |
+| `FOUNDATION_PLATEAU_ITERS = 3` | Consecutive non-improving foundation iterations → proceed with best docs |
 | `CHAPTER_THRESHOLD = 6.5` | Chapter retry gate |
 | `MAX_FOUNDATION_ITERS / MAX_CHAPTER_ATTEMPTS / MAX_OUTLINE_ATTEMPTS` | Retry budgets |
 | `MIN/MAX_REVISION_CYCLES`, `PLATEAU_DELTA` | Revision loop bounds + plateau sensitivity |

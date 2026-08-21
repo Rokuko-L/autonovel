@@ -146,18 +146,19 @@ Key learnings:
 
 Known behaviors (smoke run, 4-chapter test):
   - Genre-framework Pass 2 requires generated prompt templates to contain
-    literal placeholders ({voice_part2}, {seed}, ...). Models sometimes drop
-    them; the meta-prompt ends with a FINAL CHECK checklist and missing
-    placeholders are auto-repaired deterministically instead of failing.
-  - Foundation scores can plateau below the 7.5 exit threshold when the
-    LLM-generated rubric for a genre is calibrated harshly (observed:
-    identical 6.0 across 5 consecutive iterations). The loop then churns
-    until MAX_FOUNDATION_ITERS. Workaround used in the field: bump
-    state.json foundation_score above threshold and resume — the pipeline's
-    own prev-best logic then exits after one more iteration. Proper fix
-    (foundation plateau detection, mirroring the revision loop) is pending.
+    literal placeholders ({voice_part2}, {seed}, ...). The meta-prompt ends
+    with a FINAL CHECK checklist, and missing placeholders are auto-repaired
+    deterministically instead of failing the run.
+  - Foundation scores can plateau below the exit threshold when the
+    LLM-generated rubric is calibrated harshly (the judge prompt tells it to
+    revise down scores above 7). FIXED: after 3 consecutive non-improving
+    iterations the loop proceeds with the best docs (FOUNDATION_PLATEAU_ITERS);
+    the gate itself is overridable via AUTONOVEL_FOUNDATION_THRESHOLD.
   - --notes accepts inline text or a file path; path resolution only kicks
     in for plausible paths (<260 chars, single line).
+  - Writer chronically undershoots Chapter 1 word budgets. MITIGATED:
+    draft prompts now carry explicit per-beat word budgets, and undersized
+    retries get concrete expansion numbers (actual vs target vs minimum).
 ```
 
 ### Phase 2: First Draft
