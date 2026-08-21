@@ -177,6 +177,8 @@ All flags can also be set via environment variables (`AUTONOVEL_GENRE`, `AUTONOV
 
 ## Project Structure
 
+> The code module map (core library, pipeline, data flow) lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```
 .
 ├── active_genre.json        — Genre configuration (LLM-generated)
