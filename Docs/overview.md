@@ -26,7 +26,6 @@ core/             Shared library — no pipeline-specific logic
 └── mock_llm.py     Offline LLM mock for tests (MockLLM.install())
 
 pipeline/         Orchestration and per-stage tooling
-├── run_pipeline.py   Phase controller + CLI (foundation/drafting/revision/export)
 ├── pipeline_infra.py Git plumbing, registry/state persistence, score parsing
 ├── evaluate.py       Scoring engine: mechanical slop + LLM judge
 └── ...               drafting/revision/export stage scripts
@@ -36,9 +35,13 @@ foundation/       Foundation-phase generators (one script per document)
 ├── gen_outline.py / gen_outline_part2.py / gen_canon.py /
 └── gen_title.py / seed.py
 
-prompts/*.md      Static prompt templates (loaded via paths.load_prompt)
+fuel/             Pipeline fuel — runtime LLM prompt material (see below)
+prompts/          Static prompt templates (loaded via paths.load_prompt)
 projects/<name>/  Per-novel isolated workspace (gitignored; own git repo)
 scratch/          Offline test suites
+
+Root entry points: run_pipeline.py (orchestrator CLI), gui.py (desktop GUI),
+install_fonts.py, _utf8.py (UTF-8 enforcement shim)
 ```
 
 **Data flow:**
@@ -73,13 +76,13 @@ git keep/discard per attempt, results.tsv score log)
 
 ## Pipeline Fuel — NOT documentation
 
-These root files are **runtime LLM prompt material** consumed by the code.
-Never treat them as agent docs, never "clean them up", never move them:
+`fuel/` holds **runtime LLM prompt material** consumed by the code.
+Never treat these as agent docs, never "clean them up":
 
 | File | Consumed by |
 |---|---|
-| `CRAFT.md` | `gen_world.py`, `gen_outline.py` |
-| `ANTI-SLOP.md` | pattern source for `evaluate.py` judge prompts |
+| `CRAFT.md` | `foundation/gen_world.py`, `foundation/gen_outline.py` |
+| `ANTI-SLOP.md` | pattern source for the judge prompts |
 | `voice.md` | template copied into each project by `run_pipeline.py` |
 | `MYSTERY.md` | foundation-phase template (author's eyes only) |
 | `notes_template.md` | user premise template |

@@ -24,7 +24,7 @@ def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
 def main():
     seed_path = paths.get_seed_path()
     voice_path = paths.get_voice_path()
-    craft_path = paths.get_root_dir() / "CRAFT.md"
+    craft_path = paths.get_root_dir() / "fuel" / "CRAFT.md"
 
     if not seed_path.exists():
         print(f"ERROR: seed.txt not found at {seed_path}", file=sys.stderr)

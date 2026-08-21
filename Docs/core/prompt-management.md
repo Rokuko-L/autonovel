@@ -23,7 +23,7 @@ Static prompt templates live in `prompts/*.md`, loaded via
    sites are unchanged by extraction.
 2. New static prompts go here, not inline. Function-local f-string prompts
    may stay local until they stabilize, then extract.
-3. **Do not confuse with pipeline fuel** at repo root (`CRAFT.md`,
+3. **Do not confuse with pipeline fuel** in `fuel/` at repo root (`CRAFT.md`,
    `ANTI-SLOP.md`, `voice.md`, `MYSTERY.md`, `notes_template.md`). Those are
    runtime *data* consumed from fixed root paths — never move or edit them
    as if they were docs.

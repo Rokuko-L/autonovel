@@ -1594,7 +1594,7 @@ def run_pipeline(args):
                 pass  # non-numeric string like "short story" — let genre framework resolve
         
         # Copy template voice.md file to project directory if it exists in root
-        voice_template = root_dir / "voice.md"
+        voice_template = root_dir / "fuel" / "voice.md"
         if voice_template.exists():
             shutil.copy2(voice_template, paths.get_voice_path())
                 

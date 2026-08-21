@@ -11,13 +11,15 @@ This repo's markdown splits into two groups. Confusing them is the #1 mistake:
 
 ### 1. Pipeline fuel — NOT for coding agents (runtime LLM prompt material)
 
+Lives in `fuel/` at repo root:
+
 | File | Consumed by |
 |---|---|
-| `CRAFT.md` | `gen_world.py`, `gen_outline.py` — narrative craft rules fed to the writer model |
-| `ANTI-SLOP.md` | pattern source for `evaluate.py` judge prompts |
-| `voice.md` | template copied into each project by `run_pipeline.py`; Part 1 guardrails + Part 2 per-novel voice |
-| `MYSTERY.md` | foundation-phase template ("author's eyes only") |
-| `notes_template.md` | user premise template |
+| `fuel/CRAFT.md` | `foundation/gen_world.py`, `foundation/gen_outline.py` — narrative craft rules fed to the writer model |
+| `fuel/ANTI-SLOP.md` | pattern source for the judge prompts |
+| `fuel/voice.md` | template copied into each project by `run_pipeline.py`; Part 1 guardrails + Part 2 per-novel voice |
+| `fuel/MYSTERY.md` | foundation-phase template ("author's eyes only") |
+| `fuel/notes_template.md` | user premise template |
 
 **Never** feed these into coding context as if they were project docs, and
 never "clean them up" — editing them changes what the novel-writing LLM

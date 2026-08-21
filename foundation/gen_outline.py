@@ -92,8 +92,8 @@ def main():
         "seed.txt": paths.get_seed_path(),
         "world.md": paths.get_world_path(),
         "characters.md": paths.get_characters_path(),
-        "MYSTERY.md": root / "MYSTERY.md",
-        "CRAFT.md": root / "CRAFT.md",
+        "MYSTERY.md": root / "fuel" / "MYSTERY.md",
+        "CRAFT.md": root / "fuel" / "CRAFT.md",
         "voice.md": paths.get_voice_path(),
     }
     for name, p in required.items():
