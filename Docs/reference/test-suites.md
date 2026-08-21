@@ -12,8 +12,24 @@ via discovery: `uv run python -m unittest discover -s scratch -p "test_*.py"`.
 | `scratch/test_multi_project.py` | registry isolation, from-scratch cleanup | script |
 | `scratch/test_path_contamination.py` | cross-project leakage, root cleanliness | script |
 | `scratch/test_mock_llm.py` | mock harness + validation-retry integration (8 tests) | unittest |
+| `scratch/test_import_integrity.py` | AST-scans every import statement (incl. lazy function-level ones) resolves; utils.py stays deleted (2 tests) | unittest |
+| `scratch/test_gatekeepers.py` | outline gatekeepers execute for real — drift verdicts block/pass, short books skip without LLM calls (4 tests) | unittest |
 
 Script-style suites exit non-zero on failure and print `[PASS]/[FAIL]` lines.
+
+## Why the integrity scanner exists
+
+Module-import smoke tests only execute top-level code, so a stale lazy
+import inside a function survives every green suite — and if the surrounding
+code has a broad `except`, it degrades into a silent no-op instead of
+crashing (this actually happened: the tonal-drift gatekeeper was silently
+dead after the core/ package move). `test_import_integrity.py` catches that
+class statically; `test_gatekeepers.py` proves critical gates still *block*
+when they should.
+
+**Rule of thumb:** when you move/rename a module, run the integrity suite;
+when you add or change a validation gate, add a behavioral test that asserts
+the gate can fail.
 
 ## E2E (requires API)
 

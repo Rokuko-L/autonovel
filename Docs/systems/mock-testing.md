@@ -36,6 +36,7 @@ assert mock.calls[0]["prompt"][:80] == ...
 | Validation retry loop | Queue a bad-schema response then a good one; assert fix-prompt contains feedback (see `scratch/test_mock_llm.py`) |
 | Stage scripts | Create a temp project via `paths.set_project_name`, write input files, mock responses, call the script's functions |
 | Path isolation | No mock needed — patch `paths._root_dir` to a tmp dir |
+| Validation gates | Assert the gate can FAIL: queue a "violation" verdict and assert the gate blocks (see `scratch/test_gatekeepers.py`). A gate whose broken path returns the same result as a passing check must be tested on its failing branch. |
 
 ## Running the Suites
 
