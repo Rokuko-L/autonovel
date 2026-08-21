@@ -19,7 +19,7 @@ Usage:
 
 from core.llm import call_anthropic
 from core.outline import validate_premise_beats, validate_plants_harvests, extract_outline_debts
-from core import novel_tex
+from core import novel_tex as novel_tex_module
 from core import paths
 from core import _utf8
 import argparse
@@ -1325,7 +1325,7 @@ def run_export(state: dict) -> dict:
                     step(f"LLM tex generation attempt {tex_attempt+1}/3 failed ({e})")
             if not novel_tex.exists() or novel_tex.stat().st_size < 100:
                 step("Falling back to default template...")
-                novel_tex.generate_default_novel_tex(novel_tex)
+                novel_tex_module.generate_default_novel_tex(novel_tex)
 
         compiled = False
         if novel_tex.exists():
@@ -1414,7 +1414,7 @@ Rules:
                     step("LLM auto-debug failed to fix novel.tex. Falling back to "
                          "the deterministic default template...")
                     try:
-                        novel_tex.generate_default_novel_tex(novel_tex)
+                        novel_tex_module.generate_default_novel_tex(novel_tex)
                         res = run_tool(cmd, timeout=300, cwd=str(paths.get_typeset_dir()))
                         if res.returncode == 0 and pdf_out.exists() and pdf_out.stat().st_size > 1000:
                             step(f"PDF generated from default template: {pdf_out} "
