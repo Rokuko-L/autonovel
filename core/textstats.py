@@ -10,7 +10,6 @@ def tail_context(text: str, max_words: int = 600) -> str:
     Prevents cutting a previous chapter's ending mid-sentence, which would
     hand the writer a dangling fragment to continue from.
     """
-    import re
     words = text.split()
     if len(words) <= max_words:
         return text
@@ -23,7 +22,6 @@ def tail_context(text: str, max_words: int = 600) -> str:
 
 def head_context(text: str, max_words: int = 300) -> str:
     """Return the head of text (~max_words), ending at a sentence boundary."""
-    import re
     words = text.split()
     if len(words) <= max_words:
         return text

@@ -14,6 +14,7 @@ via discovery: `uv run python -m unittest discover -s scratch -p "test_*.py"`.
 | `scratch/test_mock_llm.py` | mock harness + validation-retry integration (8 tests) | unittest |
 | `scratch/test_import_integrity.py` | AST-scans every import statement (incl. lazy function-level ones) resolves; utils.py stays deleted (2 tests) | unittest |
 | `scratch/test_gatekeepers.py` | outline gatekeepers execute for real — drift verdicts block/pass, short books skip without LLM calls (4 tests) | unittest |
+| `scratch/test_static_analysis.py` | ruff pyflakes gate: no undefined names (F821), no accidental redefinitions (F811) across the repo (1 test) | unittest |
 
 Script-style suites exit non-zero on failure and print `[PASS]/[FAIL]` lines.
 
@@ -29,7 +30,11 @@ when they should.
 
 **Rule of thumb:** when you move/rename a module, run the integrity suite;
 when you add or change a validation gate, add a behavioral test that asserts
-the gate can fail.
+the gate can fail. The static-analysis suite complements both: import
+scanning verifies that *import statements* resolve, while ruff F821 verifies
+that every *name used* is actually defined — these are different failure
+classes (the process_notes `call_anthropic` NameError was only catchable by
+the latter).
 
 ## E2E (requires API)
 

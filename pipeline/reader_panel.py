@@ -19,6 +19,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from core.genre import load_genre
+from core import llm
 
 load_dotenv()
 

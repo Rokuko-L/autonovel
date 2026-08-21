@@ -28,6 +28,7 @@ tests fail loudly instead of silently hitting the network.
 """
 
 import sys
+from pathlib import Path
 
 
 class MockLLM:

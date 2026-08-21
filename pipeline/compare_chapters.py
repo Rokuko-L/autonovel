@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from core import validation
+from core import llm
 
 load_dotenv()
 

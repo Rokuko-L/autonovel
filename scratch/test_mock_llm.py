@@ -16,7 +16,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core import paths
 from core import validation
 from core.mock_llm import MockLLM
 

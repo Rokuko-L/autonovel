@@ -339,7 +339,6 @@ def validate_plants_harvests(outline_text: str) -> tuple[bool, str]:
       token-set overlap fallback is used.
     """
     import re
-    import sys
     
     # Split text by Chapter headings to locate each chapter's section
     chapters_content = {}

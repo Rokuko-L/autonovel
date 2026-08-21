@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from core.genre import load_genre
+from core import paths
+from core import textstats
 
 load_dotenv()
 

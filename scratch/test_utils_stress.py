@@ -6,7 +6,6 @@ import json
 import time
 import threading
 from pathlib import Path
-from core import paths
 
 class TestUtilsStress(unittest.TestCase):
     def setUp(self):

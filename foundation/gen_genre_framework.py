@@ -11,6 +11,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
 from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
 from core.paths import load_prompt
+from core import paths
 import os
 import re
 import sys

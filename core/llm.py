@@ -371,7 +371,6 @@ def fix_truncated_json(text: str) -> str:
 
 def parse_json_response(text: str) -> dict | list:
     """Extract and heal JSON from LLM response text."""
-    import re
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
