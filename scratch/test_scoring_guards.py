@@ -120,5 +120,85 @@ class ScoreCoercionTest(unittest.TestCase):
             validation.NovelScoreOutput.model_validate({"novel_score": -1})
 
 
+class RunFoundationLoopTest(unittest.TestCase):
+    """Drives the REAL run_foundation loop offline (reviewer caveat).
+
+    The simulation tests above guard foundation_plateau() itself; this one
+    guards the CALL SITE: heavy workers are stubbed, but run_foundation's
+    actual keep/discard/exit logic executes. If someone later removes the
+    foundation_plateau call (or reinlines a >= comparison), flat scores stop
+    exiting early and THESE tests fail instead of staying green.
+    """
+
+    def _run_loop(self, scores):
+        """Run run_foundation with stubbed workers feeding canned eval scores.
+
+        Returns (state, calls) where calls records git plumbing.
+        """
+        import tempfile
+        from types import SimpleNamespace
+        import run_pipeline as rp
+        from core import paths as paths_mod
+
+        tmp = Path(tempfile.mkdtemp(prefix="autonovel_loop_"))
+        (tmp / "projects" / "looptest").mkdir(parents=True)
+        orig_root = paths_mod._root_dir
+        paths_mod._root_dir = tmp
+        paths_mod.set_project_name("looptest")
+        paths_mod.get_outline_path().write_text("outline body", encoding="utf-8")
+
+        eval_count = {"n": 0}
+        calls = {"commits": [], "resets": [], "saves": []}
+
+        def fake_uv_run(script, timeout=None):
+            if "evaluate.py" in script:
+                eval_count["n"] += 1
+                score = scores[min(eval_count["n"], len(scores)) - 1]
+                return SimpleNamespace(
+                    stdout=f"overall_score: {score}\nlore_score: 5.0\n",
+                    returncode=0)
+            return SimpleNamespace(stdout="", returncode=0)
+
+        patches = {
+            "uv_run": fake_uv_run,
+            "banner": lambda *a, **k: None,
+            "step": lambda *a, **k: None,
+            "load_state": lambda: {"title": "T"},
+            "load_genre": lambda: {"framework": {"premise_arc_beats": []}},
+            "validate_premise_beats": lambda beats, text: (True, ""),
+            "git_add_commit": lambda msg: calls["commits"].append(msg),
+            "git_reset_hard": lambda ref="HEAD": calls["resets"].append(ref),
+            "save_state": lambda s: calls["saves"].append(dict(s)),
+        }
+        saved = {name: getattr(rp, name) for name in patches}
+        try:
+            for name, fn in patches.items():
+                setattr(rp, name, fn)
+            state = rp.run_foundation({"iteration": 0})
+        finally:
+            for name, fn in saved.items():
+                setattr(rp, name, fn)
+            paths_mod._root_dir = orig_root
+        return state, calls
+
+    def test_flat_scores_exit_via_real_loop(self):
+        """The motivating case through the real loop: identical 6.0 must hit
+        the plateau exit at iteration 4 (keep@1, tie-stalls @2..4), not burn
+        MAX_FOUNDATION_ITERS."""
+        state, calls = self._run_loop([6.0] * 10)
+        self.assertEqual(state["iteration"], 4)
+        self.assertEqual(state["foundation_stall_count"], 3)
+        self.assertEqual(state["phase"], "drafting")
+        self.assertEqual(len(calls["resets"]), 3)   # ties were discarded
+        self.assertEqual(calls["commits"][0],       # initial setup commit
+                         "initial project setup (seed, config)")
+
+    def test_threshold_pass_exits_via_real_loop(self):
+        state, calls = self._run_loop([7.6])
+        self.assertEqual(state["iteration"], 1)
+        self.assertGreaterEqual(state["foundation_score"], 7.5)
+        self.assertEqual(calls["resets"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
