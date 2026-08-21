@@ -38,478 +38,95 @@ import utils
 
 load_dotenv()
 
+from pipeline_infra import *  # noqa: F401,F403
+from pipeline_infra import _chapter_num_key  # noqa: F401
 
-class Tee:
-    """Duplicate writes to both an original stream and a shared log file."""
-    def __init__(self, fh, original):
-        self.fh = fh
-        self.original = original
 
-    def write(self, data):
-        # A log-file failure (disk full, closed pipe) must never kill the run
-        try:
-            self.fh.write(data)
-        except OSError:
-            pass
-        try:
-            self.original.write(data)
-        except OSError:
-            pass
-
-    def flush(self):
-        try:
-            self.fh.flush()
-        except OSError:
-            pass
-        try:
-            self.original.flush()
-        except OSError:
-            pass
-
-    def isatty(self):
-        return self.original.isatty()
-
-    def fileno(self):
-        return self.original.fileno()
 
 
 # ---------------------------------------------------------------------------
 # Constants  (all path-dependent values are resolved at runtime via utils)
 # ---------------------------------------------------------------------------
 
-FOUNDATION_THRESHOLD = 7.5
-CHAPTER_THRESHOLD = 6.5
-MAX_FOUNDATION_ITERS = 20
-MAX_CHAPTER_ATTEMPTS = 5
-INFRA_MAX_ATTEMPTS = 3      # separate budget for timeouts / empty-file infra failures
-MAX_OUTLINE_ATTEMPTS = 5
-MIN_REVISION_CYCLES = 3
-MAX_REVISION_CYCLES = 6
-PLATEAU_DELTA = 0.3
-CHAPTERS_TOTAL = 24  # default; overridden by genre config at runtime
 
-PHASE_ORDER = ["foundation", "drafting", "revision", "export"]
 
 
 # ---------------------------------------------------------------------------
 # Git & registry helpers (Option B: per-project repos)
 # ---------------------------------------------------------------------------
 
-def ensure_gitignore_projects():
-    """Ensure root .gitignore contains a rule for projects/ to prevent nested-repo commits."""
-    root = utils.get_root_dir()
-    gi_path = root / ".gitignore"
-    entry = "projects/"
-    if gi_path.exists():
-        content = gi_path.read_text(encoding="utf-8")
-        lines = [l.strip() for l in content.splitlines()]
-        if entry in lines:
-            return  # already present
-        gi_path.write_text(content.rstrip() + "\n" + entry + "\n", encoding="utf-8")
-    else:
-        gi_path.write_text(entry + "\n", encoding="utf-8")
-    print(f"[git] Added '{entry}' to root .gitignore")
 
 
-def ensure_project_git(project_dir: Path):
-    """Initialize a git repo inside the project folder if not already present (idempotent)."""
-    git_dir = project_dir / ".git"
-    if git_dir.exists():
-        return  # already initialized
-    result = subprocess.run(
-        ["git", "init", str(project_dir)],
-        capture_output=True, text=True, encoding="utf-8"
-    )
-    if result.returncode == 0:
-        print(f"[git] Initialized project repo at {project_dir}")
-    else:
-        print(f"[git] WARNING: git init failed: {result.stderr.strip()}")
-    # Write a project-level .gitignore template
-    proj_gi = project_dir / ".gitignore"
-    if not proj_gi.exists():
-        proj_gi.write_text("*.aux\n*.log\n*.toc\n*.out\n*.synctex.gz\n", encoding="utf-8")
 
 
-def load_registry() -> dict:
-    """Load the project registry JSON. Returns empty dict if not found."""
-    reg_path = utils.get_registry_path()
-    if reg_path.exists():
-        try:
-            return json.loads(reg_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
 
 
-def update_registry(project_name: str, metadata: dict):
-    """Atomically update registry.json with project metadata."""
-    registry = load_registry()
-    registry[project_name] = metadata
-    utils.save_registry(registry, utils.get_registry_path())
 
 
 # ---------------------------------------------------------------------------
 # Helpers: state management
 # ---------------------------------------------------------------------------
 
-def load_state() -> dict:
-    """Load pipeline state from the active project's state.json, creating defaults if missing."""
-    state_path = utils.get_state_path()
-    if state_path.exists():
-        with open(state_path, encoding="utf-8") as f:
-            return json.load(f)
-    return default_state()
 
 
-def default_state() -> dict:
-    return {
-        "phase": "foundation",
-        "current_focus": "planning",
-        "iteration": 0,
-        "title": "Untitled",
-        "foundation_score": 0.0,
-        "lore_score": 0.0,
-        "chapters_drafted": 0,
-        "chapters_total": CHAPTERS_TOTAL,
-        "novel_score": 0.0,
-        "revision_cycle": 0,
-        "debts": [],
-    }
 
 
-def save_state(state: dict):
-    """Write state to the active project's state.json."""
-    state_path = utils.get_state_path()
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
 
 
 # ---------------------------------------------------------------------------
 # Helpers: logging
 # ---------------------------------------------------------------------------
 
-def log_result(commit: str, phase: str, score, word_count: int,
-               status: str, description: str):
-    """Append a row to results.tsv in the active project directory."""
-    results_file = utils.get_results_path()
-    header = "commit\tphase\tscore\tword_count\tstatus\tdescription\n"
-    if not results_file.exists():
-        results_file.write_text(header, encoding="utf-8")
-    elif results_file.stat().st_size == 0:
-        results_file.write_text(header, encoding="utf-8")
-    with open(results_file, "a", encoding="utf-8") as f:
-        f.write(f"{commit}\t{phase}\t{score}\t{word_count}\t{status}\t{description}\n")
 
 
-def banner(text: str, char: str = "=", width: int = 60):
-    """Print a visible phase/step banner."""
-    print(f"\n{char * width}")
-    print(f"  {text}")
-    print(f"{char * width}")
 
 
-def step(text: str):
-    """Print a step indicator."""
-    ts = datetime.now().strftime("%H:%M:%S")
-    print(f"  [{ts}] {text}")
 
 
 # ---------------------------------------------------------------------------
 # Helpers: subprocess execution
 # ---------------------------------------------------------------------------
 
-def run_tool(cmd: str, timeout: int = 600, check: bool = False, cwd: str = None) -> subprocess.CompletedProcess:
-    """
-    Run a tool as a subprocess, capturing output.
-    Uses shell=False with shlex.split for argument safety.
-    Returns CompletedProcess; never raises unless check=True.
-    """
-    step(f"RUN: {cmd}")
-    try:
-        cmd_norm = cmd.replace("\\", "/")
-        effective_cwd = cwd if cwd is not None else str(utils.get_root_dir())
-        result = subprocess.run(
-            shlex.split(cmd_norm), shell=False, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout, cwd=effective_cwd,
-        )
-        if result.returncode != 0:
-            print(f"    WARN: exit code {result.returncode}")
-        stderr_preview = (result.stderr or "")[:2000]
-        if stderr_preview:
-            print(f"    stderr: {stderr_preview}")
-        if check and result.returncode != 0:
-            raise subprocess.CalledProcessError(
-                result.returncode, cmd, result.stdout, result.stderr)
-        return result
-    except subprocess.TimeoutExpired:
-        print(f"    ERROR: timed out after {timeout}s")
-        # Return a fake CompletedProcess for graceful handling
-        fake = subprocess.CompletedProcess(cmd, returncode=-1, stdout="", stderr="TIMEOUT")
-        return fake
 
 
-def uv_run(script: str, timeout: int = 600) -> subprocess.CompletedProcess:
-    """Shorthand for running a Python script from project root. Fails fast."""
-    return run_tool(f"\"{sys.executable}\" {script}", timeout=timeout, check=True)
 
 
 # ---------------------------------------------------------------------------
 # Helpers: git operations
 # ---------------------------------------------------------------------------
 
-def git_add_commit(message: str) -> str:
-    """Stage all changes and commit. Returns short hash or empty string."""
-    project_dir = utils.get_project_dir()
-    run_tool("git add -A", cwd=str(project_dir))
-    status_result = run_tool("git status --porcelain", cwd=str(project_dir))
-    if status_result.stdout.strip():
-        result = run_tool(f'git commit -m "{message}"', cwd=str(project_dir))
-        if result.returncode == 0:
-            hash_result = run_tool("git rev-parse --short HEAD", cwd=str(project_dir))
-            commit_hash = hash_result.stdout.strip()
-            step(f"GIT COMMIT: {commit_hash} — {message}")
-            return commit_hash
-    step("GIT: nothing to commit or commit failed")
-    return ""
-
-
-def git_reset_hard(ref: str = "HEAD~1"):
-    """Hard reset to discard bad changes.
-
-    Preserves legitimately-appended canon.md entries (they ride along with the
-    next commit after a reset and would otherwise be silently lost), and spares
-    the timestamped eval/edit/brief logs from `git clean` so downstream stages
-    don't silently no-op on freshly-written review/cuts artifacts.
-    """
-    step(f"GIT RESET: {ref}")
-    project_dir = utils.get_project_dir()
-
-    # Preserve uncommitted canon.md appends (e.g. from a successful chapter eval
-    # that hasn't been committed yet when this reset fires).
-    canon_status = run_tool("git status --porcelain -- canon.md", cwd=str(project_dir))
-    if any(line.startswith((" M", "M ", "MM")) for line in canon_status.stdout.splitlines()):
-        run_tool("git add canon.md", cwd=str(project_dir))
-        git_commit_staged("canon: preserve pending append before reset")
-
-    run_tool(f"git reset --hard {ref}", cwd=str(project_dir))
-    # Clean untracked files/directories to prevent cross-iteration contamination,
-    # but never delete the timestamped artifact logs the pipeline depends on.
-    run_tool(
-        "git clean -fd -e eval_logs -e edit_logs -e briefs -e logs -e repetition_check.json",
-        cwd=str(project_dir),
-    )
-
-
-def git_commit_staged(message: str) -> str:
-    """Commit already-staged changes. Returns short hash or empty string."""
-    project_dir = utils.get_project_dir()
-    status_result = run_tool("git status --porcelain", cwd=str(project_dir))
-    # Check if there are staged changes (staged changes start with non-space in porcelain status)
-    staged = False
-    for line in status_result.stdout.splitlines():
-        if line and not line.startswith(" ") and not line.startswith("?"):
-            staged = True
-            break
-    if staged:
-        result = run_tool(f'git commit -m "{message}"', cwd=str(project_dir))
-        if result.returncode == 0:
-            hash_result = run_tool("git rev-parse --short HEAD", cwd=str(project_dir))
-            commit_hash = hash_result.stdout.strip()
-            step(f"GIT COMMIT STAGED: {commit_hash} — {message}")
-            return commit_hash
-    step("GIT: nothing staged to commit or commit failed")
-    return ""
-
-
-def get_historical_best_for_chapter(ch_num: int) -> tuple[float, str]:
-    """
-    Parses results.tsv to find the highest score kept for this chapter.
-    Returns: (best_score, commit_hash)
-    """
-    results_path = utils.get_results_path()
-    if not results_path.exists():
-        return 0.0, "HEAD"
-        
-    best_score = 0.0
-    best_commit = "HEAD"
-    target_phases = {f"ch{ch_num:02d}", f"rev-ch{ch_num:02d}", f"rev-ch{ch_num:02d}-review"}
-    
-    try:
-        with open(results_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        if len(lines) <= 1:
-            return 0.0, "HEAD"
-            
-        headers = lines[0].strip().split("\t")
-        commit_idx = headers.index("commit")
-        phase_idx = headers.index("phase")
-        score_idx = headers.index("score")
-        status_idx = headers.index("status")
-        
-        for line in lines[1:]:
-            parts = line.strip().split("\t")
-            if len(parts) > max(commit_idx, phase_idx, score_idx, status_idx):
-                phase = parts[phase_idx]
-                status = parts[status_idx]
-                commit = parts[commit_idx]
-                if phase in target_phases and status in ("keep", "forced") and commit != "reverted":
-                    try:
-                        score = float(parts[score_idx])
-                        if score > best_score:
-                            best_score = score
-                            best_commit = commit
-                    except ValueError:
-                        continue
-    except Exception as e:
-        step(f"Warning: Failed to parse historical best for ch {ch_num}: {e}")
-        
-    return best_score, best_commit
 
 
 
 
-def git_short_hash() -> str:
-    """Get current HEAD short hash."""
-    r = run_tool("git rev-parse --short HEAD", cwd=str(utils.get_project_dir()))
-    return r.stdout.strip() if r.returncode == 0 else "unknown"
+
+
+
+
+
+
 
 
 # ---------------------------------------------------------------------------
 # Helpers: score parsing
 # ---------------------------------------------------------------------------
 
-def parse_score(stdout: str, key: str = "overall_score") -> float:
-    """
-    Parse a score from evaluate.py YAML-like stdout output.
-    Looks for lines like 'overall_score: 8.0' or 'novel_score: 7.5'.
-    """
-    for line in stdout.splitlines():
-        line = line.strip()
-        if line.startswith(f"{key}:"):
-            val = line.split(":", 1)[1].strip()
-            try:
-                return float(val)
-            except ValueError:
-                continue
-    return -1.0
 
 
-def parse_lore_score(stdout: str) -> float:
-    """Parse lore_score from foundation evaluation output."""
-    return parse_score(stdout, "lore_score")
 
 
-def count_words_in_chapters() -> int:
-    """Sum word count across all chapter files in the active project."""
-    total = 0
-    chapters_dir = utils.get_chapters_dir()
-    if chapters_dir.exists():
-        for f in chapters_dir.glob("ch_*.md"):
-            total += len(f.read_text(encoding="utf-8").split())
-    return total
 
 
-def count_chapter_files() -> int:
-    """Count the number of chapter files in the active project."""
-    chapters_dir = utils.get_chapters_dir()
-    if not chapters_dir.exists():
-        return 0
-    return len(list(chapters_dir.glob("ch_*.md")))
 
 
-def _chapter_num_key(path) -> int:
-    """Numeric sort key for ch_*.md files (ch_2 must sort before ch_10)."""
-    m = re.search(r"ch_(\d+)\.md", Path(path).name)
-    return int(m.group(1)) if m else 10**9
 
 
-def get_total_chapters(state: dict) -> int:
-    """Determine total chapter count from state or outline."""
-    if state.get("chapters_total", 0) > 0:
-        return state["chapters_total"]
-    # Try to infer from outline.md
-    outline = utils.get_outline_path()
-    if outline.exists():
-        text = outline.read_text(encoding="utf-8")
-        matches = re.findall(r'###\s*\*?\*?\s*Ch(?:apter)?\b\s*\*?\*?\s*(\d+)', text, re.IGNORECASE)
-        if matches:
-            return max(int(m) for m in matches)
-    return CHAPTERS_TOTAL
 
 
 # ---------------------------------------------------------------------------
 # Dynamic seed processor
 # ---------------------------------------------------------------------------
 
-def process_notes(notes_input, genre):
-    """Process user notes into seed.txt and return the string for gen_genre_framework.
-
-    Resolves file-or-string input, then branches on word count:
-      Short (<300w):     LLM expand → seed.txt gets expansion, returns original
-      Goldilocks (300-1500w):        seed.txt gets notes, returns original
-      Massive (>1500w):  LLM summarize → seed.txt gets full doc, returns summary
-
-    Returns None if no notes_input provided.
-    """
-    if not notes_input:
-        return None
-
-    notes_path = Path(notes_input)
-    if notes_path.exists():
-        notes = notes_path.read_text(encoding="utf-8")
-        step(f"Read notes from file: {notes_input}")
-    else:
-        notes = str(notes_input)
-
-    word_count = len(notes.split())
-    genre_str = genre or "the specified genre"
-
-    banner(f"PROCESSING NOTES ({word_count} words)", "-")
-
-    # seed.txt lives in the project directory
-    seed_file = utils.get_seed_path()
-
-    if word_count < 300:
-        step(f"Notes too short ({word_count}w). Expanding to ~500 words via LLM...")
-        expanded = call_anthropic(
-            prompt=(
-                f"The user has provided a very brief premise for a {genre_str} novel:\n\n"
-                f"'{notes}'\n\n"
-                f"Expand this into a dense, rich 500-word story document. "
-                f"Establish a compelling core conflict, hint at the worldbuilding/setting, "
-                f"and outline the protagonist's main flaw and goal. "
-                f"Make it highly specific and creative."
-            ),
-            model_key="judge",
-            max_tokens=2000,
-            temperature=0.8,
-            timeout=120,
-        )
-        seed_file.write_text(expanded, encoding="utf-8")
-        step(f"seed.txt written ({len(expanded.split())}w, expanded from {word_count})")
-        return notes
-
-    if word_count <= 1500:
-        step(f"Notes are a good size ({word_count}w). Writing directly to seed.txt.")
-        seed_file.write_text(notes, encoding="utf-8")
-        return notes
-
-    step(f"Notes are very long ({word_count}w). Summarizing to ~500 words for genre framework...")
-    summary = call_anthropic(
-        prompt=(
-            f"The user has provided a massive document ({word_count} words) for a {genre_str} novel. "
-            f"Extract a dense 500-word summary of the core premise, genre, main characters, "
-            f"and central conflict. Do not write a story, just extract the core DNA.\n\n"
-            f"=== DOCUMENT ===\n{notes}"
-        ),
-        model_key="judge",
-        max_tokens=2000,
-        temperature=0.3,
-        timeout=120,
-    )
-    seed_file.write_text(notes, encoding="utf-8")
-    step(f"seed.txt written with full {word_count}w doc. Summary ({len(summary.split())}w) sent to genre framework.")
-    return summary
 
 
 # ---------------------------------------------------------------------------
