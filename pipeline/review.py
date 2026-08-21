@@ -11,6 +11,10 @@ Usage:
   python review.py --output reviews.md  # Also save human-readable copy
   python review.py --parse            # Parse last review into actionable items
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
 from core import paths
 import os

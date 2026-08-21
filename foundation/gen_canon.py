@@ -2,6 +2,10 @@
 """
 Generate canon.md by extracting all hard facts from world.md + characters.md.
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
 from core import paths
 from core.paths import format_prompt

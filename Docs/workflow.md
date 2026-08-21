@@ -58,19 +58,19 @@ uv run python run_pipeline.py --phase export
 
 ### Evaluation
 ```bash
-uv run python evaluate.py --phase=foundation   # Score planning docs
-uv run python evaluate.py --chapter=5           # Score a chapter
-uv run python evaluate.py --full                # Score the whole novel
+uv run python pipeline/evaluate.py --phase=foundation   # Score planning docs
+uv run python pipeline/evaluate.py --chapter=5           # Score a chapter
+uv run python pipeline/evaluate.py --full                # Score the whole novel
 ```
 
 ### Revision
 ```bash
 uv run python adversarial_edit.py all           # Find cuts in all chapters
 uv run python apply_cuts.py all --types OVER-EXPLAIN REDUNDANT
-uv run python reader_panel.py                   # 4-persona evaluation
-uv run python review.py                         # Opus dual-persona review
-uv run python gen_brief.py --auto               # Auto-generate revision brief
-uv run python gen_revision.py 5 briefs/ch05.md  # Rewrite chapter from brief
+uv run python pipeline/reader_panel.py                   # 4-persona evaluation
+uv run python pipeline/review.py                         # Opus dual-persona review
+uv run python pipeline/gen_brief.py --auto               # Auto-generate revision brief
+uv run python pipeline/gen_revision.py 5 briefs/ch05.md  # Rewrite chapter from brief
 ```
 
 ### Export

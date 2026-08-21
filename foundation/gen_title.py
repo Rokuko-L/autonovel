@@ -4,6 +4,10 @@ gen_title.py — Title tournament with a per-project 4-judge panel.
 Each judge is a real LLM call with a distinct persona from the project config.
 Scores are aggregated by average across all 4 judges.
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import call_anthropic, parse_json_response
 from core import paths
 import os

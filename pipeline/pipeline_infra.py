@@ -5,6 +5,10 @@ subprocess helpers, score parsing, and shared constants.
 Extracted from run_pipeline.py; the phase functions and CLI stay there.
 """
 
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core import paths
 import _utf8
 import json

@@ -11,7 +11,7 @@ os.environ["AUTONOVEL_PROJECT"] = "serious"
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-import evaluate
+import pipeline.evaluate as evaluate
 
 def run_evaluation(call_num):
     print(f"[Call {call_num}] Started evaluation at {datetime.now().isoformat()}...", flush=True)

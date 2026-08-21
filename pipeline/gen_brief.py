@@ -9,6 +9,10 @@ Usage:
   python gen_brief.py --cuts 12     # brief from adversarial cuts for ch 12
   python gen_brief.py --auto        # auto-detect weakest chapter and generate
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core import paths
 import argparse
 import json
@@ -705,7 +709,7 @@ def build_auto_brief(extra_rules: list[str] | None = None) -> tuple[int, str]:
     if full_eval_path is None:
         print("No *_full.json found in eval_logs/. Running evaluate.py --full first...", file=sys.stderr)
         import subprocess
-        subprocess.run([sys.executable, "evaluate.py", "--full"], check=True)
+        subprocess.run([sys.executable, "pipeline/evaluate.py", "--full"], check=True)
         full_eval_path = latest_full_eval()
         if full_eval_path is None:
             sys.exit("ERROR: no *_full.json found in eval_logs/ even after running evaluate.py --full")

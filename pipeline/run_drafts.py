@@ -9,6 +9,10 @@ Usage:
   uv run python run_drafts.py --from 11 --to 24
   uv run python run_drafts.py --project mynovel --from 1 --to 8 --spot 4 8
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core import paths
 import _utf8
 import argparse
@@ -79,7 +83,7 @@ def main():
         print(f"DRAFTING CH {ch}")
         print(f"{'='*50}")
 
-        out, rc = run(f'"{sys.executable}" draft_chapter.py {ch}')
+        out, rc = run(f'"{sys.executable}" pipeline/draft_chapter.py {ch}')
         if rc != 0:
             print(f"  DRAFT FAILED: {out[:200]}")
             results.append((ch, 0, 0, "FAILED"))

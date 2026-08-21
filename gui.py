@@ -942,7 +942,7 @@ class AutonovelApp(ctk.CTk):
             self.write_log(f"[VALIDATION ERROR] Chapter '{chapter}' is not a valid integer.\n")
             return
 
-        cmd = ["uv", "run", "python", "evaluate.py", "--chapter", chapter, "--project", project]
+        cmd = ["uv", "run", "python", "pipeline/evaluate.py", "--chapter", chapter, "--project", project]
         
         # Switch tab view to 'Run' to read logging stream output
         self.tabview.set("Run")

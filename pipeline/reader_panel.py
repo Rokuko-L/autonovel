@@ -6,6 +6,10 @@ The disagreements between readers are where editorial decisions live.
 
 Usage: python reader_panel.py
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import call_anthropic
 from core import paths
 import sys

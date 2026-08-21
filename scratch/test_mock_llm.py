@@ -48,7 +48,7 @@ class MockLLMTest(unittest.TestCase):
     def test_rebinds_import_time_references(self):
         """Modules that did 'from llm import call_anthropic' get the mock too."""
         from core import llm
-        import evaluate  # binds call_anthropic into its own namespace at import
+        import pipeline.evaluate as evaluate  # binds call_anthropic into its own namespace at import
         mock = MockLLM()
         mock.add_json({"overall_score": 7.0})
         with mock.install():
@@ -66,12 +66,12 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
             "identity": {"evaluator_system": "You are a literary critic."},
             "perspective": "",
         }
-        self._cm = unittest.mock.patch("evaluate.load_genre", return_value=stub)
+        self._cm = unittest.mock.patch("pipeline.evaluate.load_genre", return_value=stub)
         self._cm.start()
         self.addCleanup(self._cm.stop)
 
     def test_invalid_schema_triggers_self_correction(self):
-        import evaluate
+        import pipeline.evaluate as evaluate
         mock = MockLLM()
         # attempt 1: valid JSON, wrong shape (missing overall_score)
         mock.add('{"foo": "bar"}')
@@ -87,7 +87,7 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
         self.assertIn("Judge response", second)
 
     def test_syntax_error_then_success(self):
-        import evaluate
+        import pipeline.evaluate as evaluate
         mock = MockLLM()
         mock.add("this is not json at all")
         mock.add('{"overall_score": 6.5}')
@@ -96,7 +96,7 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
         self.assertEqual(result["overall_score"], 6.5)
 
     def test_exhausted_retries_raise(self):
-        import evaluate
+        import pipeline.evaluate as evaluate
         mock = MockLLM()
         for _ in range(3):
             mock.add('{"nope": 1}')
@@ -107,7 +107,7 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
 
     def test_compare_chapters_end_to_end(self):
         """Full compare() path: real project files, mocked judge."""
-        import compare_chapters
+        import pipeline.compare_chapters as compare_chapters
         project = "mocktest_compare"
         orig_name = paths._project_name
         try:

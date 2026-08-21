@@ -8,6 +8,10 @@ Usage:
   uv run python seed.py --riff "magic costs memories"  # Riff on an idea
 """
 
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import call_anthropic
 import argparse
 import json

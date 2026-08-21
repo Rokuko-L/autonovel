@@ -30,6 +30,10 @@ Usage: python repair_slop.py <chapter_number>
 Exit code 0 = repair applied and gate passed (caller should re-evaluate);
 1 = nothing to repair or repair failed (caller falls back to regen).
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core import llm
 from core import paths
 import re
@@ -37,7 +41,7 @@ import sys
 from pathlib import Path
 
 import _utf8
-from evaluate import (
+from pipeline.evaluate import (
     PROSE_TIC_PATTERNS,
     FICTION_AI_TELLS,
     STRUCTURAL_AI_TICS,

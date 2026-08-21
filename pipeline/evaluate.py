@@ -13,6 +13,10 @@ This file is READ-ONLY during autonomous runs. The human edits it
 to tune what "good" means. The agent treats it as a black box.
 """
 
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import TruncationError, call_anthropic, extract_text_from_response, get_max_tokens_with_thinking, parse_json_response
 from core import paths
 from core import textstats

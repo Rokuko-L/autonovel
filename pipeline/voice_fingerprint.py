@@ -5,6 +5,10 @@ Measures the things the voice doc says SHOULD be true and checks if they ARE.
 
 Outputs: voice_fingerprint.json with per-chapter metrics.
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core import paths
 import _utf8
 import re

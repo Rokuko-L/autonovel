@@ -3,6 +3,10 @@
 Draft a single chapter using the writer model.
 Usage: python draft_chapter.py 1
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import TruncationError, call_anthropic
 from core.outline import parse_premise_beats
 from core.paths import get_novel_title

@@ -3,6 +3,10 @@
 One-shot world.md generator for foundation phase.
 Reads seed.txt + voice.md, calls the writer model, outputs world.md content.
 """
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
 from core.paths import format_prompt
 from core import outline
