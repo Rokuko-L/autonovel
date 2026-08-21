@@ -403,7 +403,7 @@ def run_drafting(state: dict) -> dict:
                     # temp file and pass the path instead.
                     fb_path = paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
                     fb_path.write_text(retry_feedback, encoding="utf-8")
-                    cmd = (f"\"{sys.executable}\" pipeline/pipeline/draft_chapter.py {ch} "
+                    cmd = (f"\"{sys.executable}\" pipeline/draft_chapter.py {ch} "
                            f"--retry-feedback \"{fb_path}\"")
                 draft_result = run_tool(cmd, timeout=900, check=False)
                 if draft_result.returncode != 0:
@@ -416,7 +416,23 @@ def run_drafting(state: dict) -> dict:
                     continue
                 word_count = len(ch_file.read_text(encoding="utf-8").split())
                 if word_count < min_words:
-                    step(f"Chapter too short ({word_count}w < {min_words}w minimum), retrying...")
+                    # Chronic undershoot (observed: 15 consecutive Ch-1 drafts
+                    # below the floor). Retry with explicit expansion numbers —
+                    # a bare "too short" gives the writer nothing to act on.
+                    step(f"Chapter too short ({word_count}w < {min_words}w minimum), "
+                         f"retrying with expansion budget...")
+                    genre_cfg = load_genre()
+                    target = (genre_cfg["generation"]["outline"]["estimated_words"]
+                              // max(genre_cfg["generation"]["outline"]["estimated_chapters"], 1))
+                    shortfall = target - word_count
+                    retry_feedback = (
+                        f"LENGTH FIX REQUIRED: your previous draft was only {word_count} words; "
+                        f"the target is ~{target} words (shortfall: {shortfall}).\n"
+                        f"Do NOT add filler or summarize faster. Instead: expand EVERY scene beat "
+                        f"to full scene treatment — dramatize the beats you compressed, add sensory "
+                        f"detail, physical action, and real-time interiority per beat. "
+                        f"Aim for at least {min_words} words this time."
+                    )
                     continue
 
                 quality_attempt = True

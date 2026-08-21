@@ -266,6 +266,24 @@ SCORING RULE — STACCATO PENALTY:
     if debt_guardrail:
         structural_guardrails += "\n" + debt_guardrail
 
+    # Per-beat word budgets. Without concrete numbers the writer front-loads
+    # early beats and compresses the rest — observed: 15 consecutive Chapter-1
+    # drafts below the word floor until explicit per-beat budgets were added.
+    _genre_cfg = load_genre()
+    _target_words = (_genre_cfg["generation"]["outline"]["estimated_words"]
+                     // max(_genre_cfg["generation"]["outline"]["estimated_chapters"], 1))
+    _n_beats = len(re.findall(r'(?m)^\s+\d+[\.\)]\s+', chapter_outline))
+    if _n_beats >= 3:
+        _per_beat = max(200, int(_target_words / _n_beats))
+        structural_guardrails += f"""
+
+WORD BUDGET BY BEAT:
+This chapter has {_n_beats} scene beats and must total ~{_target_words} words.
+Budget roughly {_per_beat} words PER beat — full scene treatment each, not a
+paragraph. Do not compress later beats; if you are running long, deepen
+sensory detail and interiority rather than cutting beats.
+"""
+
     # Parse and append Orientation Facts checklist to guardrails
     orientation_facts = parse_orientation_facts(chapter_outline)
     if orientation_facts:
