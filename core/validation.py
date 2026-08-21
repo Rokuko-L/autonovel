@@ -51,7 +51,9 @@ class ScoreOutput(BaseModel):
     @classmethod
     def _coerce_score(cls, v):
         if isinstance(v, str):
-            return float(v.strip().rstrip("/10").strip())
+            # removesuffix, not rstrip: rstrip("/10") strips a character SET,
+            # corrupting "6.1" -> "6." and crashing on "10".
+            return float(v.strip().removesuffix("/10").strip())
         return v
 
 
@@ -66,7 +68,9 @@ class NovelScoreOutput(BaseModel):
     @classmethod
     def _coerce_score(cls, v):
         if isinstance(v, str):
-            return float(v.strip().rstrip("/10").strip())
+            # removesuffix, not rstrip: rstrip("/10") strips a character SET,
+            # corrupting "6.1" -> "6." and crashing on "10".
+            return float(v.strip().removesuffix("/10").strip())
         return v
 
 

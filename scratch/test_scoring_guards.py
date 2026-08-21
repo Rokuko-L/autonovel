@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core import validation
 from pipeline.pipeline_infra import (
     FOUNDATION_PLATEAU_ITERS,
     foundation_plateau,
@@ -74,6 +75,49 @@ class PlateauDetectorTest(unittest.TestCase):
     def test_improving_scores_never_plateau(self):
         self.assertEqual(run_foundation_loop([5.0 + 0.1 * i for i in range(10)]),
                          "exhausted")
+
+
+class ScoreCoercionTest(unittest.TestCase):
+    """Table tests for ScoreOutput._coerce_score / NovelScoreOutput._coerce_score.
+
+    Bug being guarded: the coercer used rstrip("/10"), which strips a
+    CHARACTER SET, not a suffix — "6.1" parsed as 6.0, "7.11" as 7.0, and a
+    perfect "10" crashed on float(""). Both models share the same logic, so
+    every case runs against both.
+    """
+
+    VALID = [
+        ("8.2", 8.2),
+        ("8.2/10", 8.2),      # suffix form still works
+        ("6.1", 6.1),         # trailing digit is NOT part of a "/10" set
+        ("7.11", 7.11),
+        ("10", 10.0),         # a perfect score must not crash
+        ("9/10", 9.0),
+        (" 9.5 /10 ", 9.5),   # surrounding whitespace tolerated
+        (7, 7.0),             # numeric passthrough
+        (6.5, 6.5),
+    ]
+
+    def test_both_models_parse_scores_exactly(self):
+        for model in (validation.ScoreOutput, validation.NovelScoreOutput):
+            field = "overall_score" if model is validation.ScoreOutput \
+                else "novel_score"
+            for raw, expected in self.VALID:
+                with self.subTest(model=model.__name__, input=raw):
+                    parsed = model.model_validate({field: raw})
+                    self.assertAlmostEqual(getattr(parsed, field), expected)
+
+    def test_empty_after_suffix_still_rejected(self):
+        """'/10' alone has no score left — must fail validation, not crash."""
+        with self.assertRaises(Exception) as ctx:
+            validation.ScoreOutput.model_validate({"overall_score": "/10"})
+        self.assertNotIsInstance(ctx.exception, TypeError)
+
+    def test_out_of_range_still_rejected(self):
+        with self.assertRaises(Exception):
+            validation.ScoreOutput.model_validate({"overall_score": 11})
+        with self.assertRaises(Exception):
+            validation.NovelScoreOutput.model_validate({"novel_score": -1})
 
 
 if __name__ == "__main__":
