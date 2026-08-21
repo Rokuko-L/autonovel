@@ -2,15 +2,15 @@
 """
 Generate canon.md by extracting all hard facts from world.md + characters.md.
 """
-from llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
-import paths
-from paths import format_prompt
-import outline
+from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from core import paths
+from core.paths import format_prompt
+from core import outline
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

@@ -30,8 +30,8 @@ Usage: python repair_slop.py <chapter_number>
 Exit code 0 = repair applied and gate passed (caller should re-evaluate);
 1 = nothing to repair or repair failed (caller falls back to regen).
 """
-import llm
-import paths
+from core import llm
+from core import paths
 import re
 import sys
 from pathlib import Path

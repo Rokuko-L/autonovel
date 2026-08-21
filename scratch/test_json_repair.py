@@ -1,4 +1,4 @@
-import llm
+from core import llm
 import sys
 import json
 from pathlib import Path

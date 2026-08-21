@@ -6,15 +6,15 @@ The disagreements between readers are where editorial decisions live.
 
 Usage: python reader_panel.py
 """
-from llm import call_anthropic
-import paths
+from core.llm import call_anthropic
+from core import paths
 import sys
 import json
 import re
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

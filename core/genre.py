@@ -3,7 +3,7 @@ genre.py — Genre configuration loader.
 All pipeline scripts call load_genre() to get active genre config.
 Configs are per-project in projects/{name}/active_genre.json.
 """
-import paths
+from core import paths
 import json
 import math
 import os

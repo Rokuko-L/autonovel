@@ -7,8 +7,8 @@ Produces a true rank order from round-robin tournament.
 Usage: python compare_chapters.py          # full tournament
        python compare_chapters.py 1 10     # single matchup
 """
-from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
-import paths
+from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core import paths
 import os
 import sys
 import json
@@ -17,7 +17,7 @@ import random
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-import validation
+from core import validation
 
 load_dotenv()
 

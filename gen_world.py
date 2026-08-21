@@ -3,14 +3,14 @@
 One-shot world.md generator for foundation phase.
 Reads seed.txt + voice.md, calls the writer model, outputs world.md content.
 """
-from llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
-from paths import format_prompt
-import outline
+from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from core.paths import format_prompt
+from core import outline
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

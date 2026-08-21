@@ -4,8 +4,8 @@ gen_title.py — Title tournament with a per-project 4-judge panel.
 Each judge is a real LLM call with a distinct persona from the project config.
 Scores are aggregated by average across all 4 judges.
 """
-from llm import call_anthropic, parse_json_response
-import paths
+from core.llm import call_anthropic, parse_json_response
+from core import paths
 import os
 import sys
 import json
@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

@@ -4,16 +4,16 @@ sanitize_outline_titles.py — Programmatic gatekeeper for chapter titles in out
 Ensures title diversity (limits 'The', 'In Which', duplicates, and repeated comedic phrasing).
 Runs an LLM feedback loop if violations are found.
 """
-from llm import call_anthropic, parse_json_response
-import paths
-from paths import format_prompt
+from core.llm import call_anthropic, parse_json_response
+from core import paths
+from core.paths import format_prompt
 import json
 import re
 import sys
 import math
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

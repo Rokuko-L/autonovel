@@ -1,4 +1,4 @@
-import llm
+from core import llm
 import httpx
 import os
 import sys

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build LaTeX source from chapter files."""
-import paths
+from core import paths
 import sys
 from pathlib import Path
 

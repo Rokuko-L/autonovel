@@ -19,8 +19,8 @@ from unittest.mock import patch, MagicMock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import llm
-import paths
+from core import llm
+from core import paths
 
 PASS = "[PASS]"
 FAIL = "[FAIL]"
@@ -147,7 +147,7 @@ def test_two_projects_no_cross_contamination(tmp_root: Path):
 
 def test_mock_call_anthropic():
     """llm.call_anthropic can be patched via unittest.mock.patch."""
-    with patch("llm.call_anthropic", return_value="mocked LLM response") as mock_fn:
+    with patch("core.llm.call_anthropic", return_value="mocked LLM response") as mock_fn:
         result = llm.call_anthropic("test prompt")
         check("call_anthropic patchable via mock.patch", result == "mocked LLM response")
         check("mock was called once", mock_fn.call_count == 1)

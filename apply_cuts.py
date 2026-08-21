@@ -9,7 +9,7 @@ Usage:
   python apply_cuts.py all --dry-run                       # show what would be cut
 """
 
-import paths
+from core import paths
 import _utf8
 import argparse
 import json

@@ -17,10 +17,10 @@ Usage:
   python run_pipeline.py --project mynovel --max-cycles 4     # limit revision cycles
 """
 
-from llm import call_anthropic
-from outline import validate_premise_beats
-import novel_tex
-import paths
+from core.llm import call_anthropic
+from core.outline import validate_premise_beats
+from core import novel_tex
+from core import paths
 import _utf8
 import argparse
 import json
@@ -35,7 +35,7 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 from review import should_stop as review_should_stop
 
 load_dotenv()

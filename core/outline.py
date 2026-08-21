@@ -3,7 +3,7 @@
 import re
 import sys
 
-from paths import get_outline_path
+from core.paths import get_outline_path
 
 
 def normalize_chapter_heading(text: str, chapter_num: int) -> str:

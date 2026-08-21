@@ -11,8 +11,8 @@ Usage:
   python review.py --output reviews.md  # Also save human-readable copy
   python review.py --parse            # Parse last review into actionable items
 """
-from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
-import paths
+from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core import paths
 import os
 import sys
 import json

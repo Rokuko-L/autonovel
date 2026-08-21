@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import paths
+from core import paths
 
 PASS = "[PASS]"
 FAIL = "[FAIL]"

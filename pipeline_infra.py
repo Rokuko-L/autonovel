@@ -5,7 +5,7 @@ subprocess helpers, score parsing, and shared constants.
 Extracted from run_pipeline.py; the phase functions and CLI stay there.
 """
 
-import paths
+from core import paths
 import _utf8
 import json
 import os

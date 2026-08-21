@@ -1,10 +1,10 @@
-import paths
+from core import paths
 import unittest
 import os
 import shutil
 import json
 from pathlib import Path
-import paths
+from core import paths
 
 
 class TestUtils(unittest.TestCase):

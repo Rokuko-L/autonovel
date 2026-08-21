@@ -7,9 +7,9 @@ Usage: uv run python gen_novel_tex.py
        uv run python gen_novel_tex.py --project brothersister
 """
 
-from llm import call_anthropic
-import paths
-from paths import get_novel_title
+from core.llm import call_anthropic
+from core import paths
+from core.paths import get_novel_title
 import re
 import sys
 import json

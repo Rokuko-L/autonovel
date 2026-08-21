@@ -4,8 +4,8 @@ Rebuild outline.md from the actual chapters.
 Reads each chapter, calls the LLM for a structured summary,
 and assembles into an outline that reflects the novel as-written.
 """
-from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
-import paths
+from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core import paths
 import os
 import sys
 import json

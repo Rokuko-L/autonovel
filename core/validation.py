@@ -18,7 +18,7 @@ feedback string, so callers can feed it back into a self-correction retry
 (the same loop that already exists for JSON syntax errors).
 """
 
-import llm
+from core import llm
 import json
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator

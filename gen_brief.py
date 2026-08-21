@@ -9,7 +9,7 @@ Usage:
   python gen_brief.py --cuts 12     # brief from adversarial cuts for ch 12
   python gen_brief.py --auto        # auto-detect weakest chapter and generate
 """
-import paths
+from core import paths
 import argparse
 import json
 import re

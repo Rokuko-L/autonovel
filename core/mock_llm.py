@@ -86,7 +86,7 @@ class _Patched:
         self._patched_modules = []
 
     def __enter__(self):
-        import llm
+        from core import llm
         original = llm.call_anthropic
         self._original = original
         llm.call_anthropic = self.mock
@@ -100,7 +100,7 @@ class _Patched:
         return self.mock
 
     def __exit__(self, *exc):
-        import llm
+        from core import llm
         llm.call_anthropic = self._original
         for name in self._patched_modules:
             setattr(sys.modules[name], "call_anthropic", self._original)

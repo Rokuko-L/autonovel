@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from paths import get_seed_path, get_novel_title
+from core.paths import get_seed_path, get_novel_title
 
 
 def generate_default_novel_tex(dest_path: Path):

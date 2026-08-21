@@ -9,7 +9,7 @@ Usage:
   uv run python run_drafts.py --from 11 --to 24
   uv run python run_drafts.py --project mynovel --from 1 --to 8 --spot 4 8
 """
-import paths
+from core import paths
 import _utf8
 import argparse
 import json
@@ -18,7 +18,7 @@ import shlex
 import subprocess
 import sys
 
-from paths import get_chapters_dir, get_state_path
+from core.paths import get_chapters_dir, get_state_path
 
 
 def run(cmd, timeout=600):

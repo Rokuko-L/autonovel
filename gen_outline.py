@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate outline.md in a robust, act-by-act chunked fashion."""
-from llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
-from paths import format_prompt
+from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from core.paths import format_prompt
 import argparse
 import os
 import sys
@@ -9,7 +9,7 @@ import re
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

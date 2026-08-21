@@ -4,12 +4,12 @@ Build a condensed arc summary for full-novel evaluation.
 For each chapter: first 150 words, last 150 words, plus any dialogue.
 Gives the reader panel enough to evaluate the ARC without 72k tokens.
 """
-from llm import TruncationError, call_anthropic
-from paths import get_novel_title
+from core.llm import TruncationError, call_anthropic
+from core.paths import get_novel_title
 import re
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

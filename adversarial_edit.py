@@ -6,8 +6,8 @@ What gets cut reveals what's weakest. The cut list IS the revision plan.
 Usage: python adversarial_edit.py 1        # single chapter
        python adversarial_edit.py all      # all chapters
 """
-from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
-import paths
+from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core import paths
 import os
 import sys
 import json

@@ -1,4 +1,4 @@
-import paths
+from core import paths
 import sys
 import os
 import subprocess

@@ -1,5 +1,5 @@
-from llm import call_anthropic
-import paths
+from core.llm import call_anthropic
+from core import paths
 import os
 import sys
 import re

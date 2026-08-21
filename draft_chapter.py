@@ -3,16 +3,16 @@
 Draft a single chapter using the writer model.
 Usage: python draft_chapter.py 1
 """
-from llm import TruncationError, call_anthropic
-from outline import parse_premise_beats
-from paths import get_novel_title
-from textstats import check_structural_repetition
+from core.llm import TruncationError, call_anthropic
+from core.outline import parse_premise_beats
+from core.paths import get_novel_title
+from core.textstats import check_structural_repetition
 import json
 import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 

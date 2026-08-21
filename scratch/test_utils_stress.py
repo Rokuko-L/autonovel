@@ -1,4 +1,4 @@
-import paths
+from core import paths
 import unittest
 import os
 import shutil
@@ -6,7 +6,7 @@ import json
 import time
 import threading
 from pathlib import Path
-import paths
+from core import paths
 
 class TestUtilsStress(unittest.TestCase):
     def setUp(self):

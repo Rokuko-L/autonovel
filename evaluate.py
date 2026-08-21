@@ -13,9 +13,9 @@ This file is READ-ONLY during autonomous runs. The human edits it
 to tune what "good" means. The agent treats it as a black box.
 """
 
-from llm import TruncationError, call_anthropic, extract_text_from_response, get_max_tokens_with_thinking, parse_json_response
-import paths
-import textstats
+from core.llm import TruncationError, call_anthropic, extract_text_from_response, get_max_tokens_with_thinking, parse_json_response
+from core import paths
+from core import textstats
 import argparse
 import json
 import os
@@ -30,8 +30,8 @@ from pathlib import Path
 # Load .env file if present
 from dotenv import load_dotenv
 load_dotenv()
-from genre import load_genre
-import validation
+from core.genre import load_genre
+from core import validation
 
 
 # ---- Mechanical Slop Detection (no LLM needed) ----

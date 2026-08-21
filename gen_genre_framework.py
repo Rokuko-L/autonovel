@@ -5,8 +5,8 @@ Reads genre description + chapter count + user notes, calls LLM with meta-prompt
 validates output, writes active_genre.json.
 """
 
-from llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
-from paths import load_prompt
+from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core.paths import load_prompt
 import os
 import re
 import sys

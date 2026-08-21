@@ -5,8 +5,8 @@ Run: uv run python -m unittest scratch.test_mock_llm -v
 No network, no API key required.
 """
 
-import llm
-import paths
+from core import llm
+from core import paths
 import json
 import os
 import shutil
@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import paths
-import validation
-from mock_llm import MockLLM
+from core import paths
+from core import validation
+from core.mock_llm import MockLLM
 
 
 class MockLLMTest(unittest.TestCase):
@@ -47,7 +47,7 @@ class MockLLMTest(unittest.TestCase):
 
     def test_rebinds_import_time_references(self):
         """Modules that did 'from llm import call_anthropic' get the mock too."""
-        import llm
+        from core import llm
         import evaluate  # binds call_anthropic into its own namespace at import
         mock = MockLLM()
         mock.add_json({"overall_score": 7.0})

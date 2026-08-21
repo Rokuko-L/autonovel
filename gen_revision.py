@@ -3,14 +3,14 @@
 Revision chapter generator. Rewrites a chapter from a specific revision brief.
 Usage: python gen_revision.py <chapter_num> <brief_file>
 """
-from llm import call_anthropic
-from paths import get_novel_title
-import outline
-import textstats
+from core.llm import call_anthropic
+from core.paths import get_novel_title
+from core import outline
+from core import textstats
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from genre import load_genre
+from core.genre import load_genre
 
 load_dotenv()
 
