@@ -488,6 +488,30 @@ def get_novel_title():
     return "the novel"
 
 
+_prompt_cache: dict | None = None
+
+
+def get_prompts_dir() -> Path:
+    """Directory holding shared prompt templates (prompts/<name>.md)."""
+    return get_root_dir() / "prompts"
+
+
+def load_prompt(name: str) -> str:
+    """Load a prompt template from prompts/<name>.md, cached per process.
+
+    Templates keep the exact text of the inline constants they replaced,
+    including {placeholder} and {{escaped}} braces, so existing
+    .format() / format_prompt() call sites behave identically.
+    """
+    global _prompt_cache
+    if _prompt_cache is None:
+        _prompt_cache = {}
+    if name not in _prompt_cache:
+        path = get_prompts_dir() / f"{name}.md"
+        _prompt_cache[name] = path.read_text(encoding="utf-8")
+    return _prompt_cache[name]
+
+
 def format_prompt(template: str, **kwargs) -> str:
     """Format a template string by replacing both double-braced and single-braced placeholders."""
     for k, v in kwargs.items():
