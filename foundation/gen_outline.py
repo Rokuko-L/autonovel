@@ -30,28 +30,48 @@ def validate_block_output(text, start, end):
         return False, f"Missing detailed outlines for: {', '.join(missing)}"
     return True, ""
 
-def verify_tonal_drift(roadmap_text, seed_concept, genre_name):
+def _act_ranges(total_chapters):
+    """Proportional 3-act boundaries (~25/50/25) valid for any chapter count.
+
+    Returns ((act1_start, act1_end), (act2_start, act2_end),
+    (act3_start, act3_end)), or None when the book is too short to have
+    three distinguishable acts.
+    """
+    if total_chapters < 3:
+        return None
+    a1_end = max(1, round(total_chapters * 0.25))
+    a2_end = max(a1_end + 1, round(total_chapters * 0.75))
+    return ((1, a1_end), (a1_end + 1, a2_end), (a2_end + 1, total_chapters))
+
+
+def verify_tonal_drift(roadmap_text, seed_concept, genre_name, total_chapters):
     """
     Evaluates Acts 2 & 3 of the roadmap for tonal drift or magic/tech rule breaks against Act 1.
     Returns (has_drift, feedback_message)
     """
+    acts = _act_ranges(total_chapters)
+    if acts is None:
+        print(f"  INFO: {total_chapters} chapters — too short for act-based drift check, skipping.", file=sys.stderr)
+        return False, ""
+    (a1s, a1e), (a2s, a2e), (a3s, a3e) = acts
+
     print("Running Phase 1 tonal drift validation...", file=sys.stderr)
     prompt = f"""You are a master story editor. Your task is to analyze the proposed high-level roadmap of a novel for tonal drift, logic breaks, or sudden genre shifts.
-    
+
     NOVEL GENRE: {genre_name}
     SEED CONCEPT:
     {seed_concept}
-    
+
     HIGH-LEVEL ROADMAP:
     {roadmap_text}
-    
+
     TASK:
-    Analyze if Act 2 (Chapters 11-20) or Act 3 (Chapters 21-30) deviates significantly from the established world rules, tone, style, or stakes register of Act 1 (Chapters 1-10).
+    Analyze if Act 2 (Chapters {a2s}-{a2e}) or Act 3 (Chapters {a3s}-{a3e}) deviates significantly from the established world rules, tone, style, or stakes register of Act 1 (Chapters {a1s}-{a1e}).
     For example:
     - Does a political intrigue novel suddenly become a sci-fi simulation?
     - Does a grounded low-magic fantasy shift to high-fantasy multiversal travel with no setup?
     - Are the rules of the magic system or setting established in Act 1 violated later?
-    
+
     Respond in JSON format:
     {{
       "has_drift": true/false,
@@ -62,9 +82,9 @@ def verify_tonal_drift(roadmap_text, seed_concept, genre_name):
       ]
     }}
     JSON only, no formatting/preamble outside the JSON object."""
-    
+
     try:
-        from llm import parse_json_response
+        from core.llm import parse_json_response
         raw = call_anthropic(prompt=prompt, system="You are a meticulous book editor who outputs valid JSON only.", model_key="judge", max_tokens=2000, temperature=0.1)
         data = parse_json_response(raw)
         has_drift = data.get("has_drift", False)
@@ -195,7 +215,7 @@ Each chapter entry must start with "### Chapter N:".
                 continue
             if "## HIGH-LEVEL ROADMAP" in res and "## GLOBAL PLOT THREADS LEDGER" in res:
                 # Run the tonal drift check
-                has_drift, feedback = verify_tonal_drift(res, seed, genre_name)
+                has_drift, feedback = verify_tonal_drift(res, seed, genre_name, total_chapters)
                 if not has_drift:
                     roadmap_content = res
                     break
