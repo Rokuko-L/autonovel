@@ -165,20 +165,20 @@ def main():
         if idx + 1 < len(sys.argv):
             paths.set_project_name(sys.argv[idx + 1])
 
-    paths = {
+    required_files = {
         "seed.txt": paths.get_seed_path(),
         "world.md": paths.get_world_path(),
         "characters.md": paths.get_characters_path(),
     }
 
-    for name, p in paths.items():
+    for name, p in required_files.items():
         if not p.exists():
             print(f"ERROR: {name} not found at {p}", file=sys.stderr)
             sys.exit(1)
 
-    seed = paths["seed.txt"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
-    world = paths["world.md"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
-    characters = paths["characters.md"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
+    seed = required_files["seed.txt"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
+    world = required_files["world.md"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
+    characters = required_files["characters.md"].read_text(encoding="utf-8")[:CONTEXT_LIMIT]
 
     genre_name = load_genre().get("genre_name", "Unknown")
     project_name = paths.get_project_name()

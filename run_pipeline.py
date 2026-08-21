@@ -18,7 +18,7 @@ Usage:
 """
 
 from core.llm import call_anthropic
-from core.outline import validate_premise_beats
+from core.outline import validate_premise_beats, validate_plants_harvests, extract_outline_debts
 from core import novel_tex
 from core import paths
 from core import _utf8
@@ -160,10 +160,9 @@ def run_foundation(state: dict) -> dict:
         uv_run("foundation/gen_characters.py", timeout=600)
 
         step("Generating title tournament...")
-        state = load_state()
-        if not state.get("title") or state["title"] == "Untitled":
+        current_title = load_state().get("title", "")
+        if not current_title or current_title == "Untitled":
             uv_run("foundation/gen_title.py", timeout=600)
-            state = load_state()
 
         step("Generating outline (part 1)...")
         uv_run("foundation/gen_outline.py", timeout=900)
@@ -191,7 +190,7 @@ def run_foundation(state: dict) -> dict:
                 " Use bullet format: '- beat_label: scene description'"
                 " — one line per beat inside the PREMISE BEATS section."
             )
-            uv_run(f'gen_outline.py --retry-feedback "{error}.{format_hint}"', timeout=900)
+            uv_run(f'foundation/gen_outline.py --retry-feedback "{error}.{format_hint}"', timeout=900)
 
         # Write premise validation sidecar
         prem_val_path = paths.get_project_dir() / "premise_validation.json"
@@ -213,12 +212,12 @@ def run_foundation(state: dict) -> dict:
 
         # Validate plants & harvests consistency and extract active debts
         outline_text = outline_path.read_text(encoding="utf-8")
-        ph_passed, ph_error = outline.validate_plants_harvests(outline_text)
+        ph_passed, ph_error = validate_plants_harvests(outline_text)
         if not ph_passed:
             step(f"WARNING: Outline plants/harvests validation issues found:\n{ph_error}")
         
-        state = load_state()
-        debts = outline.extract_outline_debts(outline_text)
+        state.update(load_state())
+        debts = extract_outline_debts(outline_text)
         state["debts"] = debts
         save_state(state)
         step(f"Logged {len(debts)} active narrative debts in project state.")
@@ -414,7 +413,7 @@ def run_drafting(state: dict) -> dict:
             step(f"Drafted {word_count} words")
 
             # Evaluate
-            eval_result = uv_run(f"evaluate.py --chapter={ch}", timeout=300)
+            eval_result = uv_run(f"pipeline/evaluate.py --chapter={ch}", timeout=300)
             score = parse_score(eval_result.stdout, "overall_score")
             step(f"Chapter {ch} score: {score}")
 
@@ -505,7 +504,7 @@ def run_drafting(state: dict) -> dict:
                         if rep.returncode == 0:
                             rep_wc = len(ch_file.read_text(encoding="utf-8").split())
                             step(f"Repaired Ch {ch} ({rep_wc}w) — re-evaluating...")
-                            rep_eval = uv_run(f"evaluate.py --chapter={ch}", timeout=300)
+                            rep_eval = uv_run(f"pipeline/evaluate.py --chapter={ch}", timeout=300)
                             rep_score = parse_score(rep_eval.stdout, "overall_score")
                             step(f"Repaired Ch {ch} score: {rep_score}")
                             if rep_score >= CHAPTER_THRESHOLD:
@@ -911,7 +910,7 @@ def run_revision(
                 ch_num = item["chapter"]
                 question = item["question"]
                 try:
-                    pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                    pre_eval = uv_run(f"pipeline/evaluate.py --chapter={ch_num}", timeout=300)
                     pre_score = parse_score(pre_eval.stdout, "overall_score")
 
                     brief_file = briefs_dir / f"ch{ch_num:02d}_cycle{cycle}_{question}.md"
@@ -940,7 +939,7 @@ def run_revision(
                     step(f"Revising Ch {ch_num} with brief {brief_file.name}...")
                     uv_run(f'pipeline/gen_revision.py {ch_num} "{brief_file}"', timeout=600)
 
-                    post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                    post_eval = uv_run(f"pipeline/evaluate.py --chapter={ch_num}", timeout=300)
                     post_score = parse_score(post_eval.stdout, "overall_score")
 
                     ch_file = paths.get_chapters_dir() / f"ch_{ch_num:02d}.md"
@@ -1094,12 +1093,12 @@ def run_revision(
             # Step 1: Generate the review
             step("Sending manuscript to Opus for review...")
             review_result = uv_run(
-                f'review.py --output "{paths.get_reviews_path()}"', timeout=900)
+                f'pipeline/review.py --output "{paths.get_reviews_path()}"', timeout=900)
             
             # Step 2: Parse the review
             step("Parsing review...")
             parse_result = run_tool(
-                "uv run python review.py --parse", timeout=60)
+                "uv run python pipeline/review.py --parse", timeout=60)
             print(parse_result.stdout if parse_result else "")
             
             # Step 3: Check stopping condition (uses review.py's should_stop)
@@ -1148,7 +1147,7 @@ def run_revision(
                         
                         # Evaluate pre-revision score
                         step(f"Evaluating Ch {ch_num} before revision...")
-                        pre_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                        pre_eval = uv_run(f"pipeline/evaluate.py --chapter={ch_num}", timeout=300)
                         pre_score = parse_score(pre_eval.stdout, "overall_score")
                         
                         step(f"Revising Ch {ch_num} from review brief...")
@@ -1156,7 +1155,7 @@ def run_revision(
                         
                         # Evaluate post-revision score
                         step(f"Evaluating Ch {ch_num} after revision...")
-                        post_eval = uv_run(f"evaluate.py --chapter={ch_num}", timeout=300)
+                        post_eval = uv_run(f"pipeline/evaluate.py --chapter={ch_num}", timeout=300)
                         post_score = parse_score(post_eval.stdout, "overall_score")
                         
                         # Compare against historical best

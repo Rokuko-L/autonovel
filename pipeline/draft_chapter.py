@@ -8,7 +8,7 @@ from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
 from core.llm import TruncationError, call_anthropic
-from core.outline import parse_premise_beats
+from core.outline import parse_premise_beats, normalize_chapter_heading
 from core.paths import get_novel_title
 from core.textstats import check_structural_repetition
 import json
@@ -38,7 +38,7 @@ def call_writer(prompt, max_tokens=None):
     estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
     chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
     target_words = estimated_words // chapter_count
-    prompt_target_words = int(target_words * 1.15)  # inflate prompt target so LLM undershoot lands near real target
+    prompt_target_words = int(target_words * 1.35)  # inflate prompt target so LLM undershoot lands near real target
     # Cap output tokens at ~3.25x target word count to prevent runaway generation
     if max_tokens is None:
         max_tokens = int(target_words * 3.25)
@@ -451,7 +451,7 @@ Write the chapter now. Full text, beginning to end.
 
     # Save
     out_path = chapters_dir / f"ch_{chapter_num:02d}.md"
-    out_path.write_text(outline.normalize_chapter_heading(result, chapter_num), encoding="utf-8")
+    out_path.write_text(normalize_chapter_heading(result, chapter_num), encoding="utf-8")
     print(f"Saved to {out_path}", file=sys.stderr)
     print(f"Word count: {len(result.split())}", file=sys.stderr)
     print(result)
