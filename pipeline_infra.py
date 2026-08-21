@@ -324,6 +324,9 @@ def parse_score(stdout: str, key: str = "overall_score") -> float:
     """
     Parse a score from evaluate.py YAML-like stdout output.
     Looks for lines like 'overall_score: 8.0' or 'novel_score: 7.5'.
+
+    Raises ValueError when the key is missing or not a float — a silently
+    missing score must never flow into keep/discard decisions.
     """
     for line in stdout.splitlines():
         line = line.strip()
@@ -332,8 +335,28 @@ def parse_score(stdout: str, key: str = "overall_score") -> float:
             try:
                 return float(val)
             except ValueError:
-                continue
-    return -1.0
+                break
+    raise ValueError(
+        f"'{key}:' not found (or not a float) in evaluator output — the eval "
+        f"likely crashed or changed its output format. stdout tail: {stdout[-300:]!r}"
+    )
+
+
+def parse_score_any(stdout: str, *keys: str) -> float:
+    """Parse the first score key present in evaluate.py stdout.
+
+    Explicit replacement for the old 'parse key A, fall back to B on -1.0'
+    pattern. Raises ValueError when none of the keys parse.
+    """
+    for key in keys:
+        try:
+            return parse_score(stdout, key)
+        except ValueError:
+            continue
+    raise ValueError(
+        f"None of {keys} found in evaluator output. "
+        f"stdout tail: {stdout[-300:]!r}"
+    )
 
 def parse_lore_score(stdout: str) -> float:
     """Parse lore_score from foundation evaluation output."""

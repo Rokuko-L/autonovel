@@ -814,9 +814,7 @@ def run_revision(
                 # Evaluate full novel score after Step 1
                 step("Evaluating novel score after Adversarial Edits...")
                 post_adv_eval = uv_run("evaluate.py --full", timeout=600)
-                post_adv_score = parse_score(post_adv_eval.stdout, "novel_score")
-                if post_adv_score < 0:
-                    post_adv_score = parse_score(post_adv_eval.stdout, "overall_score")
+                post_adv_score = parse_score_any(post_adv_eval.stdout, "novel_score", "overall_score")
                 
                 step(f"Adversarial edits score shift: {cycle_baseline_score} -> {post_adv_score}")
                 
@@ -848,10 +846,8 @@ def run_revision(
                 # Evaluate full novel score after Step 2
                 step("Evaluating novel score after Mechanical Cuts...")
                 post_cuts_eval = uv_run("evaluate.py --full", timeout=600)
-                post_cuts_score = parse_score(post_cuts_eval.stdout, "novel_score")
-                if post_cuts_score < 0:
-                    post_cuts_score = parse_score(post_cuts_eval.stdout, "overall_score")
-                
+                post_cuts_score = parse_score_any(post_cuts_eval.stdout, "novel_score", "overall_score")
+
                 step(f"Mechanical cuts score shift: {post_adv_score} -> {post_cuts_score}")
                 
                 if post_cuts_score >= (post_adv_score - 0.05):
@@ -1022,19 +1018,21 @@ def run_revision(
         if not skip_full_novel_eval:
             step("Running full novel evaluation...")
             full_eval = uv_run("evaluate.py --full", timeout=600)
-            novel_score = parse_score(full_eval.stdout, "novel_score")
-
-            if novel_score < 0:
-                # Fallback: try overall_score
-                novel_score = parse_score(full_eval.stdout, "overall_score")
+            try:
+                novel_score = parse_score_any(full_eval.stdout, "novel_score", "overall_score")
+            except ValueError as e:
+                step(f"WARNING: could not parse any score from full eval — keeping previous score. {e}")
+                novel_score = prev_score
 
             if novel_score == 0.0:
                 # 0.0 is almost always a judge failure — retry once
                 step("Novel score 0.0 detected, retrying evaluation...")
                 retry_eval = uv_run("evaluate.py --full", timeout=600)
-                novel_score = parse_score(retry_eval.stdout, "novel_score")
-                if novel_score == 0.0:
-                    novel_score = parse_score(retry_eval.stdout, "overall_score")
+                try:
+                    novel_score = parse_score_any(retry_eval.stdout, "novel_score", "overall_score")
+                except ValueError as e:
+                    step(f"WARNING: retry eval unparseable — keeping previous score. {e}")
+                    novel_score = prev_score
                 if novel_score <= 0.0:
                     step("Novel score still 0.0 after retry — keeping previous score")
                     novel_score = prev_score
@@ -1201,9 +1199,7 @@ def run_revision(
             if apply_cuts_py.exists():
                 # Evaluate score before cuts
                 pre_cuts_eval = uv_run("evaluate.py --full", timeout=600)
-                pre_cuts_score = parse_score(pre_cuts_eval.stdout, "novel_score")
-                if pre_cuts_score < 0:
-                    pre_cuts_score = parse_score(pre_cuts_eval.stdout, "overall_score")
+                pre_cuts_score = parse_score_any(pre_cuts_eval.stdout, "novel_score", "overall_score")
 
                 run_tool(
                     "uv run python apply_cuts.py all --types OVER-EXPLAIN REDUNDANT --min-fat 15",
@@ -1211,9 +1207,7 @@ def run_revision(
 
                 # Evaluate score after cuts
                 post_cuts_eval = uv_run("evaluate.py --full", timeout=600)
-                post_cuts_score = parse_score(post_cuts_eval.stdout, "novel_score")
-                if post_cuts_score < 0:
-                    post_cuts_score = parse_score(post_cuts_eval.stdout, "overall_score")
+                post_cuts_score = parse_score_any(post_cuts_eval.stdout, "novel_score", "overall_score")
 
                 step(f"Mechanical cuts score shift: {pre_cuts_score} -> {post_cuts_score}")
 
