@@ -15,10 +15,10 @@ export default function Foundation() {
         <div>
           <p className="section-head">02 · what the machine believes</p>
           <h1 className="mt-1 font-display text-xl lowercase tracking-tight text-paper">
-            foundation — the second son of the house of bells
+            foundation — {data.meta.title.toLowerCase()}
           </h1>
           <p className="mt-1 font-mono text-xs text-fog-500">
-            score 7.6 · lore 7.2 · frozen at iter 8 — readable even after export
+            score {data.meta.score} · lore {data.meta.lore} · {data.meta.chaptersTotal} chapters · phase {data.meta.phase}
           </p>
         </div>
         <div className="flex gap-1">

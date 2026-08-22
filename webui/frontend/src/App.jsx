@@ -64,7 +64,7 @@ export default function App() {
 
         <div className="mt-auto px-5 pb-2">
           <p className="section-head">active</p>
-          <p className="mt-1 truncate text-xs text-fog-300">bells-second-son</p>
+          <p className="mt-1 truncate text-xs text-fog-300">sir the confortable v3</p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-accent">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             running

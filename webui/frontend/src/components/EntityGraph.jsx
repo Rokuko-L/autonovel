@@ -33,11 +33,12 @@ export default function EntityGraph({ nodes, edges }) {
       layout: {
         name: 'fcose',
         animate: true,
-        padding: 80,
+        padding: 60,
         nodeSeparation: 240,
         idealEdgeLength: 220,
         nodeRepulsion: 24000,
         gravity: 0.2,
+        packComponents: true,
       },
       style: [
         {
@@ -49,20 +50,20 @@ export default function EntityGraph({ nodes, edges }) {
             'border-width': 2,
             color: '#ddd7c3',
             'font-family': 'ui-monospace, monospace',
-            'font-size': 7,
+            'font-size': 9,
             'text-valign': 'bottom',
-            'text-margin-y': 4,
-            width: 16,
-            height: 16,
+            'text-margin-y': 5,
+            width: 20,
+            height: 20,
           },
         },
         {
           selector: 'edge',
           style: {
             width: 1.5,
-            'line-color': '#26251f',
+            'line-color': '#4a4738',
             'curve-style': 'bezier',
-            opacity: 0.9,
+            opacity: 1,
           },
         },
         {

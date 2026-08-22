@@ -74,10 +74,12 @@ export default function Ledger() {
         </section>
 
         <section>
-          <h2 className="section-head mb-3">global plot threads ledger</h2>
-          <ul className="rounded-xl border border-ink-700 bg-ink-900 px-4">
+          <h2 className="section-head mb-3">
+            global plot threads ledger — {data.threads.length} tracked
+          </h2>
+          <ul className="max-h-[480px] overflow-y-auto rounded-xl border border-ink-700 bg-ink-850 px-4">
             {data.threads.map((t) => (
-              <ThreadRow key={t.thread} t={t} />
+              <ThreadRow key={t.thread + t.planted} t={t} />
             ))}
           </ul>
           <div className="mt-3 flex items-center gap-4 font-mono text-[10px] text-fog-500">
