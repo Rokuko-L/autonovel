@@ -105,6 +105,10 @@ def get_logs_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+def get_llm_events_path() -> Path:
+    """JSONL event log for LLM call telemetry (one JSON object per line)."""
+    return get_project_dir() / "llm_events.jsonl"
+
 def get_briefs_dir() -> Path:
     d = get_project_dir() / "briefs"
     d.mkdir(parents=True, exist_ok=True)
