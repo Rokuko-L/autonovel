@@ -20,6 +20,13 @@ function Tile({ label, value, sub }) {
 export default function Stats() {
   const [stats, setStats] = useState(null)
 
+  // mock price map (USD per 1M tokens, in/out) — real prices arrive from settings on wiring day
+  const PRICES = { writer: [3, 15], judge: [15, 75], review: [15, 75] }
+  const rowCost = (r) => {
+    const [pin, pout] = PRICES[r.modelKey] ?? [0, 0]
+    return ((r.tokensIn / 1e6) * pin + (r.tokensOut / 1e6) * pout)
+  }
+
   useEffect(() => {
     api.getStats('bells-second-son').then(setStats)
   }, [])
@@ -45,8 +52,8 @@ export default function Stats() {
             <Tile label="Tokens out" value={fmtTokens(stats.tokensOutTotal)} />
             <Tile label="Failed calls" value={String(stats.failedCount)}
               sub={stats.failedCount > 0 ? undefined : 'clean'} />
-            <Tile label="Time in LLM" value={`${Math.round(totalMs / 60000)}m`}
-              sub={`${Math.round(totalMs / 1000)}s total`} />
+            <Tile label="Time in LLM" value={`${(totalMs / 60000).toFixed(1)}m`}
+              sub={`${Math.round(totalMs / 1000)}s across ${stats.callCount} calls`} />
           </div>
 
           <h2 className="mb-3 mt-8 text-sm font-medium text-fog-400">By role</h2>
@@ -57,6 +64,7 @@ export default function Stats() {
                 <th className="px-4 py-3 font-medium">model</th>
                 <th className="px-4 py-3 text-right font-medium">tokens in</th>
                 <th className="px-4 py-3 text-right font-medium">tokens out</th>
+                <th className="px-4 py-3 text-right font-medium">cost</th>
                 <th className="px-4 py-3 text-right font-medium">calls</th>
               </tr>
             </thead>
@@ -67,6 +75,7 @@ export default function Stats() {
                   <td className="px-4 py-3 text-fog-500">{r.model}</td>
                   <td className="px-4 py-3 text-right text-fog-200">{r.tokensIn.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right text-fog-200">{r.tokensOut.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-accent">${rowCost(r).toFixed(2)}</td>
                   <td className="px-4 py-3 text-right text-fog-400">{r.calls}</td>
                 </tr>
               ))}

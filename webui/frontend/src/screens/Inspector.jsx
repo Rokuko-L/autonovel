@@ -71,8 +71,10 @@ export default function Inspector() {
   return (
     <div>
       <header className="mb-6 flex items-center justify-between">
-        <p className="section-head">05 · every token accounted for</p>
-        <h1 className="mt-1 font-display text-xl lowercase tracking-tight text-paper">llm inspector</h1>
+        <div>
+          <p className="section-head">05 · every token accounted for</p>
+          <h1 className="mt-1 font-display text-xl lowercase tracking-tight text-paper">llm inspector</h1>
+        </div>
         <button
           onClick={() => setLive(!live)}
           className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-transform active:scale-[0.98] ${

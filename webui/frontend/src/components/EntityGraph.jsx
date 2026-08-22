@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
 import cytoscape from 'cytoscape'
+import fcose from 'cytoscape-fcose'
+
+cytoscape.use(fcose)
 
 const KIND_COLOR = {
   character: '#ff6a3d',
@@ -28,13 +31,13 @@ export default function EntityGraph({ nodes, edges }) {
         })),
       ],
       layout: {
-        name: 'cose',
+        name: 'fcose',
         animate: true,
         padding: 80,
-        nodeOverlap: 18,
-        nodeRepulsion: 12000,
-        idealEdgeLength: 120,
-        gravity: 0.3,
+        nodeSeparation: 240,
+        idealEdgeLength: 220,
+        nodeRepulsion: 24000,
+        gravity: 0.2,
       },
       style: [
         {
@@ -106,6 +109,7 @@ export default function EntityGraph({ nodes, edges }) {
       cy.elements().removeClass('dimmed')
       cy.edges().removeClass('lit')
     }
+    cy.on('layoutstop', () => cy.fit(undefined, 60))
     cy.on('mouseover', 'node', focus)
     cy.on('mouseout', 'node', unfocus)
 
