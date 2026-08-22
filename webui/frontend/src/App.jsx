@@ -72,7 +72,16 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="min-w-0 flex-1 overflow-y-auto p-8">{SCREENS[screen]()}</main>
+      <main className="min-w-0 flex-1 overflow-y-auto p-8">
+        {/* render as ELEMENTS, never fn calls — fn calls break hook ownership */}
+        {screen === 'projects' && <Projects />}
+        {screen === 'foundation' && <Foundation />}
+        {screen === 'ledger' && <Ledger />}
+        {screen === 'monitor' && <Monitor />}
+        {screen === 'inspector' && <Inspector />}
+        {screen === 'stats' && <Stats />}
+        {screen === 'settings' && <Settings />}
+      </main>
     </div>
   )
 }
