@@ -30,7 +30,7 @@ export default function EntityGraph({ nodes, edges }) {
       layout: {
         name: 'cose',
         animate: true,
-        padding: 50,
+        padding: 80,
         nodeOverlap: 18,
         nodeRepulsion: 12000,
         idealEdgeLength: 120,
@@ -46,29 +46,35 @@ export default function EntityGraph({ nodes, edges }) {
             'border-width': 2,
             color: '#ddd7c3',
             'font-family': 'ui-monospace, monospace',
-            'font-size': 11,
+            'font-size': 7,
             'text-valign': 'bottom',
-            'text-margin-y': 6,
-            width: 26,
-            height: 26,
+            'text-margin-y': 4,
+            width: 16,
+            height: 16,
           },
         },
         {
           selector: 'edge',
           style: {
-            label: 'data(label)',
             width: 1.5,
             'line-color': '#26251f',
-            'target-arrow-color': '#26251f',
             'curve-style': 'bezier',
+            opacity: 0.9,
+          },
+        },
+        {
+          selector: 'edge.lit',
+          style: {
+            label: 'data(label)',
+            'line-color': '#ff6a3d',
+            width: 2.5,
             color: '#ff6a3d',
-            'font-size': 10,
+            'font-size': 6,
             'font-family': 'ui-monospace, monospace',
             'text-background-color': '#0a0a08',
             'text-background-opacity': 1,
-            'text-background-padding': 2,
+            'text-background-padding': 1,
             'text-rotation': 'autorotate',
-            opacity: 0.9,
           },
         },
         {
@@ -94,11 +100,11 @@ export default function EntityGraph({ nodes, edges }) {
       const nbhd = node.closedNeighborhood()
       cy.elements().addClass('dimmed')
       nbhd.removeClass('dimmed')
-      nbhd.edges().style({ 'line-color': '#ff6a3d', width: 2.5 })
+      nbhd.edges().addClass('lit')
     }
     const unfocus = () => {
       cy.elements().removeClass('dimmed')
-      cy.edges().style({ 'line-color': '#26251f', width: 1.5 })
+      cy.edges().removeClass('lit')
     }
     cy.on('mouseover', 'node', focus)
     cy.on('mouseout', 'node', unfocus)
