@@ -2,8 +2,8 @@
 """
 mock_llm.py -- Offline mock for the LLM API layer.
 
-Every LLM call in autonovel flows through llm.call_anthropic(). Scripts bind
-it at import time ("from llm import call_anthropic"), so installing the
+Every LLM call in autonovel flows through llm.call_llm(). Scripts bind
+it at import time ("from llm import call_llm"), so installing the
 mock rebinds EVERY module in sys.modules that still holds the original
 reference. Install before or after importing pipeline modules -- both work.
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 
 class MockLLM:
-    """Scripted replacement for llm.call_anthropic."""
+    """Scripted replacement for llm.call_llm."""
 
     def __init__(self):
         self.rules = []   # [{"response": str, "match": str|None, "used": bool}]
@@ -49,7 +49,7 @@ class MockLLM:
         import json
         return self.add(json.dumps(data), match=match)
 
-    # --- call_anthropic-compatible interface ---
+    # --- call_llm-compatible interface ---
 
     def __call__(self, prompt, system=None, **kwargs):
         self.calls.append({"prompt": prompt, "system": system, "kwargs": kwargs})
@@ -68,7 +68,7 @@ class MockLLM:
     # --- installation ---
 
     def install(self):
-        """Context manager: rebind call_anthropic everywhere it's referenced."""
+        """Context manager: rebind call_llm everywhere it's referenced."""
         return _Patched(self)
 
     # --- introspection helpers ---
@@ -88,23 +88,23 @@ class _Patched:
 
     def __enter__(self):
         from core import llm
-        original = llm.call_anthropic
+        original = llm.call_llm
         self._original = original
-        llm.call_anthropic = self.mock
+        llm.call_llm = self.mock
         # Rebind in every already-imported module that holds the original.
         self._patched_modules = [
             name for name, mod in sys.modules.items()
-            if getattr(mod, "call_anthropic", None) is original
+            if getattr(mod, "call_llm", None) is original
         ]
         for name in self._patched_modules:
-            setattr(sys.modules[name], "call_anthropic", self.mock)
+            setattr(sys.modules[name], "call_llm", self.mock)
         return self.mock
 
     def __exit__(self, *exc):
         from core import llm
-        llm.call_anthropic = self._original
+        llm.call_llm = self._original
         for name in self._patched_modules:
-            setattr(sys.modules[name], "call_anthropic", self._original)
+            setattr(sys.modules[name], "call_llm", self._original)
         return False
 
 

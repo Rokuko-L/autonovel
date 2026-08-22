@@ -11,7 +11,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic
+from core.llm import call_llm
 from core import paths
 from core.paths import get_novel_title
 import re
@@ -212,7 +212,7 @@ def main():
     dest = typeset_dir / "novel.tex"
 
     # Call LLM
-    raw = call_anthropic(
+    raw = call_llm(
         prompt=prompt,
         system=SYSTEM_PROMPT,
         model_key="writer",

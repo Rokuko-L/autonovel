@@ -1,7 +1,7 @@
 # Offline Testing with MockLLM (`core/mock_llm.py`)
 
-All pipeline code reaches the LLM through `llm.call_anthropic()`, and
-scripts bind it at import time (`from llm import call_anthropic`).
+All pipeline code reaches the LLM through `llm.call_llm()`, and
+scripts bind it at import time (`from llm import call_llm`).
 `MockLLM.install()` rebinds **every** module in `sys.modules` that still
 holds the original reference — so it works whether you install before or
 after importing pipeline modules.

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import TruncationError, call_anthropic
+from core.llm import TruncationError, call_llm
 from core.outline import parse_premise_beats, normalize_chapter_heading
 from core.paths import get_novel_title
 from core.textstats import check_structural_repetition
@@ -43,7 +43,7 @@ def call_writer(prompt, max_tokens=None):
     if max_tokens is None:
         max_tokens = int(target_words * 3.25)
     system_prompt = chapter_system + f"\n\nWRITING REQUIREMENT: This chapter must be approximately {prompt_target_words} words. Write fully, expansively, and completely to hit this target. Flesh out every scene with sensory details, full dialogues, and deep character interiority. Avoid summarizing events, skipping actions, or rushing through the narrative. Pacing should be slow, detailed, and immersive."
-    return call_anthropic(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
+    return call_llm(prompt=prompt, system=system_prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
 
 def load_file(path):
     try:

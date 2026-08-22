@@ -25,35 +25,35 @@ class MockLLMTest(unittest.TestCase):
         mock = MockLLM()
         mock.add("first").add("second")
         with mock.install():
-            self.assertEqual(llm.call_anthropic("p1"), "first")
-            self.assertEqual(llm.call_anthropic("p2"), "second")
+            self.assertEqual(llm.call_llm("p1"), "first")
+            self.assertEqual(llm.call_llm("p2"), "second")
         # restored after context exit
-        self.assertIsNot(llm.call_anthropic, mock)
+        self.assertIsNot(llm.call_llm, mock)
 
     def test_match_substring(self):
         mock = MockLLM()
         mock.add("compare-response", match="Compare these")
         mock.add("fallback")
         with mock.install():
-            self.assertEqual(llm.call_anthropic("random prompt"), "fallback")
-            self.assertEqual(llm.call_anthropic("Compare these two chapters"), "compare-response")
+            self.assertEqual(llm.call_llm("random prompt"), "fallback")
+            self.assertEqual(llm.call_llm("Compare these two chapters"), "compare-response")
 
     def test_unexpected_call_raises(self):
         mock = MockLLM()
         with mock.install():
             with self.assertRaises(AssertionError):
-                llm.call_anthropic("not planned")
+                llm.call_llm("not planned")
 
     def test_rebinds_import_time_references(self):
-        """Modules that did 'from llm import call_anthropic' get the mock too."""
+        """Modules that did 'from llm import call_llm' get the mock too."""
         from core import llm
-        import pipeline.evaluate as evaluate  # binds call_anthropic into its own namespace at import
+        import pipeline.evaluate as evaluate  # binds call_llm into its own namespace at import
         mock = MockLLM()
         mock.add_json({"overall_score": 7.0})
         with mock.install():
-            self.assertIs(evaluate.call_anthropic, mock)
-            self.assertIs(llm.call_anthropic, mock)
-        self.assertIs(evaluate.call_anthropic, llm.call_anthropic)
+            self.assertIs(evaluate.call_llm, mock)
+            self.assertIs(llm.call_llm, mock)
+        self.assertIs(evaluate.call_llm, llm.call_llm)
 
 
 class ValidationRetryIntegrationTest(unittest.TestCase):

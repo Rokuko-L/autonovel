@@ -11,7 +11,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
 from core import paths
 from core import _utf8
-from core.llm import call_anthropic
+from core.llm import call_llm
 import json
 import os
 import re
@@ -448,7 +448,7 @@ def process_notes(notes_input, genre):
 
     if word_count < 300:
         step(f"Notes too short ({word_count}w). Expanding to ~500 words via LLM...")
-        expanded = call_anthropic(
+        expanded = call_llm(
             prompt=(
                 f"The user has provided a very brief premise for a {genre_str} novel:\n\n"
                 f"'{notes}'\n\n"
@@ -472,7 +472,7 @@ def process_notes(notes_input, genre):
         return notes
 
     step(f"Notes are very long ({word_count}w). Summarizing to ~500 words for genre framework...")
-    summary = call_anthropic(
+    summary = call_llm(
         prompt=(
             f"The user has provided a massive document ({word_count} words) for a {genre_str} novel. "
             f"Extract a dense 500-word summary of the core premise, genre, main characters, "

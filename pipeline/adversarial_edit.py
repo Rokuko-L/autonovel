@@ -10,7 +10,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core.llm import call_llm, extract_text_from_response, get_max_tokens_with_thinking
 from core import paths
 from core import llm
 import os
@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def call_judge(prompt, max_tokens=8000):
-    return call_anthropic(prompt=prompt, system="You are a ruthless literary editor. You cut fat from prose. You have no sentiment about good-enough sentences -- if a sentence isn't earning its place, it goes. You quote exactly from the text. You never invent or paraphrase. Always respond with valid JSON.", model_key="judge", max_tokens=max_tokens, temperature=0.3, timeout=300)
+    return call_llm(prompt=prompt, system="You are a ruthless literary editor. You cut fat from prose. You have no sentiment about good-enough sentences -- if a sentence isn't earning its place, it goes. You quote exactly from the text. You never invent or paraphrase. Always respond with valid JSON.", model_key="judge", max_tokens=max_tokens, temperature=0.3, timeout=300)
 
 def parse_json(text):
     return llm.parse_json_response(text)

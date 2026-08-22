@@ -7,7 +7,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from core.llm import TruncationError, call_llm, get_max_tokens_with_thinking
 from core.paths import format_prompt
 from core import outline
 import os
@@ -20,7 +20,7 @@ from core import paths
 load_dotenv()
 
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
-    return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, timeout=300)
+    return call_llm(prompt=prompt, model_key="writer", max_tokens=max_tokens, timeout=300)
 
 def main():
     seed_path = paths.get_seed_path()

@@ -10,7 +10,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic
+from core.llm import call_llm
 from core import paths
 import sys
 import json
@@ -149,7 +149,7 @@ def call_reader(reader_key, arc_summary):
     word_count = sum(len(f.read_text(encoding="utf-8").split()) for f in ch_files) if ch_files else 0
     cut_words = int(word_count * 0.1) if word_count else 7000
     prompt = build_reader_prompt().format(arc_summary=arc_summary, word_count=word_count, chapter_count=chapter_count, cut_words=cut_words)
-    raw = call_anthropic(prompt=prompt, system=reader["system"], model_key="judge", max_tokens=4000, timeout=300, temperature=0.7)
+    raw = call_llm(prompt=prompt, system=reader["system"], model_key="judge", max_tokens=4000, timeout=300, temperature=0.7)
     
     # Parse JSON
     return llm.parse_json_response(raw)

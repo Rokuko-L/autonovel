@@ -9,7 +9,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core.llm import call_llm, extract_text_from_response, get_max_tokens_with_thinking
 from core.paths import load_prompt
 from core import paths
 import os
@@ -377,7 +377,7 @@ def main():
     print(f"Executing Pass 1 (Structural Design)...", file=sys.stderr)
     for attempt in range(3):
         print(f"  Pass 1 Attempt {attempt + 1}...", file=sys.stderr)
-        raw1 = call_anthropic(
+        raw1 = call_llm(
             prompt=pass1_prompt,
             system=SYSTEM_PROMPT,
             model_key="judge",  # Premium model for Pass 1
@@ -449,7 +449,7 @@ def main():
     print(f"Executing Pass 2 (Content Generation & Prompts)...", file=sys.stderr)
     for attempt in range(3):
         print(f"  Pass 2 Attempt {attempt + 1}...", file=sys.stderr)
-        raw2 = call_anthropic(
+        raw2 = call_llm(
             prompt=pass2_prompt,
             system=SYSTEM_PROMPT,
             model_key="writer",  # Creative writer model for prompt templates

@@ -17,7 +17,7 @@ Usage:
   python run_pipeline.py --project mynovel --max-cycles 4     # limit revision cycles
 """
 
-from core.llm import call_anthropic
+from core.llm import call_llm
 from core.outline import validate_premise_beats, validate_plants_harvests, extract_outline_debts
 from core import novel_tex as novel_tex_module
 from core import paths
@@ -1417,7 +1417,7 @@ Rules:
 2. Return ONLY the valid LaTeX code inside ```latex ... ``` fences. No conversational filler or explanations.
 """
                     try:
-                        fixed_tex = call_anthropic(
+                        fixed_tex = call_llm(
                             prompt=prompt,
                             system="You are an expert LaTeX troubleshooter. You fix compilation errors and return only compile-ready corrected LaTeX code.",
                             model_key="review",

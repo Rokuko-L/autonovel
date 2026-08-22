@@ -8,7 +8,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import TruncationError, call_anthropic
+from core.llm import TruncationError, call_llm
 from core.paths import get_novel_title
 import re
 from pathlib import Path
@@ -19,7 +19,7 @@ from core import paths
 load_dotenv()
 
 def call_writer(prompt, max_tokens=4000):
-    return call_anthropic(prompt=prompt, system="You summarize novel chapters precisely. State what HAPPENS, what CHANGES, and what QUESTIONS are left open. No evaluation. No praise. Just events and shifts.", model_key="writer", max_tokens=max_tokens, timeout=120, temperature=0.1)
+    return call_llm(prompt=prompt, system="You summarize novel chapters precisely. State what HAPPENS, what CHANGES, and what QUESTIONS are left open. No evaluation. No praise. Just events and shifts.", model_key="writer", max_tokens=max_tokens, timeout=120, temperature=0.1)
 
 def extract_key_passages(text):
     """Get opening, closing, and best dialogue from a chapter."""

@@ -1,4 +1,4 @@
-from core.llm import call_anthropic
+from core.llm import call_llm
 from core import paths
 import os
 import sys
@@ -22,7 +22,7 @@ Here is the summary of Chapter {ch_num}:
 
 Generate a short, elegant, thematic, and witty chapter title (e.g. in the style of "Weight of Paper", "Arithmetic of Precedent", "The Performance", "Document and the Sword", "Bonds of Fealty", "How to Bury a Secret").
 Output only the title string itself, nothing else. No quotes, no markdown, no preamble."""
-    response = call_anthropic(prompt=prompt, model_key="judge", max_tokens=100)
+    response = call_llm(prompt=prompt, model_key="judge", max_tokens=100)
     return response.strip().strip('"').strip("'").strip()
 
 def process_chapter_title(path, ch_num, summary, clean_title):

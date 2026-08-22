@@ -2,7 +2,7 @@
 """
 test_path_contamination.py — Verifies no pipeline files leak to root.
 
-Mocks all LLM calls via unittest.mock.patch on llm.call_anthropic.
+Mocks all LLM calls via unittest.mock.patch on llm.call_llm.
 Runs path helpers in isolation and asserts zero new files appear in the
 root codebase directory (outside of projects/).
 
@@ -145,11 +145,11 @@ def test_two_projects_no_cross_contamination(tmp_root: Path):
         paths._project_name = orig_name
 
 
-def test_mock_call_anthropic():
-    """llm.call_anthropic can be patched via unittest.mock.patch."""
-    with patch("core.llm.call_anthropic", return_value="mocked LLM response") as mock_fn:
-        result = llm.call_anthropic("test prompt")
-        check("call_anthropic patchable via mock.patch", result == "mocked LLM response")
+def test_mock_call_llm():
+    """llm.call_llm can be patched via unittest.mock.patch."""
+    with patch("core.llm.call_llm", return_value="mocked LLM response") as mock_fn:
+        result = llm.call_llm("test prompt")
+        check("call_llm patchable via mock.patch", result == "mocked LLM response")
         check("mock was called once", mock_fn.call_count == 1)
 
 
@@ -182,7 +182,7 @@ def main():
         test_two_projects_no_cross_contamination(tmp_root)
 
     print("\n3. LLM call patchability:")
-    test_mock_call_anthropic()
+    test_mock_call_llm()
 
     print("\n4. Registry path isolation:")
     test_registry_path_is_in_projects()

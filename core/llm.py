@@ -153,7 +153,7 @@ def get_client() -> httpx.Client:
         )
     return _client
 
-def call_anthropic(
+def call_llm(
     prompt,
     system=None,
     model_key="writer",
