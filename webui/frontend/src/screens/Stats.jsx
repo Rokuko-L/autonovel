@@ -28,7 +28,8 @@ export default function Stats() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight text-paper">Stats</h1>
+      <p className="section-head">06 · what it costs to dream</p>
+      <h1 className="mb-6 mt-1 font-display text-xl lowercase tracking-tight text-paper">costs</h1>
 
       {!stats ? (
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">

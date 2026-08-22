@@ -41,7 +41,8 @@ export default function Settings() {
 
   return (
     <div className="max-w-xl">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight text-paper">Settings</h1>
+      <p className="section-head">07 · the dials</p>
+      <h1 className="mb-6 mt-1 font-display text-xl lowercase tracking-tight text-paper">settings</h1>
 
       <div className="space-y-5">
         <Field label="API base URL" hint="Point at a proxy or local gateway if needed.">

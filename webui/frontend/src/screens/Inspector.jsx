@@ -4,7 +4,7 @@ import { api } from '../api/client.js'
 const ROLE_STYLE = {
   writer: 'bg-accent/10 text-accent',
   judge: 'bg-fog-400/10 text-fog-300',
-  review: 'bg-warn/10 text-warn',
+  review: 'bg-good/10 text-good',
 }
 
 function fmt(n) {
@@ -30,7 +30,7 @@ function EventRow({ ev }) {
             <span className="text-bad">{ev.error}</span>
           )}
           {ev.attempt > 1 && (
-            <span className="ml-2 rounded bg-warn/10 px-1 py-0.5 text-[10px] text-warn">
+            <span className="ml-2 rounded bg-accent/10 px-1 py-0.5 text-[10px] text-accent">
               retry {ev.attempt}
             </span>
           )}
@@ -71,7 +71,8 @@ export default function Inspector() {
   return (
     <div>
       <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-paper">LLM Inspector</h1>
+        <p className="section-head">05 · every token accounted for</p>
+        <h1 className="mt-1 font-display text-xl lowercase tracking-tight text-paper">llm inspector</h1>
         <button
           onClick={() => setLive(!live)}
           className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-transform active:scale-[0.98] ${
@@ -79,7 +80,7 @@ export default function Inspector() {
           }`}
         >
           {live && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
-          {live ? 'Live' : 'Go live'}
+          {live ? 'live' : 'go live'}
         </button>
       </header>
 

@@ -1,0 +1,20 @@
+{
+  "premiseBeats": [
+    {"label": "the false funeral", "done": true},
+    {"label": "the debt that bought a corpse", "done": true},
+    {"label": "a question owed", "done": true},
+    {"label": "what the fen remembered", "done": false}
+  ],
+  "roadmap": [
+    {"chapter": 1, "title": "The Tolling Hour", "beats": ["Mara attends Vane's closed-coffin funeral", "The registry lists his debt as PAID — impossible", "She steals a page from the bronze ledger"]},
+    {"chapter": 2, "title": "Coin-Masked Faces", "beats": ["Ashen Court summons her", "Her left hand is taken as collateral", "First bell-silence experience"]},
+    {"chapter": 3, "title": "What Was Buried", "beats": ["Grave opens on an empty coffin lined in fog", "Vane declared legally dead at dawn — again, elsewhere"]}
+  ],
+  "threads": [
+    {"thread": "vane's second death", "planted": 1, "harvest": 9, "status": "open"},
+    {"thread": "the unanswered question", "planted": 1, "harvest": 24, "status": "open"},
+    {"thread": "mara's hand-debt", "planted": 2, "harvest": 6, "status": "open"},
+    {"thread": "voices in the fog", "planted": 3, "harvest": 5, "status": "paid off"},
+    {"thread": "the keeper cannot volunteer", "planted": 2, "harvest": 21, "status": "open"}
+  ]
+}

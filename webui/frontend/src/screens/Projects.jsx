@@ -2,71 +2,56 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client.js'
 
 const PHASE_STYLE = {
-  foundation: 'bg-warn/10 text-warn border-warn/30',
-  drafting: 'bg-accent/10 text-accent border-accent/30',
-  revision: 'bg-fog-400/10 text-fog-300 border-fog-500/40',
-  export: 'bg-paper/10 text-paper border-fog-500/40',
-  idle: 'bg-ink-700 text-fog-500 border-ink-600',
+  foundation: 'text-paper',
+  drafting: 'text-accent',
+  revision: 'text-good',
+  export: 'text-fog-300',
+  idle: 'text-fog-500',
 }
 
-function PhaseBadge({ phase, running }) {
+function Row({ p, onOpen }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs ${PHASE_STYLE[phase]}`}>
-      {running && (
-        <span className={`h-1.5 w-1.5 animate-pulse rounded-full bg-current`} />
-      )}
-      {phase}
-    </span>
-  )
-}
+    <li className="border-t border-ink-700 first:border-t-0">
+      <button
+        onClick={() => onOpen(p)}
+        className="group flex w-full items-center gap-6 px-4 py-5 text-left transition-colors hover:bg-ink-900"
+      >
+        <span className={`font-mono text-xs ${PHASE_STYLE[p.phase]}`}>
+          {p.running ? <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent align-middle" /> : null}
+          [{p.phase}]
+        </span>
 
-function ProjectCard({ project, onOpen }) {
-  const progress = project.chaptersTotal
-    ? Math.round((project.chaptersDone / project.chaptersTotal) * 100)
-    : 0
-
-  return (
-    <button
-      onClick={() => onOpen(project)}
-      className="group flex flex-col gap-3 rounded-xl border border-ink-700 bg-ink-900 p-5 text-left transition-colors hover:border-ink-600 hover:bg-ink-800"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="text-base font-semibold leading-snug text-paper">
-          {project.title}
-        </h2>
-        <PhaseBadge phase={project.phase} running={project.running} />
-      </div>
-
-      <p className="font-mono text-xs text-fog-500">{project.name}</p>
-
-      <div className="mt-auto grid grid-cols-3 gap-3 font-mono text-sm">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-fog-500">score</p>
-          <p className="text-fog-200">
-            {project.foundationScore ? project.foundationScore.toFixed(1) : '—'}
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-prose text-lg leading-snug text-paper">
+            {p.title === 'Untitled' ? <span className="text-fog-500">untitled</span> : p.title}
           </p>
+          <p className="mt-0.5 font-mono text-[11px] text-fog-500">{p.name}</p>
         </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-fog-500">words</p>
-          <p className="text-fog-200">{project.words.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-fog-500">chapters</p>
-          <p className="text-fog-200">
-            {project.chaptersDone}/{project.chaptersTotal || '—'}
-          </p>
-        </div>
-      </div>
 
-      {project.chaptersTotal > 0 && (
-        <div className="h-1 overflow-hidden rounded-full bg-ink-700">
-          <div
-            className="h-full rounded-full bg-accent transition-all"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="hidden shrink-0 items-baseline gap-8 text-right font-mono text-sm md:flex">
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-fog-500">score</p>
+            <p className={p.foundationScore >= 7.5 ? 'text-good' : 'text-fog-200'}>
+              {p.foundationScore ? p.foundationScore.toFixed(1) : '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-fog-500">words</p>
+            <p className="text-fog-200">{p.words.toLocaleString()}</p>
+          </div>
+          <div className="w-24">
+            <p className="text-[10px] uppercase tracking-wide text-fog-500">chapters</p>
+            <p className="text-fog-200">
+              {p.chaptersDone}/{p.chaptersTotal || '—'}
+            </p>
+          </div>
         </div>
-      )}
-    </button>
+
+        <span className="shrink-0 font-mono text-xs text-fog-500 transition-colors group-hover:text-accent">
+          open ›
+        </span>
+      </button>
+    </li>
   )
 }
 
@@ -77,30 +62,32 @@ export default function Projects() {
     api.listProjects().then(setProjects)
   }, [])
 
-  if (!projects) {
-    return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-44 animate-pulse rounded-xl bg-ink-800" />
-        ))}
-      </div>
-    )
-  }
-
   return (
     <div>
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-paper">Projects</h1>
-        <button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-950 transition-transform active:scale-[0.98]">
-          New novel
+      <header className="mb-6 flex items-end justify-between">
+        <div>
+          <p className="section-head">01 · your shelf</p>
+          <h1 className="mt-1 font-display text-xl lowercase tracking-tight text-paper">projects</h1>
+        </div>
+        <button className="rounded-lg border border-accent/50 px-4 py-2 text-xs lowercase text-accent transition-transform hover:bg-accent/10 active:scale-[0.98]">
+          + new novel
         </button>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {projects.map((p) => (
-          <ProjectCard key={p.name} project={p} onOpen={() => {}} />
-        ))}
-      </div>
+      {!projects ? (
+        <ul className="rounded-xl border border-ink-700">
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="h-20 animate-pulse border-t border-ink-700 bg-ink-900 first:border-t-0"
+              style={{ animationDelay: `${i * 120}ms` }} />
+          ))}
+        </ul>
+      ) : (
+        <ul className="overflow-hidden rounded-xl border border-ink-700 bg-ink-850">
+          {projects.map((p) => (
+            <Row key={p.name} p={p} onOpen={() => {}} />
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

@@ -1,22 +1,31 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #0b0d10;
-  --color-ink-900: #111418;
-  --color-ink-800: #171b21;
-  --color-ink-700: #1f252d;
-  --color-ink-600: #2a323c;
-  --color-fog-500: #6b7684;
-  --color-fog-400: #8b95a3;
-  --color-fog-300: #b3bac5;
-  --color-fog-200: #d7dce2;
-  --color-paper: #eceff3;
-  --color-accent: #34d399;      /* emerald — single accent, locked */
-  --color-warn: #fbbf24;
-  --color-bad: #f87171;
+  /* warm blacks — never pure #000 */
+  --color-ink-950: #0a0a08;
+  --color-ink-900: #101010;
+  --color-ink-850: #14140f;
+  --color-ink-800: #1a1a16;
+  --color-ink-700: #26251f;
+  --color-ink-600: #36342b;
 
-  --font-display: "Geist", "Inter Display", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+  /* cream fog ramp */
+  --color-fog-500: #7a7568;
+  --color-fog-400: #98927f;
+  --color-fog-300: #bab49e;
+  --color-fog-200: #ddd7c3;
+  --color-paper: #ece7d5;
+
+  /* the one accent: ember. locked. */
+  --color-accent: #ff6a3d;
+  --color-accent-dim: #b34a2c;
+
+  --color-good: #9db85c;
+  --color-bad: #e05252;
+
+  --font-display: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
+  --font-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
+  --font-prose: Georgia, "Times New Roman", serif;
 }
 
 html {
@@ -26,5 +35,43 @@ html {
 body {
   background: var(--color-ink-950);
   color: var(--color-fog-200);
-  font-family: var(--font-display);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* subtle CRT grain — fixed layer, never on scrolling containers */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 2px,
+    var(--color-ink-600) 3px
+  );
+}
+
+::selection {
+  background: var(--color-accent-dim);
+  color: var(--color-paper);
+}
+
+/* shared editorial marks */
+.mark {
+  color: var(--color-fog-500);
+  user-select: none;
+}
+.section-head {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: lowercase;
+  color: var(--color-fog-400);
+}
+.section-head::before {
+  content: "// ";
+  color: var(--color-fog-500);
 }
