@@ -1,0 +1,6 @@
+[
+  {"name": "bells-second-son", "title": "The Second Son of the House of Bells", "phase": "revision", "foundationScore": 7.6, "chaptersTotal": 24, "chaptersDone": 4, "words": 10312, "updatedAt": "2026-08-22T09:14:00Z", "running": true},
+  {"name": "glass-harvest", "title": "The Glass Harvest", "phase": "drafting", "foundationScore": 7.1, "chaptersTotal": 16, "chaptersDone": 2, "words": 4408, "updatedAt": "2026-08-21T18:02:00Z", "running": false},
+  {"name": "debt-of-light", "title": "A Debt of Light", "phase": "foundation", "foundationScore": 6.4, "chaptersTotal": 24, "chaptersDone": 0, "words": 0, "updatedAt": "2026-08-22T11:40:00Z", "running": true},
+  {"name": "untitled-novel", "title": "Untitled", "phase": "idle", "foundationScore": 0, "chaptersTotal": 0, "chaptersDone": 0, "words": 0, "updatedAt": null, "running": false}
+]

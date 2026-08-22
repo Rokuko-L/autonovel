@@ -1,0 +1,1 @@
+{"baseUrl": "https://api.anthropic.com", "apiKeyMasked": "sk-ant-…f4d2", "models": {"writer": "claude-sonnet-4-6", "judge": "claude-opus-4-6", "review": "claude-opus-4-6"}, "thresholds": {"foundation": 7.5, "chapter": 6.5}}
