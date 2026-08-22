@@ -1,4 +1,10 @@
-"""Anthropic API client, response extraction, and JSON repair."""
+"""Multi-provider LLM client (Anthropic + OpenAI dialects), response extraction, and JSON repair.
+
+Any endpoint that speaks either wire format works: first-party APIs, OpenRouter,
+Groq, Together, LiteLLM proxies, DeepSeek's Anthropic-compat endpoint, vLLM/Ollama.
+Dialect is chosen per role via AUTONOVEL_{ROLE}_PROVIDER (or AUTONOVEL_PROVIDER);
+see Docs/core/llm-client.md for the full config matrix.
+"""
 
 import os
 import sys
@@ -8,10 +14,21 @@ import re
 import httpx
 
 
+ROLES = ("writer", "judge", "review")
+
+# Role -> default model per provider. Defaults are only used when the
+# AUTONOVEL_{ROLE}_MODEL env var is unset; any model id is a free-form string.
 DEFAULT_MODELS = {
-    "writer": "claude-sonnet-4-6",
-    "judge": "claude-opus-4-6",
-    "review": "claude-opus-4-6",
+    "anthropic": {
+        "writer": "claude-sonnet-4-6",
+        "judge": "claude-opus-4-6",
+        "review": "claude-opus-4-6",
+    },
+    "openai": {
+        "writer": "gpt-5.2",
+        "judge": "gpt-5.2",
+        "review": "gpt-5.2",
+    },
 }
 
 MODEL_ENV_VARS = {
@@ -19,6 +36,38 @@ MODEL_ENV_VARS = {
     "judge": "AUTONOVEL_JUDGE_MODEL",
     "review": "AUTONOVEL_REVIEW_MODEL",
 }
+
+PROVIDER_ENV_VARS = {
+    role: f"AUTONOVEL_{role.upper()}_PROVIDER" for role in ROLES
+}
+
+BASE_URL_ENV_VARS = {
+    "anthropic": "ANTHROPIC_BASE_URL",
+    "openai": "OPENAI_BASE_URL",
+}
+
+KEY_ENV_VARS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+
+DEFAULT_BASE_URLS = {
+    "anthropic": "https://api.anthropic.com",
+    "openai": "https://api.openai.com/v1",
+}
+
+# Reasoning-style models reject `temperature` and want `max_completion_tokens`.
+_REASONING_MODEL_RE = re.compile(r"^(o\d|gpt-5)")
+
+def _looks_like_reasoning_model(model: str) -> bool:
+    return bool(_REASONING_MODEL_RE.match(model.strip().lower()))
+
+
+class ProviderError(Exception):
+    """Raised when provider configuration is missing or contradictory.
+
+    The message names the exact env var to set — actionable, not vague.
+    """
 
 class TruncationError(Exception):
     """Raised when the API response was truncated (stop_reason == 'max_tokens')."""
@@ -47,94 +96,112 @@ def _parse_response_json(text: str) -> dict:
         _warn_unused_trailing(text, end)
         return obj
 
-def extract_text_from_response(resp):
+def _extract_sse_text_and_stop_reason(raw: str, dialect: str):
+    """Parse an SSE stream body into (text, stop_reason) for either dialect.
+
+    Anthropic chunks carry content_block_delta / message_start / message_delta
+    events; OpenAI chunks carry choices[].delta.content and finish_reason.
+    """
+    text_content = ""
+    stop_reason = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        data_str = line[5:].strip()
+        if data_str == "[DONE]":
+            continue
+        try:
+            item = json.loads(data_str)
+        except json.JSONDecodeError:
+            continue
+        if dialect == "openai":
+            for choice in item.get("choices", []):
+                delta = choice.get("delta", {}) or {}
+                text_content += delta.get("content") or ""
+                if choice.get("finish_reason"):
+                    stop_reason = choice["finish_reason"]
+        else:
+            if item.get("type") == "message":
+                for block in item.get("content", []):
+                    if block.get("type") == "text":
+                        text_content += block.get("text", "")
+                if item.get("stop_reason"):
+                    stop_reason = item["stop_reason"]
+            elif item.get("type") == "content_block_delta":
+                delta = item.get("delta", {})
+                if delta.get("type") == "text_delta":
+                    text_content += delta.get("text", "")
+            elif item.get("type") == "message_delta":
+                if item.get("delta", {}).get("stop_reason"):
+                    stop_reason = item["delta"]["stop_reason"]
+    return text_content, stop_reason
+
+def _is_sse_body(resp) -> bool:
+    raw = resp.text.strip()
+    content_type = resp.headers.get("content-type", "")
+    is_sse = "text/event-stream" in content_type and any(
+        l.strip().startswith("data:") for l in raw.splitlines()
+    )
+    return is_sse or not raw.startswith("{")
+
+def extract_text_from_response(resp, dialect: str = "anthropic"):
     if isinstance(resp, dict):
         data = resp
     else:
-        raw = resp.text.strip()
-        content_type = resp.headers.get("content-type", "")
-        is_sse = "text/event-stream" in content_type and any(
-            l.strip().startswith("data:") for l in raw.splitlines()
-        )
-        if is_sse or not raw.startswith("{"):
-            text_content = ""
-            for line in raw.splitlines():
-                line = line.strip()
-                if line.startswith("data:"):
-                    data_str = line[5:].strip()
-                    if data_str == "[DONE]":
-                        continue
-                    try:
-                        item = json.loads(data_str)
-                        if item.get("type") == "message":
-                            for block in item.get("content", []):
-                                if block.get("type") == "text":
-                                    text_content += block.get("text", "")
-                        elif item.get("type") == "content_block_delta":
-                            delta = item.get("delta", {})
-                            if delta.get("type") == "text_delta":
-                                text_content += delta.get("text", "")
-                    except json.JSONDecodeError:
-                        pass
-            data = {
-                "content": [{"type": "text", "text": text_content}]
-            }
+        if _is_sse_body(resp):
+            text_content, _ = _extract_sse_text_and_stop_reason(resp.text, dialect)
+            data = {"content": [{"type": "text", "text": text_content}]}
         else:
-            data = _parse_response_json(raw)
+            data = _parse_response_json(resp.text)
+
+    # OpenAI-dialect dicts keep their native shape; normalize to content blocks.
+    if isinstance(data, dict) and "choices" in data:
+        message = (data.get("choices") or [{}])[0].get("message", {})
+        return message.get("content") or ""
 
     for block in data["content"]:
         if block["type"] == "text":
             return block["text"]
     return ""
 
-def extract_text_and_stop_reason(resp):
-    """Return (text, stop_reason) from a non-streaming Anthropic response.
+# OpenAI finish_reason -> canonical Anthropic-vocabulary stop_reason.
+_OPENAI_FINISH_REASON_MAP = {
+    "length": "max_tokens",
+}
 
-    stop_reason is None for streaming responses; otherwise one of
-    'end_turn', 'max_tokens', 'stop_sequence', or None.
+def _normalize_stop_reason(finish_reason):
+    if finish_reason is None:
+        return None
+    return _OPENAI_FINISH_REASON_MAP.get(finish_reason, finish_reason)
+
+def extract_text_and_stop_reason(resp, dialect: str = "anthropic"):
+    """Return (text, stop_reason) from a response of either dialect.
+
+    stop_reason uses the Anthropic vocabulary ('end_turn', 'max_tokens',
+    'stop_sequence') so callers' TruncationError handling works unchanged;
+    OpenAI's finish_reason 'length' maps to 'max_tokens'. Streaming
+    responses are parsed chunk-wise; stop_reason may be None there.
     """
     if isinstance(resp, dict):
-        data = resp
+        if "choices" in resp:
+            choice = (resp.get("choices") or [{}])[0]
+            message = choice.get("message", {})
+            return message.get("content") or "", _normalize_stop_reason(choice.get("finish_reason"))
         text_content = ""
-        for block in data.get("content", []):
+        for block in resp.get("content", []):
             if block.get("type") == "text":
                 text_content += block.get("text", "")
-        return text_content, data.get("stop_reason")
+        return text_content, resp.get("stop_reason")
 
-    raw = resp.text.strip()
-    content_type = resp.headers.get("content-type", "")
-    is_sse = "text/event-stream" in content_type and any(
-        l.strip().startswith("data:") for l in raw.splitlines()
-    )
-    if is_sse or not raw.startswith("{"):
-        text_content = ""
-        stop_reason = None
-        for line in raw.splitlines():
-            line = line.strip()
-            if line.startswith("data:"):
-                data_str = line[5:].strip()
-                if data_str == "[DONE]":
-                    continue
-                try:
-                    item = json.loads(data_str)
-                    if item.get("type") == "message":
-                        for block in item.get("content", []):
-                            if block.get("type") == "text":
-                                text_content += block.get("text", "")
-                        if item.get("stop_reason"):
-                            stop_reason = item["stop_reason"]
-                    elif item.get("type") == "content_block_delta":
-                        delta = item.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            text_content += delta.get("text", "")
-                    elif item.get("type") == "message_delta":
-                        if item.get("delta", {}).get("stop_reason"):
-                            stop_reason = item["delta"]["stop_reason"]
-                except json.JSONDecodeError:
-                    pass
-        return text_content, stop_reason
+    if _is_sse_body(resp):
+        return _extract_sse_text_and_stop_reason(resp.text, dialect)
 
-    data = _parse_response_json(raw)
+    data = _parse_response_json(resp.text)
+    if "choices" in data:
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message", {})
+        return message.get("content") or "", _normalize_stop_reason(choice.get("finish_reason"))
     for block in data["content"]:
         if block["type"] == "text":
             return block["text"], data.get("stop_reason")
@@ -153,6 +220,120 @@ def get_client() -> httpx.Client:
         )
     return _client
 
+def set_client(client):
+    """Install a custom httpx.Client (test seam for httpx.MockTransport)."""
+    global _client
+    _client = client
+
+def _load_extra_headers() -> dict:
+    """Parse AUTONOVEL_EXTRA_HEADERS (JSON object) for gateway-specific headers.
+
+    OpenRouter wants HTTP-Referer/X-Title; other gateways have their own
+    requirements. One generic escape hatch instead of vendor special-cases.
+    """
+    raw = os.getenv("AUTONOVEL_EXTRA_HEADERS", "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ProviderError(
+            f"AUTONOVEL_EXTRA_HEADERS is not valid JSON: {e}\n"
+            f"Got: {raw[:120]!r}"
+        ) from e
+    if not isinstance(parsed, dict):
+        raise ProviderError(
+            f"AUTONOVEL_EXTRA_HEADERS must be a JSON object, got {type(parsed).__name__}"
+        )
+    return {str(k): str(v) for k, v in parsed.items()}
+
+def resolve_provider(model_key: str) -> str:
+    """Resolve the provider dialect for one role.
+
+    Precedence: AUTONOVEL_{ROLE}_PROVIDER > AUTONOVEL_PROVIDER > inference
+    (OPENAI_API_KEY set and ANTHROPIC_API_KEY unset -> openai, else anthropic).
+    """
+    explicit = os.environ.get(PROVIDER_ENV_VARS[model_key], "").strip().lower()
+    if explicit:
+        if explicit not in ("anthropic", "openai"):
+            raise ProviderError(
+                f"{PROVIDER_ENV_VARS[model_key]} must be 'anthropic' or 'openai', got {explicit!r}"
+            )
+        return explicit
+    default = os.environ.get("AUTONOVEL_PROVIDER", "").strip().lower()
+    if default:
+        if default not in ("anthropic", "openai"):
+            raise ProviderError(
+                f"AUTONOVEL_PROVIDER must be 'anthropic' or 'openai', got {default!r}"
+            )
+        return default
+    if os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+        return "openai"
+    return "anthropic"
+
+def _resolve_model(provider: str, model_key: str) -> str:
+    model = os.environ.get(MODEL_ENV_VARS[model_key], "").strip()
+    if model:
+        return model
+    return DEFAULT_MODELS[provider][model_key]
+
+def _resolve_base_url(provider: str, model_key: str) -> str:
+    url = os.environ.get(BASE_URL_ENV_VARS[provider], "").strip()
+    if url:
+        return url.rstrip("/")
+    return DEFAULT_BASE_URLS[provider]
+
+def _build_request(provider: str, model: str, system, prompt, max_tokens, temperature, beta_context):
+    """Build (url_path, headers, payload) for the resolved provider dialect.
+
+    Auth headers are only added when the corresponding key env var is set —
+    local gateways (Ollama/vLLM/LM Studio) reject non-empty placeholder keys.
+    """
+    headers = {"content-type": "application/json"}
+    headers.update(_load_extra_headers())
+    api_key = ""
+
+    if provider == "anthropic":
+        api_key = os.environ.get(KEY_ENV_VARS[provider], "")
+        if api_key:
+            headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+        if beta_context:
+            headers["anthropic-beta"] = "context-1m-2025-08-07"
+        payload = {
+            "model": model,
+            "max_tokens": get_max_tokens_with_thinking(max_tokens),
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            payload["system"] = system
+        return "/v1/messages", headers, payload
+
+    # OpenAI dialect
+    api_key = os.environ.get(KEY_ENV_VARS[provider], "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if beta_context:
+        # The 1M-context beta is Anthropic-only; silently degrade on openai.
+        print(
+            "[llm] beta_context requested but provider is openai — ignored (Anthropic-only beta)",
+            file=sys.stderr,
+        )
+    use_reasoning_params = _looks_like_reasoning_model(model)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        payload["messages"].insert(0, {"role": "system", "content": system})
+    if use_reasoning_params:
+        payload["max_completion_tokens"] = get_max_tokens_with_thinking(max_tokens)
+    else:
+        payload["max_tokens"] = get_max_tokens_with_thinking(max_tokens)
+        payload["temperature"] = temperature
+    return "/chat/completions", headers, payload
+
 def call_llm(
     prompt,
     system=None,
@@ -163,27 +344,13 @@ def call_llm(
     timeout=300,
     raise_on_truncation=True,
 ):
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-
-    model = os.environ.get(MODEL_ENV_VARS[model_key], DEFAULT_MODELS[model_key])
-
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-    if beta_context:
-        headers["anthropic-beta"] = "context-1m-2025-08-07"
-
-    payload = {
-        "model": model,
-        "max_tokens": get_max_tokens_with_thinking(max_tokens),
-        "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if system:
-        payload["system"] = system
+    provider = resolve_provider(model_key)
+    model = _resolve_model(provider, model_key)
+    base_url = _resolve_base_url(provider, model_key)
+    url_path, headers, payload = _build_request(
+        provider, model, system, prompt, max_tokens, temperature, beta_context
+    )
+    url = f"{base_url}{url_path}"
 
     import time
     import sys
@@ -194,21 +361,21 @@ def call_llm(
         try:
             client = get_client()
             resp = client.post(
-                f"{base_url.rstrip('/')}/v1/messages",
+                url,
                 headers=headers,
                 json=payload,
                 timeout=timeout,
             )
             resp.raise_for_status()
             if raise_on_truncation:
-                text, stop_reason = extract_text_and_stop_reason(resp)
+                text, stop_reason = extract_text_and_stop_reason(resp, dialect=provider)
                 if stop_reason == "max_tokens":
                     raise TruncationError(
                         f"Response truncated at ~{len(text.split())} words "
                         f"(stop_reason: max_tokens)"
                     )
                 return text
-            return extract_text_from_response(resp)
+            return extract_text_from_response(resp, dialect=provider)
         except TruncationError:
             raise
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
