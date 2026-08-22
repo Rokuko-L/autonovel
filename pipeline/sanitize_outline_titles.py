@@ -8,7 +8,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, parse_json_response
+from core.llm import call_llm, parse_json_response
 from core import paths
 from core.paths import format_prompt
 import json
@@ -230,7 +230,7 @@ def main():
         )
         
         try:
-            raw_response = call_anthropic(
+            raw_response = call_llm(
                 prompt=prompt,
                 system="You are a meticulous book editor who outputs valid JSON only.",
                 model_key="writer",  # Use writer model for creative title rewriting

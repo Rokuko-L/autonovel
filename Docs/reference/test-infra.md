@@ -161,7 +161,7 @@ This file contains tests verifying active project state, atomic registry writes,
 ### Subprocess Interception Mocking Strategy
 To enable fast, offline, and API-free test execution in the `CODE_ONLY` network environment, the test suites use a subprocess interception strategy. 
 A mock runner intercepting `subprocess.run` (and `run_pipeline.run_tool`) is used to:
-1. **Mock Anthropic API calls**: `utils.call_anthropic` is patched to return mock text, avoiding any real HTTP requests.
+1. **Mock Anthropic API calls**: `utils.call_llm` is patched to return mock text, avoiding any real HTTP requests.
 2. **Git Actions**: Command lines starting with `git` are intercepted and simulated by making dummy `.git` files or return states.
 3. **Tectonic Compilation**: Tectonic is mocked so that if run, it writes a mock PDF to the sandboxed typesetting folder.
 4. **Subprocess Script Runs**: Script calls to `gen_world.py`, `gen_characters.py`, etc., write mock output files to the target project directory so the orchestrator's verification checks pass.

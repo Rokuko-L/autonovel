@@ -169,7 +169,7 @@ def _emit_llm_event(event: dict):
     except Exception:
         pass
 
-def call_anthropic(
+def call_llm(
     prompt,
     system=None,
     model_key="writer",

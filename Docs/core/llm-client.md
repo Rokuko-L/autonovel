@@ -1,13 +1,13 @@
 # LLM Client & JSON Repair (`core/llm.py`)
 
-Every LLM call in the codebase flows through `call_anthropic()`. This is the
+Every LLM call in the codebase flows through `call_llm()`. This is the
 single interception point — `mock_llm.MockLLM` works by rebinding it.
 
 ## Key Types
 
 | Symbol | Purpose |
 |---|---|
-| `call_anthropic(prompt, system, model_key, max_tokens, temperature, beta_context, timeout, raise_on_truncation)` | POST to `/v1/messages` with retries (5 attempts, exponential backoff; 4xx auth errors fail fast). |
+| `call_llm(prompt, system, model_key, max_tokens, temperature, beta_context, timeout, raise_on_truncation)` | POST to `/v1/messages` with retries (5 attempts, exponential backoff; 4xx auth errors fail fast). |
 | `DEFAULT_MODELS` / `MODEL_ENV_VARS` | `writer`/`judge`/`review` roles → `AUTONOVEL_WRITER_MODEL` etc. |
 | `TruncationError` | Raised when `stop_reason == "max_tokens"` (unless `raise_on_truncation=False`). Callers retry with larger budgets. |
 | `extract_text_from_response` / `extract_text_and_stop_reason` | Handle both JSON and SSE responses. |
@@ -31,7 +31,7 @@ that is `validation.py`'s job.
 
 ## Retry Conventions
 
-- Transport failures: handled inside `call_anthropic`.
+- Transport failures: handled inside `call_llm`.
 - Truncation: callers catch `TruncationError` and re-ask with a larger
   `max_tokens` (see `draft_chapter.py`, `evaluate.call_judge_json`).
 - Syntax errors + schema violations: callers catch and feed the error text

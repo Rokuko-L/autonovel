@@ -12,7 +12,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic
+from core.llm import call_llm
 import argparse
 import json
 from pathlib import Path
@@ -24,7 +24,7 @@ load_dotenv(BASE_DIR / ".env")
 
 
 def call_writer(prompt, max_tokens=4000):
-    return call_anthropic(prompt=prompt, system=load_genre()["identity"]["seed_system"], model_key="writer", max_tokens=max_tokens, temperature=1.0, beta_context=True, timeout=120)
+    return call_llm(prompt=prompt, system=load_genre()["identity"]["seed_system"], model_key="writer", max_tokens=max_tokens, temperature=1.0, beta_context=True, timeout=120)
 
 
 GENERATE_PROMPT = load_genre()["generation"]["seed_generate_prompt"]

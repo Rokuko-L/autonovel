@@ -17,7 +17,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import TruncationError, call_anthropic, extract_text_from_response, get_max_tokens_with_thinking, parse_json_response
+from core.llm import TruncationError, call_llm, extract_text_from_response, get_max_tokens_with_thinking, parse_json_response
 from core import paths
 from core import textstats
 import argparse
@@ -422,7 +422,7 @@ def call_judge(prompt, max_tokens=2000):
         system += (f"\n\nPERSPECTIVE RULE: The novel is mandated {expected}. If the chapter drifts "
                    "out of this narration mode, flag it under prose_quality or voice_adherence "
                    "with a specific quote of the offending passage.")
-    return call_anthropic(prompt=prompt, system=system, model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
+    return call_llm(prompt=prompt, system=system, model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
 
 
 def call_judge_json(prompt, max_tokens=8000, retries=3, model=None):

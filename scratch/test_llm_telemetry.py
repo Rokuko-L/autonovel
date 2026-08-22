@@ -2,7 +2,7 @@
 """Offline tests for LLM call telemetry (core/llm.py _emit_llm_event).
 
 The GUI needs per-call token/duration/prompt data without touching the
-network. call_anthropic now appends one JSONL event per API attempt to the
+network. call_llm now appends one JSONL event per API attempt to the
 active project's llm_events.jsonl. These tests drive the real function via
 httpx.MockTransport and assert the event contract.
 
@@ -58,7 +58,7 @@ class LLMTelemetryTest(unittest.TestCase):
         client = httpx.Client(transport=httpx.MockTransport(handler))
         with mock.patch.object(llm, "get_client", return_value=client), \
              mock.patch("time.sleep"):
-            return llm.call_anthropic(*args, **kwargs)
+            return llm.call_llm(*args, **kwargs)
 
     def test_success_event_contract(self):
         out = self._run_with_transport(lambda req: api_response(), "hello world")

@@ -33,7 +33,7 @@ when you add or change a validation gate, add a behavioral test that asserts
 the gate can fail. The static-analysis suite complements both: import
 scanning verifies that *import statements* resolve, while ruff F821 verifies
 that every *name used* is actually defined — these are different failure
-classes (the process_notes `call_anthropic` NameError was only catchable by
+classes (the process_notes `call_llm` NameError was only catchable by
 the latter).
 
 ## E2E (requires API)

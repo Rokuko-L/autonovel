@@ -17,7 +17,7 @@ prompts/*.md                                                   static prompt tem
 scratch/test_*.py                                              offline tests
 ```
 
-- **Import from the concern module directly** (`from llm import call_anthropic`,
+- **Import from the concern module directly** (`from llm import call_llm`,
   `import paths`) — there is no umbrella module. New shared helpers go in the
   matching concern module; a genuinely new concern gets a new module.
 - One generation task = one `gen_*.py` script, mirroring the pipeline stage.
@@ -49,7 +49,7 @@ scratch/test_*.py                                              offline tests
 | Style | plain functions over classes; module-level `_globals` with lazy init |
 | Docstrings | public functions only, one line where possible |
 | Errors | raise with actionable messages; no bare `except Exception: pass` in new code |
-| Retries | LLM calls go through `call_anthropic`'s backoff; phase-level retries belong to `run_pipeline.py` phases |
+| Retries | LLM calls go through `call_llm`'s backoff; phase-level retries belong to `run_pipeline.py` phases |
 | Comments | non-obvious logic only; the code is the source of truth |
 
 ## What to Avoid

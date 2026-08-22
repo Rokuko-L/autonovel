@@ -11,7 +11,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core.llm import call_llm, extract_text_from_response, get_max_tokens_with_thinking
 from core import paths
 import os
 import sys
@@ -27,7 +27,7 @@ from core import llm
 load_dotenv()
 
 def call_judge(prompt, max_tokens=4000):
-    return call_anthropic(prompt=prompt, system="You are a literary editor comparing two chapters of the same novel. You pick the better one. You are not allowed to call it a tie. You quote specific passages to justify your choice. Respond with valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.2, timeout=300)
+    return call_llm(prompt=prompt, system="You are a literary editor comparing two chapters of the same novel. You pick the better one. You are not allowed to call it a tie. You quote specific passages to justify your choice. Respond with valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.2, timeout=300)
 
 def parse_json(text):
     return llm.parse_json_response(text)

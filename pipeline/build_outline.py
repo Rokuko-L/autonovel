@@ -8,7 +8,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core.llm import call_llm, extract_text_from_response, get_max_tokens_with_thinking
 from core import paths
 from core import llm
 import os
@@ -25,7 +25,7 @@ def parse_json(text):
 
 
 def call_model(prompt, max_tokens=1500):
-    return call_anthropic(prompt=prompt, system="You produce structured outline entries for novel chapters. Be precise about what HAPPENS, what CHANGES, and what threads are planted/harvested. Output valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.1, timeout=120)
+    return call_llm(prompt=prompt, system="You produce structured outline entries for novel chapters. Be precise about what HAPPENS, what CHANGES, and what threads are planted/harvested. Output valid JSON only.", model_key="judge", max_tokens=max_tokens, temperature=0.1, timeout=120)
 
 def process_chapter_outline(path, ch, text, wc, title_line):
     import time
