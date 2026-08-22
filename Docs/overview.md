@@ -15,7 +15,8 @@ improvements (modify → evaluate → keep/discard).
 core/             Shared library — no pipeline-specific logic
 ├── paths.py        Project root/state resolution, folder+file path helpers,
 │                   prompt loader (load_prompt), atomic registry writes
-├── llm.py          Anthropic client (call_llm), response extraction,
+├── llm.py          Multi-provider client (call_llm: anthropic + openai
+│                   dialects, any compat endpoint), response extraction,
 │                   healing JSON parser (parse_json_response)
 ├── outline.py      Outline text ops: chapter headings, premise beats,
 │                   plants/harvests validation, debt extraction
