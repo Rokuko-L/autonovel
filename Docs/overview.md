@@ -15,7 +15,8 @@ improvements (modify → evaluate → keep/discard).
 core/             Shared library — no pipeline-specific logic
 ├── paths.py        Project root/state resolution, folder+file path helpers,
 │                   prompt loader (load_prompt), atomic registry writes
-├── llm.py          Anthropic client (call_anthropic), response extraction,
+├── llm.py          Multi-provider client (call_llm: anthropic + openai
+│                   dialects, any compat endpoint), response extraction,
 │                   healing JSON parser (parse_json_response)
 ├── outline.py      Outline text ops: chapter headings, premise beats,
 │                   plants/harvests validation, debt extraction
@@ -47,7 +48,7 @@ install_fonts.py, _utf8.py (UTF-8 enforcement shim)
 **Data flow:**
 
 ```
-gen_*/stage scripts ──call──> llm.call_anthropic() ──> raw text
+gen_*/stage scripts ──call──> llm.call_llm() ──> raw text
                     ──parse──> llm.parse_json_response()   (syntax heal)
                     ──validate──> validation.parse_validated()  (schema)
                     ──write──> paths.get_*_path() targets under projects/<name>/

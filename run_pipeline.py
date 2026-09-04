@@ -17,7 +17,7 @@ Usage:
   python run_pipeline.py --project mynovel --max-cycles 4     # limit revision cycles
 """
 
-from core.llm import call_anthropic
+from core.llm import call_llm
 from core.outline import validate_premise_beats, validate_plants_harvests, extract_outline_debts
 from core import novel_tex as novel_tex_module
 from core import paths
@@ -1417,7 +1417,7 @@ Rules:
 2. Return ONLY the valid LaTeX code inside ```latex ... ``` fences. No conversational filler or explanations.
 """
                     try:
-                        fixed_tex = call_anthropic(
+                        fixed_tex = call_llm(
                             prompt=prompt,
                             system="You are an expert LaTeX troubleshooter. You fix compilation errors and return only compile-ready corrected LaTeX code.",
                             model_key="review",
@@ -1499,13 +1499,22 @@ def sanity_check(args):
         print("FAIL: .env not found — create one from .env.example", file=sys.stderr)
         ok = False
 
-    # 2. API key loaded (load_dotenv already called at module level)
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        print("FAIL: ANTHROPIC_API_KEY not set in .env", file=sys.stderr)
-        ok = False
+    # 2. API key loaded for the resolved provider (load_dotenv already called).
+    # First-party endpoints always need a key -> FAIL; custom gateways
+    # (OpenRouter/LiteLLM/Ollama) may be keyless -> WARN only.
+    from core.llm import resolve_provider, KEY_ENV_VARS, BASE_URL_ENV_VARS, DEFAULT_BASE_URLS
+    provider = resolve_provider("writer")
+    api_key = os.getenv(KEY_ENV_VARS[provider], "")
+    base = os.getenv(BASE_URL_ENV_VARS[provider], DEFAULT_BASE_URLS[provider])
+    if not api_key:
+        msg = f"FAIL: {KEY_ENV_VARS[provider]} not set in .env"
+        if base == DEFAULT_BASE_URLS[provider]:
+            print(msg, file=sys.stderr)
+            ok = False
+        else:
+            print(f"WARN: {msg.replace('FAIL', '')} — continuing anyway (custom endpoint may be keyless)", file=sys.stderr)
 
     # 3. API endpoint reachable
-    base = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     try:
         httpx.get(base, timeout=5)
     except Exception:

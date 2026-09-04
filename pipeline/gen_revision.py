@@ -7,7 +7,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic
+from core.llm import call_llm
 from core.paths import get_novel_title
 from core import outline
 from core import textstats
@@ -31,7 +31,7 @@ def call_writer(prompt, max_tokens=16000):
             system += ("\n\nMANDATORY PERSPECTIVE: Keep the chapter in STRICT THIRD-PERSON "
                        "limited narration anchored to the POV character ('he/she/they' or the "
                        "character's name). Never switch to first-person narration.")
-    return call_anthropic(prompt=prompt, system=system, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
+    return call_llm(prompt=prompt, system=system, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600, temperature=0.8, raise_on_truncation=True)
 
 def main():
     ch_num = int(sys.argv[1])

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, parse_json_response
+from core.llm import call_llm, parse_json_response
 from core import paths
 import os
 import sys
@@ -72,11 +72,11 @@ DEFAULT_TITLE_JUDGES = [
 
 
 def call_writer(prompt, temp=0.7):
-    return call_anthropic(prompt=prompt, model_key="writer", max_tokens=2000, temperature=temp, timeout=300)
+    return call_llm(prompt=prompt, model_key="writer", max_tokens=2000, temperature=temp, timeout=300)
 
 
 def call_judge(prompt, system_prompt, temp=0.1):
-    return call_anthropic(prompt=prompt, system=system_prompt, model_key="judge", max_tokens=2000, temperature=temp, timeout=120)
+    return call_llm(prompt=prompt, system=system_prompt, model_key="judge", max_tokens=2000, temperature=temp, timeout=120)
 
 
 def parse_titles_list(raw_response):

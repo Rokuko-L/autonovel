@@ -15,7 +15,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import call_anthropic, extract_text_from_response, get_max_tokens_with_thinking
+from core.llm import call_llm, extract_text_from_response, get_max_tokens_with_thinking
 from core import paths
 import os
 import sys
@@ -37,7 +37,7 @@ def call_opus(prompt, max_tokens=16000):
     """Call Opus with the full manuscript. Raises on truncation — a review cut
     off mid-professor-section would silently end the revision loop early."""
     print(f"Sending to Opus ({len(prompt):,} chars)...", file=sys.stderr)
-    return call_anthropic(prompt=prompt, model_key="review", max_tokens=max_tokens, beta_context=True, timeout=600, raise_on_truncation=True)
+    return call_llm(prompt=prompt, model_key="review", max_tokens=max_tokens, beta_context=True, timeout=600, raise_on_truncation=True)
 
 
 def get_title():

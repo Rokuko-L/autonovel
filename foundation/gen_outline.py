@@ -4,7 +4,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-from core.llm import TruncationError, call_anthropic, get_max_tokens_with_thinking
+from core.llm import TruncationError, call_llm, get_max_tokens_with_thinking
 from core.paths import format_prompt
 import argparse
 import os
@@ -19,7 +19,7 @@ from core import paths
 load_dotenv()
 
 def call_writer(prompt, max_tokens=get_max_tokens_with_thinking(16000)):
-    return call_anthropic(prompt=prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600)
+    return call_llm(prompt=prompt, model_key="writer", max_tokens=max_tokens, beta_context=True, timeout=600)
 
 def validate_block_output(text, start, end):
     missing = []
@@ -86,7 +86,7 @@ def verify_tonal_drift(roadmap_text, seed_concept, genre_name, total_chapters):
 
     try:
         from core.llm import parse_json_response
-        raw = call_anthropic(prompt=prompt, system="You are a meticulous book editor who outputs valid JSON only.", model_key="judge", max_tokens=2000, temperature=0.1)
+        raw = call_llm(prompt=prompt, system="You are a meticulous book editor who outputs valid JSON only.", model_key="judge", max_tokens=2000, temperature=0.1)
         data = parse_json_response(raw)
         has_drift = data.get("has_drift", False)
         violations = data.get("violations", [])

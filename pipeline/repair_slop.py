@@ -276,7 +276,7 @@ def main():
             print(f"  lines {start_line}: {', '.join(lab for lab, _ in reasons[:4])}", file=sys.stderr)
 
         prompt = build_patch_prompt(flagged, chapter_num, title_line)
-        raw = llm.call_anthropic(
+        raw = llm.call_llm(
             prompt=prompt,
             model_key="writer",
             max_tokens=6000,

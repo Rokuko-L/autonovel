@@ -2,7 +2,7 @@
 """Static analysis gate: ruff pyflakes rules over the whole repo.
 
 Catches the bug class the import-integrity scanner can't: names USED but
-never imported (F821) — e.g. process_notes() calling call_anthropic with no
+never imported (F821) — e.g. process_notes() calling call_llm with no
 import, which only NameErrors when that code path first runs. Also flags
 accidental redefinitions (F811).
 

@@ -125,18 +125,23 @@ Copy `.env.example` to `.env` and set:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `ANTHROPIC_API_KEY` | — | API key (required) |
-| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | API endpoint — set to `https://api.deepseek.com/anthropic` for DeepSeek |
-| `AUTONOVEL_WRITER_MODEL` | `claude-sonnet-4-6` | Model for drafting and revision |
-| `AUTONOVEL_JUDGE_MODEL` | `claude-opus-4-6` | Model for evaluation and scoring |
-| `AUTONOVEL_REVIEW_MODEL` | `claude-opus-4-6` | Model for deep prose analysis |
+| `AUTONOVEL_PROVIDER` | inferred | API dialect for all roles: `anthropic` or `openai` |
+| `AUTONOVEL_{ROLE}_PROVIDER` | — | Per-role dialect override (e.g. cheap `openai` writer + `anthropic` judge) |
+| `ANTHROPIC_API_KEY` | — | Anthropic-dialect key (first-party or any compat gateway) |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic-dialect endpoint — e.g. `https://api.deepseek.com/anthropic` for DeepSeek |
+| `OPENAI_API_KEY` | — | OpenAI-dialect key (first-party, OpenRouter, Groq, Together, LiteLLM…) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-dialect endpoint — keep gateway prefixes like `/api/v1` or `/v1` |
+| `AUTONOVEL_WRITER_MODEL` | provider default (`claude-sonnet-4-6` / `gpt-5.2`) | Model for drafting and revision (free-form id, gateway namespacing OK) |
+| `AUTONOVEL_JUDGE_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for evaluation and scoring |
+| `AUTONOVEL_REVIEW_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for deep prose analysis |
+| `AUTONOVEL_EXTRA_HEADERS` | — | JSON object merged into every request (e.g. OpenRouter's `HTTP-Referer`/`X-Title`) |
 | `AUTONOVEL_GENRE` | — | Default genre (instead of `--genre`) |
 | `AUTONOVEL_CHAPTERS` | `24` | Default chapter count |
 | `AUTONOVEL_NOTES` | — | Default story premise |
 | `AUTONOVEL_PROJECT` | `default` | Active project name |
 | `AUTONOVEL_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
 
-### Example: DeepSeek `.env`
+### Example: DeepSeek `.env` (Anthropic dialect)
 
 ```
 ANTHROPIC_API_KEY=sk-deepseek-your-key
@@ -144,6 +149,29 @@ ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
 AUTONOVEL_WRITER_MODEL=deepseek-v4-flash
 AUTONOVEL_JUDGE_MODEL=deepseek-v4-pro
 AUTONOVEL_REVIEW_MODEL=deepseek-v4-pro
+```
+
+### Example: OpenRouter `.env` (OpenAI dialect)
+
+```
+AUTONOVEL_PROVIDER=openai
+OPENAI_API_KEY=sk-or-v1-your-key
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+AUTONOVEL_EXTRA_HEADERS={"HTTP-Referer": "https://your-site.example", "X-Title": "autonovel"}
+AUTONOVEL_WRITER_MODEL=anthropic/claude-sonnet-4.5
+AUTONOVEL_JUDGE_MODEL=deepseek/deepseek-v4-pro
+AUTONOVEL_REVIEW_MODEL=anthropic/claude-opus-4.5
+```
+
+### Example: mixed providers (cheap writer, strong judge)
+
+```
+AUTONOVEL_PROVIDER=openai
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_API_KEY=sk-or-v1-your-key
+AUTONOVEL_JUDGE_PROVIDER=anthropic
+AUTONOVEL_JUDGE_MODEL=claude-opus-4-6
+AUTONOVEL_WRITER_MODEL=deepseek/deepseek-v4-pro
 ```
 
 ## Pipeline Phases
