@@ -145,7 +145,7 @@ export default function Settings() {
                       setSettings({ ...settings, models: { ...settings.models, [role]: e.target.value } })
                     }
                   >
-                    {['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'].map((m) => (
+                    {[...new Set([settings.models[role], 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'])].map((m) => (
                       <option key={m}>{m}</option>
                     ))}
                   </select>

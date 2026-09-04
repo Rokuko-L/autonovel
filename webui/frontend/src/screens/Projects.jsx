@@ -159,7 +159,7 @@ function InitiationPanel() {
   )
 }
 
-export default function Projects() {
+export default function Projects({ onOpen }) {
   const [projects, setProjects] = useState(null)
 
   useEffect(() => {
@@ -189,7 +189,7 @@ export default function Projects() {
           ) : (
             <ul>
               {projects.map((p) => (
-                <Row key={p.name} p={p} onOpen={() => {}} />
+                <Row key={p.name} p={p} onOpen={() => onOpen?.(p)} />
               ))}
               <li className="border-t border-ink-700 py-3 text-center font-mono text-[10px] text-fog-500">
                 [ end_of_records ]

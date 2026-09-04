@@ -28,7 +28,7 @@ export default function Stats() {
   }
 
   useEffect(() => {
-    api.getStats('bells-second-son').then(setStats)
+    api.getStats().then(setStats)
   }, [])
 
   const totalMs = stats?.durationMsTotal ?? 0

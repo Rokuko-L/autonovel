@@ -40,6 +40,9 @@ fuel/             Pipeline fuel — runtime LLM prompt material (see below)
 prompts/          Static prompt templates (loaded via paths.load_prompt)
 projects/<name>/  Per-novel isolated workspace (gitignored; own git repo)
 scratch/          Offline test suites
+webui/            Operator console: server.py (FastAPI bridge, port 8600)
+└── frontend/       React 19 + Vite app; src/api/contract.js declares the
+                    API shapes, client.js calls /api with fixture fallback
 
 Root entry points: run_pipeline.py (orchestrator CLI), gui.py (desktop GUI),
 install_fonts.py, _utf8.py (UTF-8 enforcement shim)
@@ -71,6 +74,7 @@ git keep/discard per attempt, results.tsv score log)
 | [core/output-validation.md](core/output-validation.md) | Pydantic schemas for LLM output, self-correction retries |
 | [core/prompt-management.md](core/prompt-management.md) | prompts/ directory and loader conventions |
 | [systems/mock-testing.md](systems/mock-testing.md) | Testing pipeline code offline with MockLLM |
+| [systems/console-bridge.md](systems/console-bridge.md) | webui FastAPI bridge: endpoints, run instructions, deferred scope |
 | [reference/test-infra.md](reference/test-infra.md) | E2E test infrastructure |
 | [reference/test-suites.md](reference/test-suites.md) | Offline suite index + how to run |
 | [reference/project-refactor.md](reference/project-refactor.md) | Multi-project refactor record (completed) |

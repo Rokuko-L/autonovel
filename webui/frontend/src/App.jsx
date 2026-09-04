@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { api } from './api/client.js'
 import Projects from './screens/Projects.jsx'
 import Foundation from './screens/Foundation.jsx'
 import Ledger from './screens/Ledger.jsx'
@@ -38,6 +39,11 @@ const SCREENS = {
 
 export default function App() {
   const [screen, setScreen] = useState('foundation')
+  const [runState, setRunState] = useState(null)
+
+  useEffect(() => {
+    api.getRunState().then(setRunState).catch(() => {})
+  }, [screen])
 
   return (
     <div className="flex h-screen">
@@ -73,17 +79,33 @@ export default function App() {
 
         <div className="mt-auto px-5 pb-2">
           <p className="section-head">active</p>
-          <p className="mt-1 truncate text-xs text-fog-300">sir the confortable v3</p>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-accent">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            running
+          <p className="mt-1 truncate text-xs text-fog-300">
+            {runState?.project ?? '[ no run ]'}
           </p>
+          {runState?.running ? (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-accent">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              running
+            </p>
+          ) : (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-fog-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-ink-600" />
+              {runState ? runState.phase : 'offline'}
+            </p>
+          )}
         </div>
       </nav>
 
       <main className="min-w-0 flex-1 overflow-y-auto p-8">
         {/* render as ELEMENTS, never fn calls — fn calls break hook ownership */}
-        {screen === 'projects' && <Projects />}
+        {screen === 'projects' && (
+          <Projects
+            onOpen={(p) => {
+              api.setActiveProject(p.name)
+              setScreen('foundation')
+            }}
+          />
+        )}
         {screen === 'foundation' && <Foundation />}
         {screen === 'ledger' && <Ledger />}
         {screen === 'tournament' && <Tournament />}

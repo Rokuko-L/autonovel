@@ -9,37 +9,61 @@ import revision from '../fixtures/revision.json'
 import tournament from '../fixtures/tournament.json'
 
 /**
- * Mock API client — implements the contract in contract.js from fixtures.
- * THE swap point on wiring day: same function names, real fetch() calls.
+ * API client — implements the contract in contract.js.
+ * Talks to the FastAPI bridge (webui/server.py, port 8600 via the vite
+ * proxy); if the server isn't up, falls back to the generated fixtures so
+ * the console stays browsable offline.
  * Streaming endpoints (log tail, live events) are exposed as subscribe()
  * functions so screens never know the difference.
  */
 
-const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+async function live(path, fallback) {
+  try {
+    const res = await fetch(path)
+    if (!res.ok) throw new Error(`${res.status} ${path}`)
+    return await res.json()
+  } catch {
+    return fallback
+  }
+}
+
+// Active project, set from the projects screen ([open]); empty string means
+// "server decides" — the bridge defaults to the most recently touched project.
+let activeProject = localStorage.getItem('autonovel_active_project') ?? ''
+
+const q = (project) => {
+  const name = project ?? activeProject
+  return name ? `?project=${encodeURIComponent(name)}` : ''
+}
 
 export const api = {
+  setActiveProject(name) {
+    activeProject = name
+    if (name) localStorage.setItem('autonovel_active_project', name)
+    else localStorage.removeItem('autonovel_active_project')
+  },
+
+  getActiveProject() {
+    return activeProject
+  },
+
   async listProjects() {
-    await delay()
-    return projects
+    return live('/api/projects', projects)
   },
 
-  async getRunState(_project) {
-    await delay()
-    return runState
+  async getRunState(project) {
+    return live(`/api/run-state${q(project)}`, runState)
   },
 
-  async getScoreHistory(_project) {
-    await delay()
-    return scoreHistory
+  async getScoreHistory(project) {
+    return live(`/api/score-history${q(project)}`, scoreHistory)
   },
 
-  async listLlmEvents(_project) {
-    await delay(200)
-    return llmEvents
+  async listLlmEvents(project) {
+    return live(`/api/llm-events${q(project)}`, llmEvents)
   },
 
   async getStats(project) {
-    await delay()
     const evts = await this.listLlmEvents(project)
     const ok = evts.filter((e) => e.ok)
     const sum = (k) => ok.reduce((a, e) => a + (e[k] ?? 0), 0)
@@ -62,34 +86,29 @@ export const api = {
   },
 
   async getSettings() {
-    await delay()
-    return settings
+    return live('/api/settings', settings)
   },
 
-  async listChapters(_project) {
-    await delay()
-    return chapters
+  async listChapters(project) {
+    return live(`/api/chapters${q(project)}`, chapters)
   },
 
-  /** evals.json is keyed by the pipeline's `chNN` (zero-padded-2, no underscore). */
-  async getEvals(_project, chapterId) {
-    await delay()
-    return evals[chapterId.replace('ch_', 'ch')] ?? []
+  /** evals map is keyed by the pipeline's eval-log chapter key (`ch01`). */
+  async getEvals(project, chapterId) {
+    const map = await this.listEvals(project)
+    return map[chapterId.replace('ch_', 'ch')] ?? []
   },
 
-  async listEvals(_project) {
-    await delay()
-    return evals
+  async listEvals(project) {
+    return live(`/api/evals${q(project)}`, evals)
   },
 
-  async getRevision(_project) {
-    await delay()
-    return revision
+  async getRevision(project) {
+    return live(`/api/revision${q(project)}`, revision)
   },
 
-  async listMatches(_project) {
-    await delay()
-    return tournament
+  async listMatches(project) {
+    return live(`/api/tournament${q(project)}`, tournament)
   },
 
   /** Live log tail. Mock replays a scripted run; real impl subscribes to SSE. */
