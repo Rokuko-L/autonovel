@@ -35,7 +35,7 @@ export default function Stats() {
 
   return (
     <div>
-      <p className="section-head">06 · what it costs to dream</p>
+      <p className="section-head">08 · what it costs to dream</p>
       <h1 className="mb-6 mt-1 font-display text-xl lowercase tracking-tight text-paper">costs</h1>
 
       {!stats ? (

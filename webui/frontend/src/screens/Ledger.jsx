@@ -1,13 +1,13 @@
 import data from '../fixtures/ledger.json'
 
-const TOTAL = 24
+const TOTAL = Math.max(24, ...data.threads.map((t) => t.harvest))
 
 function ThreadRow({ t }) {
   const paid = t.status === 'paid off'
   return (
     <li className="border-t border-ink-700 py-3 first:border-t-0">
       <div className="mb-1.5 flex items-baseline justify-between gap-4">
-        <p className="text-sm text-fog-200 lowercase">
+        <p className="min-w-0 flex-1 truncate text-sm text-fog-200 lowercase">
           {paid && <span className="mr-2 text-good">[paid]</span>}
           {t.thread}
         </p>
@@ -41,7 +41,7 @@ export default function Ledger() {
       </header>
 
       <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_1.4fr]">
-        <section>
+        <section className="min-w-0">
           <h2 className="section-head mb-3">premise beats — chapter one</h2>
           <ol className="space-y-0">
             {data.premiseBeats.map((b, i) => (
@@ -73,20 +73,21 @@ export default function Ledger() {
           </div>
         </section>
 
-        <section>
+        <section className="min-w-0">
           <h2 className="section-head mb-3">
             global plot threads ledger — {data.threads.length} tracked
           </h2>
-          <ul className="max-h-[480px] overflow-y-auto rounded-xl border border-ink-700 bg-ink-850 px-4">
+          <ul className="max-h-[480px] overflow-y-auto overflow-x-hidden rounded-xl border border-ink-700 bg-ink-850 px-4">
             {data.threads.map((t) => (
               <ThreadRow key={t.thread + t.planted} t={t} />
             ))}
+            <li className="pb-1" aria-hidden="true" />
           </ul>
           <div className="mt-3 flex items-center gap-4 font-mono text-[10px] text-fog-500">
             <span>● plant</span>
             <span><span className="mr-1 inline-block h-2 w-2 rotate-45 border border-accent align-middle" />harvest</span>
             <span><span className="mr-1 inline-block h-2 w-2 rotate-45 border border-good bg-good align-middle" />paid off</span>
-            <span className="ml-auto">24 chapters</span>
+            <span className="ml-auto">{TOTAL} chapters</span>
           </div>
         </section>
       </div>

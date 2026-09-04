@@ -3,6 +3,10 @@ import runState from '../fixtures/run-state.json'
 import scoreHistory from '../fixtures/score-history.json'
 import llmEvents from '../fixtures/llm-events.json'
 import settings from '../fixtures/settings.json'
+import chapters from '../fixtures/chapters.json'
+import evals from '../fixtures/evals.json'
+import revision from '../fixtures/revision.json'
+import tournament from '../fixtures/tournament.json'
 
 /**
  * Mock API client — implements the contract in contract.js from fixtures.
@@ -60,6 +64,32 @@ export const api = {
   async getSettings() {
     await delay()
     return settings
+  },
+
+  async listChapters(_project) {
+    await delay()
+    return chapters
+  },
+
+  /** evals.json is keyed by the pipeline's `chNN` (zero-padded-2, no underscore). */
+  async getEvals(_project, chapterId) {
+    await delay()
+    return evals[chapterId.replace('ch_', 'ch')] ?? []
+  },
+
+  async listEvals(_project) {
+    await delay()
+    return evals
+  },
+
+  async getRevision(_project) {
+    await delay()
+    return revision
+  },
+
+  async listMatches(_project) {
+    await delay()
+    return tournament
   },
 
   /** Live log tail. Mock replays a scripted run; real impl subscribes to SSE. */

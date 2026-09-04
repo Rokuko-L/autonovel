@@ -2,8 +2,11 @@ import { useState } from 'react'
 import Projects from './screens/Projects.jsx'
 import Foundation from './screens/Foundation.jsx'
 import Ledger from './screens/Ledger.jsx'
+import Tournament from './screens/Tournament.jsx'
 import Monitor from './screens/Monitor.jsx'
 import Inspector from './screens/Inspector.jsx'
+import Reader from './screens/Reader.jsx'
+import Revision from './screens/Revision.jsx'
 import Stats from './screens/Stats.jsx'
 import Settings from './screens/Settings.jsx'
 
@@ -11,18 +14,24 @@ const NAV = [
   { id: 'projects', num: '01', label: 'projects' },
   { id: 'foundation', num: '02', label: 'foundation' },
   { id: 'ledger', num: '03', label: 'beats & harvests' },
+  { id: 'tournament', num: '03b', label: 'chapter arena' },
   { id: 'monitor', num: '04', label: 'live run' },
-  { id: 'inspector', num: '05', label: 'llm inspector' },
-  { id: 'stats', num: '06', label: 'costs' },
-  { id: 'settings', num: '07', label: 'settings' },
+  { id: 'inspector', num: '05', label: 'evaluations' },
+  { id: 'reader', num: '06', label: 'manuscript' },
+  { id: 'revision', num: '07', label: 'revision' },
+  { id: 'stats', num: '08', label: 'costs' },
+  { id: 'settings', num: '09', label: 'settings' },
 ]
 
 const SCREENS = {
   projects: Projects,
   foundation: Foundation,
   ledger: Ledger,
+  tournament: Tournament,
   monitor: Monitor,
   inspector: Inspector,
+  reader: Reader,
+  revision: Revision,
   stats: Stats,
   settings: Settings,
 }
@@ -77,8 +86,11 @@ export default function App() {
         {screen === 'projects' && <Projects />}
         {screen === 'foundation' && <Foundation />}
         {screen === 'ledger' && <Ledger />}
+        {screen === 'tournament' && <Tournament />}
         {screen === 'monitor' && <Monitor />}
         {screen === 'inspector' && <Inspector />}
+        {screen === 'reader' && <Reader />}
+        {screen === 'revision' && <Revision />}
         {screen === 'stats' && <Stats />}
         {screen === 'settings' && <Settings />}
       </main>

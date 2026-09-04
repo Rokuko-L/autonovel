@@ -19,8 +19,11 @@
  * @typedef {Object} Project
  * @property {string} name              // directory name under projects/
  * @property {string} title             // novel title from state.json ("Untitled" ok)
+ * @property {string|null} genre        // active_genre.json genre_name
  * @property {"foundation"|"drafting"|"revision"|"export"|"idle"} phase
  * @property {number} foundationScore   // best-so-far foundation score (0 if none)
+ * @property {number|null} novelScore   // final whole-novel eval (post-revision)
+ * @property {number} revisionCycle
  * @property {number} chaptersTotal
  * @property {number} chaptersDone      // chapters with an accepted draft
  * @property {number} words             // total words across chapter files
@@ -79,5 +82,84 @@
  * @property {string} baseUrl           // ANTHROPIC_BASE_URL
  * @property {string} apiKeyMasked      // e.g. "sk-ant-…f4d2"; never the raw key
  * @property {{writer: string, judge: string, review: string}} models
- * @property {{foundation: number, chapter: number}} thresholds
+ * @property {{foundation: number, chapter: number}} thresholds  // 0-10 gates
+ * @property {{maxChapterAttempts: number, revisionCycles: number, plateauDelta: number}} heuristics
+ * @property {{genre: string, chapterCount: number, notes: string}} defaults
+ */
+
+/**
+ * One drafted chapter.
+ * @typedef {Object} Chapter
+ * @property {number} num               // 1-based
+ * @property {string} id                // "ch_04"
+ * @property {string} title             // from the "# Chapter N: Title" heading
+ * @property {number} words
+ * @property {"kept"|"discarded"|"pending"} status
+ * @property {number|null} score        // kept attempt's score (results.tsv)
+ * @property {Array<{score: number, words: number, status: "keep"|"discard"}>} attempts
+ * @property {string} prose             // full markdown body
+ */
+
+/**
+ * One evaluation attempt (one eval_logs/<ts>_chNN.json).
+ * @typedef {Object} EvalAttempt
+ * @property {string} ts                // "20260805_003805"
+ * @property {number} overall           // overall_score (post-penalty)
+ * @property {number} rawJudge          // raw_judge_score
+ * @property {string} weakest           // weakest_dimension summary line
+ * @property {number} lengthPenalty
+ * @property {number} orientationPenalty
+ * @property {number} slopPenalty
+ * @property {Object<string, {score: number, weakestMoment: string, fix: string, note: string}>} dims
+ * @property {string[]} strongest
+ * @property {string[]} weakestSentences
+ * @property {string[]} aiPatterns
+ * @property {string[]} topRevisions
+ * @property {number} newCanon
+ * @property {number} unexplained
+ */
+
+/** evals.json shape: { ch_01: EvalAttempt[], ... } (chapter-id keyed) */
+
+/**
+ * One adversarial cut from edit_logs/chNN_cuts.json.
+ * @typedef {Object} Cut
+ * @property {string} quote
+ * @property {string} type              // OVER-EXPLAIN | REDUNDANT | GENERIC | TELL | ...
+ * @property {string} reason
+ * @property {"CUT"|"REWRITE"} action
+ * @property {string|null} rewrite
+ */
+
+/**
+ * One revision brief (briefs/chNN_panel.md | chNN_auto.md).
+ * @typedef {Object} RevisionBrief
+ * @property {number} chapter
+ * @property {string} kind              // "panel" | "auto"
+ * @property {string} title             // first # heading line
+ * @property {string} problem           // ## PROBLEM section body
+ * @property {string} keep              // ## WHAT TO KEEP section body
+ * @property {string} directives        // ## WHAT TO CHANGE section body
+ */
+
+/**
+ * One full-novel review pass (edit_logs/<ts>_review.json).
+ * @typedef {Object} NovelReview
+ * @property {string} ts
+ * @property {number} stars
+ * @property {string} summary           // critic_summary markdown
+ * @property {Array<{number: number, title: string, severity: string, suggestion: string}>} items
+ * @property {number} majorItems
+ * @property {number} totalItems
+ */
+
+/** revision.json shape: { briefs: RevisionBrief[], cuts: Object<string, Cut[]>, reviews: NovelReview[] } */
+
+/**
+ * One synthesized A/B match (chapters with a discarded + kept attempt).
+ * @typedef {Object} TournamentMatch
+ * @property {string} id                // "match_001"
+ * @property {number} chapter
+ * @property {{label: string, score: number, words: number, elo: number, prose: string}} a
+ * @property {{label: string, score: number, words: number, elo: number, prose: string, kept: boolean}} b
  */

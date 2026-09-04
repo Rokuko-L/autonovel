@@ -13,9 +13,10 @@ const KIND_COLOR = {
 /**
  * Force-directed entity graph (cytoscape). Pan/zoom/hover built in;
  * tapping or hovering a node lights its edges + neighbours and shows
- * relationship labels. Data shape: contract.js entities {nodes, edges}.
+ * relationship labels; tapping a node also fires onSelect(nodeData).
+ * Data shape: contract.js entities {nodes, edges}.
  */
-export default function EntityGraph({ nodes, edges }) {
+export default function EntityGraph({ nodes, edges, onSelect, className = 'h-[480px]' }) {
   const ref = useRef(null)
   const cyRef = useRef(null)
 
@@ -113,6 +114,9 @@ export default function EntityGraph({ nodes, edges }) {
     cy.on('layoutstop', () => cy.fit(undefined, 60))
     cy.on('mouseover', 'node', focus)
     cy.on('mouseout', 'node', unfocus)
+    if (onSelect) {
+      cy.on('tap', 'node', (evt) => onSelect(evt.target.json().data))
+    }
 
     cyRef.current = cy
     return () => cy.destroy()
@@ -120,9 +124,9 @@ export default function EntityGraph({ nodes, edges }) {
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-ink-700 bg-ink-950">
-      <div ref={ref} className="h-[480px] w-full" />
+      <div ref={ref} className={`${className} w-full`} />
       <p className="pointer-events-none absolute bottom-3 right-4 font-mono text-[10px] text-fog-500">
-        hover to trace · scroll to zoom · drag to rearrange
+        hover to trace · click to inspect · scroll to zoom
       </p>
     </div>
   )
