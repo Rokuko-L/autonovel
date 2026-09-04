@@ -39,3 +39,12 @@ that is `validation.py`'s job.
 
 Related: [output-validation.md](output-validation.md) ·
 [path-resolution.md](path-resolution.md)
+
+## Call Telemetry
+
+Every `call_anthropic` attempt appends one JSON line to the active project's
+`llm_events.jsonl` (path helper: `paths.get_llm_events_path()`). Event fields:
+`ts, model_key, model, ok, attempt, tokens_in, tokens_out, duration_ms,
+stop_reason, prompt_chars, response_chars, prompt_head` — failures add
+`error`. This feeds the webui's token stats and LLM inspector; telemetry
+failures are swallowed by design and never break generation.

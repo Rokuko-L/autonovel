@@ -153,6 +153,22 @@ def get_client() -> httpx.Client:
         )
     return _client
 
+def _emit_llm_event(event: dict):
+    """Append one LLM call event to the active project's llm_events.jsonl.
+
+    Telemetry sink for the GUI (token stats, timing, prompt inspector). A
+    telemetry failure must never break generation, so all errors are swallowed
+    by design here.
+    """
+    try:
+        from core import paths
+        path = paths.get_llm_events_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
 def call_anthropic(
     prompt,
     system=None,
@@ -191,6 +207,7 @@ def call_anthropic(
     max_retries = 5
     backoff = 2
     for attempt in range(1, max_retries + 1):
+        t0 = time.perf_counter()
         try:
             client = get_client()
             resp = client.post(
@@ -200,9 +217,30 @@ def call_anthropic(
                 timeout=timeout,
             )
             resp.raise_for_status()
+            try:
+                data = _parse_response_json(resp.text)
+            except Exception:
+                data = {}
+            usage = data.get("usage") or {}
+            stop_reason = data.get("stop_reason")
+            _emit_llm_event({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+                      + f".{int(time.perf_counter() * 1000) % 1000:03d}Z",
+                "model_key": model_key,
+                "model": model,
+                "ok": True,
+                "attempt": attempt,
+                "tokens_in": usage.get("input_tokens"),
+                "tokens_out": usage.get("output_tokens"),
+                "duration_ms": round((time.perf_counter() - t0) * 1000),
+                "stop_reason": stop_reason,
+                "prompt_chars": len(str(prompt)),
+                "response_chars": len(resp.text),
+                "prompt_head": str(prompt)[:300],
+            })
             if raise_on_truncation:
-                text, stop_reason = extract_text_and_stop_reason(resp)
-                if stop_reason == "max_tokens":
+                text, sr = extract_text_and_stop_reason(resp)
+                if sr == "max_tokens":
                     raise TruncationError(
                         f"Response truncated at ~{len(text.split())} words "
                         f"(stop_reason: max_tokens)"
@@ -212,6 +250,18 @@ def call_anthropic(
         except TruncationError:
             raise
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            _emit_llm_event({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+                      + f".{int(time.perf_counter() * 1000) % 1000:03d}Z",
+                "model_key": model_key,
+                "model": model,
+                "ok": False,
+                "attempt": attempt,
+                "duration_ms": round((time.perf_counter() - t0) * 1000),
+                "error": str(e)[:200],
+                "prompt_chars": len(str(prompt)),
+                "prompt_head": str(prompt)[:300],
+            })
             if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in [400, 401, 403, 404]:
                 raise e
             if attempt == max_retries:
