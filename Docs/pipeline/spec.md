@@ -273,6 +273,12 @@ CYCLE 2-3: STRUCTURAL REVISIONS (address panel consensus)
     Keep if improved, discard if not
     Git commit with detailed message
 
+  After kept rewrites in a cycle:
+    resync_canon_after_cycle() rebuilds a replaceable ## Revision Sync
+    block in canon.md from post-revision eval new_canon_entries.
+    Draft-era ## As of Chapter N sections stay; the sync block does not
+    stack across cycles.
+
   evaluate.py --full → get novel-level scores
   Git commit: "Cycle N: structural revisions from panel"
 ```

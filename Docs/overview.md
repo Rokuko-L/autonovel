@@ -14,7 +14,8 @@ improvements (modify → evaluate → keep/discard).
 ```
 core/             Shared library — no pipeline-specific logic
 ├── paths.py        Project root/state resolution, folder+file path helpers,
-│                   prompt loader (load_prompt), atomic registry writes
+│                   prompt loader (load_prompt), atomic JSON writes
+│                   (save_json_atomic / save_registry)
 ├── llm.py          Multi-provider client (call_llm: anthropic + openai
 │                   dialects, any compat endpoint), response extraction,
 │                   healing JSON parser (parse_json_response)
