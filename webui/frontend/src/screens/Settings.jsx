@@ -38,6 +38,9 @@ export default function Settings() {
   const [settings, setSettings] = useState(null)
   const initial = useRef(null)
   const [saved, setSaved] = useState(false)
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     document.title = 'autonovel · settings'
@@ -65,12 +68,35 @@ export default function Settings() {
     )
   }
 
-  const commit = () => {
-    initial.current = JSON.stringify(settings)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+  const commit = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const payload = {
+        baseUrl: settings.baseUrl,
+        models: settings.models,
+        thresholds: settings.thresholds,
+        heuristics: settings.heuristics,
+        defaults: settings.defaults,
+      }
+      if (apiKey.trim()) payload.apiKey = apiKey.trim()
+      const next = await api.saveSettings(payload)
+      setSettings(next)
+      initial.current = JSON.stringify(next)
+      setApiKey('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1800)
+    } catch (e) {
+      setError(String(e?.message || e))
+    } finally {
+      setSaving(false)
+    }
   }
-  const discard = () => setSettings(JSON.parse(initial.current))
+  const discard = () => {
+    setSettings(JSON.parse(initial.current))
+    setApiKey('')
+    setError(null)
+  }
 
   const input =
     'w-full border border-ink-600 bg-ink-950 px-3 py-2 font-mono text-xs text-fog-200 outline-none focus:border-accent/60'
@@ -90,20 +116,21 @@ export default function Settings() {
             <span className="border border-accent/50 px-1.5 py-0.5 font-mono text-[10px] text-accent">[{changedCount} changed]</span>
           )}
           {saved && <span className="font-mono text-[10px] text-good">committed to .env</span>}
+          {error && <span className="font-mono text-[10px] text-red-400">{error}</span>}
           <div className="flex gap-2">
             <button
               onClick={discard}
-              disabled={!changedCount}
+              disabled={!changedCount || saving}
               className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:text-fog-200 disabled:opacity-40"
             >
               [ discard ]
             </button>
             <button
               onClick={commit}
-              disabled={!changedCount}
+              disabled={(!changedCount && !apiKey.trim()) || saving}
               className="border border-accent bg-accent/10 px-3 py-1 font-mono text-xs text-accent transition-colors hover:bg-accent hover:text-ink-950 disabled:opacity-40"
             >
-              [ commit_changes ]
+              {saving ? '[ saving… ]' : '[ commit_changes ]'}
             </button>
           </div>
         </div>
@@ -131,9 +158,16 @@ export default function Settings() {
             <label className="block">
               <span className="mb-1 flex items-baseline justify-between font-mono text-[10px]">
                 <span className="text-fog-400">auth_token</span>
-                <span className="text-fog-500">[secured]</span>
+                <span className="text-fog-500">{apiKey ? '[new — write on commit]' : `[${settings.apiKeyMasked || 'empty'}]`}</span>
               </span>
-              <input className={`${input} tracking-widest`} value={settings.apiKeyMasked} readOnly />
+              <input
+                className={input}
+                type="password"
+                autoComplete="off"
+                placeholder="paste new key to replace stored value"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
             </label>
             <p className="border-l-2 border-accent/60 bg-accent/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-fog-300">
               to route workloads to another provider (deepseek, openrouter, ollama), override endpoint_url

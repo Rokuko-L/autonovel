@@ -106,6 +106,11 @@ export const api = {
     return live('/api/settings', settings)
   },
 
+  /** Persist settings to .env; returns the refreshed settings payload. */
+  saveSettings(payload) {
+    return send('/api/settings', payload)
+  },
+
   async listChapters(project) {
     return live(`/api/chapters${q(project)}`, chapters)
   },

@@ -68,7 +68,8 @@ in `localStorage.autonovel_active_project`.
 | `GET /api/evals?project=` | eval-log map keyed by eval-log chapter key (`ch01`) |
 | `GET /api/revision?project=` | revision briefs, adversarial cuts, novel reviews |
 | `GET /api/tournament?project=` | synthesized A/B matches from discard/keep pairs |
-| `GET /api/settings` | masked `.env` values + `pipeline_infra` gate constants |
+| `GET /api/settings` | live `.env` + env-aware gate constants (models, thresholds, defaults) |
+| `POST /api/settings` | merge payload into `.env` (baseUrl, optional full apiKey, models, thresholds, heuristics, defaults) and return refreshed settings |
 
 ## Frontend architecture
 
@@ -88,8 +89,8 @@ in `localStorage.autonovel_active_project`.
 
 ## Deferred (not in the bridge yet)
 
-- **Settings mutation** (`commit_changes`) — POST endpoint.
 - Pause/resume (vs. terminate) and interactive stdin injection into the run.
+  Stopping is still a hard kill; resume = launch again without `--from-scratch`.
 
 ## Tests
 

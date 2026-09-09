@@ -94,6 +94,50 @@ CHAPTERS_TOTAL = 24  # default; overridden by genre config at runtime
 
 PHASE_ORDER = ["foundation", "drafting", "revision", "export"]
 
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(float(raw))
+    except ValueError:
+        return default
+
+
+def foundation_threshold() -> float:
+    return _env_float("AUTONOVEL_FOUNDATION_THRESHOLD", FOUNDATION_THRESHOLD)
+
+
+def chapter_threshold() -> float:
+    return _env_float("AUTONOVEL_CHAPTER_THRESHOLD", CHAPTER_THRESHOLD)
+
+
+def max_chapter_attempts() -> int:
+    return _env_int("AUTONOVEL_MAX_CHAPTER_ATTEMPTS", MAX_CHAPTER_ATTEMPTS)
+
+
+def min_revision_cycles() -> int:
+    return _env_int("AUTONOVEL_MIN_REVISION_CYCLES", MIN_REVISION_CYCLES)
+
+
+def max_revision_cycles() -> int:
+    return _env_int("AUTONOVEL_MAX_REVISION_CYCLES", MAX_REVISION_CYCLES)
+
+
+def plateau_delta() -> float:
+    return _env_float("AUTONOVEL_PLATEAU_DELTA", PLATEAU_DELTA)
+
 def ensure_gitignore_projects():
     """Ensure root .gitignore contains a rule for projects/ to prevent nested-repo commits."""
     root = paths.get_root_dir()
@@ -161,16 +205,44 @@ def default_state() -> dict:
         "lore_score": 0.0,
         "chapters_drafted": 0,
         "chapters_total": CHAPTERS_TOTAL,
-        "novel_score": 0.0,
+        "novel_score": None,  # null = never scored; 0.0 is a real (failed) score
         "revision_cycle": 0,
         "debts": [],
     }
 
+def store_novel_score(state: dict, score):
+    """Write a full-novel score into state. None / <=0 means "no usable score" — keep previous."""
+    if score is None:
+        return state.get("novel_score")
+    try:
+        score = float(score)
+    except (TypeError, ValueError):
+        return state.get("novel_score")
+    if score <= 0:
+        return state.get("novel_score")
+    state["novel_score"] = score
+    return score
+
+def fmt_score(value) -> str:
+    """Human-readable score for logs; None prints as ?."""
+    return "?" if value is None else str(value)
+
 def save_state(state: dict):
-    """Write state to the active project's state.json."""
+    """Atomically write state to the active project's state.json."""
     state_path = paths.get_state_path()
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = state_path.with_suffix(state_path.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp_path, state_path)
+    except Exception:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
 def log_result(commit: str, phase: str, score, word_count: int,
                status: str, description: str):

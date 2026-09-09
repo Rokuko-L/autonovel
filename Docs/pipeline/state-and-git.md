@@ -18,7 +18,9 @@ phase functions and CLI; this module holds everything they share.
 
 - `load_state / default_state / save_state` — `projects/<name>/state.json`
   checkpointing; written after every phase/step so crashes resume cleanly
-  (rerun without `--from-scratch`).
+  (rerun without `--from-scratch`). `save_state` is atomic (tmp + rename).
+  `novel_score` is `null` until a real full-novel score exists (`0.0` means
+  "scored zero"; use `store_novel_score` / `fmt_score` helpers).
 - `load_registry / update_registry` — `projects/registry.json` session
   registry (atomic writes via `paths.save_registry`).
 - `log_result(commit, phase, score, words, verdict, note)` — appends to
