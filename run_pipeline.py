@@ -1034,7 +1034,7 @@ def run_revision(
                             f"Focus: address the {question.replace('_', ' ')} issue.\n"
                             f"Preserve existing voice, character work, and essential beats.\n"
                         )
-                        brief_file.write_text(brief_content)
+                        brief_file.write_text(brief_content, encoding="utf-8")
 
                     if not brief_file.exists():
                         return {"ch_num": ch_num, "error": "no brief file",

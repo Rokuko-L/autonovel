@@ -229,20 +229,7 @@ def fmt_score(value) -> str:
 
 def save_state(state: dict):
     """Atomically write state to the active project's state.json."""
-    state_path = paths.get_state_path()
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = state_path.with_suffix(state_path.suffix + ".tmp")
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
-        os.replace(tmp_path, state_path)
-    except Exception:
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-        raise
+    paths.save_json_atomic(state, paths.get_state_path())
 
 def log_result(commit: str, phase: str, score, word_count: int,
                status: str, description: str):

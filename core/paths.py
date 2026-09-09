@@ -69,8 +69,8 @@ def get_project_dir() -> Path:
         raise ValueError("Invalid project name: path isolation violation")
     return proposed_dir
 
-def save_registry(data: dict, path: Path):
-    """Atomically write registry JSON via .tmp file and rename, with cleanup if serialization fails."""
+def save_json_atomic(data, path: Path):
+    """Atomically write JSON via .tmp file and rename, with cleanup on failure."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -81,9 +81,14 @@ def save_registry(data: dict, path: Path):
         try:
             if tmp_path.exists():
                 tmp_path.unlink()
-        except Exception:
+        except OSError:
             pass
         raise e
+
+
+def save_registry(data: dict, path: Path):
+    """Atomically write registry JSON (thin wrapper over save_json_atomic)."""
+    save_json_atomic(data, path)
 
 def get_chapters_dir() -> Path:
     d = get_project_dir() / "chapters"
