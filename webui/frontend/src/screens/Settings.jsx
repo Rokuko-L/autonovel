@@ -14,7 +14,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1 w-full cursor-ew-resize appearance-none rounded
+        className="h-1 w-full cursor-ew-resize appearance-none
           [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none
           [&::-webkit-slider-thumb]:rounded-none [&::-webkit-slider-thumb]:bg-accent"
         style={{ background: `linear-gradient(to right, var(--color-accent) ${pct}%, var(--color-ink-600) ${pct}%)` }}
@@ -25,7 +25,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
 
 function Quadrant({ num, label, icon, children }) {
   return (
-    <section className="border-b border-r border-ink-700 bg-ink-900 p-6">
+    <section className="p-6">
       <p className="section-head mb-5">
         <span className="text-accent">[{num}]</span> {label} {icon && <span className="ml-1 text-fog-500">{icon}</span>}
       </p>
@@ -40,6 +40,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
+    document.title = 'autonovel · settings'
     api.getSettings().then((s) => {
       setSettings(s)
       initial.current = JSON.stringify(s)
@@ -75,35 +76,45 @@ export default function Settings() {
     'w-full border border-ink-600 bg-ink-950 px-3 py-2 font-mono text-xs text-fog-200 outline-none focus:border-accent/60'
 
   return (
-    <div className="-m-8 flex h-[calc(100vh-1px)] flex-col">
-      <header className="flex shrink-0 items-center justify-between border-b border-ink-700 px-6 py-3">
-        <p className="flex items-center gap-2 font-mono text-sm text-paper">
-          &gt;[09] settings
-          <span className="inline-block h-3.5 w-2 animate-pulse bg-accent" />
+    <div className="mx-auto max-w-5xl">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="section-head">global configuration</p>
+          <h1 className="mt-1 flex items-center gap-2 font-display text-2xl font-semibold lowercase tracking-tight text-paper">
+            settings
+            <span className="inline-block h-3.5 w-2 animate-pulse bg-accent" />
+          </h1>
+        </div>
+        <div className="flex items-center gap-3">
           {changedCount > 0 && (
             <span className="border border-accent/50 px-1.5 py-0.5 font-mono text-[10px] text-accent">[{changedCount} changed]</span>
           )}
           {saved && <span className="font-mono text-[10px] text-good">committed to .env</span>}
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={discard}
-            disabled={!changedCount}
-            className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:text-fog-200 disabled:opacity-40"
-          >
-            [ discard ]
-          </button>
-          <button
-            onClick={commit}
-            disabled={!changedCount}
-            className="border border-accent bg-accent/10 px-3 py-1 font-mono text-xs text-accent transition-colors hover:bg-accent hover:text-ink-950 disabled:opacity-40"
-          >
-            [ commit_changes ]
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={discard}
+              disabled={!changedCount}
+              className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:text-fog-200 disabled:opacity-40"
+            >
+              [ discard ]
+            </button>
+            <button
+              onClick={commit}
+              disabled={!changedCount}
+              className="border border-accent bg-accent/10 px-3 py-1 font-mono text-xs text-accent transition-colors hover:bg-accent hover:text-ink-950 disabled:opacity-40"
+            >
+              [ commit_changes ]
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto border-l border-ink-700 lg:grid-cols-2">
+      <p className="mb-6 max-w-2xl font-prose text-sm leading-relaxed text-fog-400">
+        these are global pipeline settings — they apply to every project on the shelf. per-project state
+        (scores, drafts, briefs) lives inside each project and is managed from its own views.
+      </p>
+
+      <div className="dock grid grid-cols-1 gap-px lg:grid-cols-2">
         <Quadrant num="01" label="api_configuration">
           <div className="space-y-4">
             <label className="block">
@@ -204,6 +215,7 @@ export default function Settings() {
               <span className="mb-1 block font-mono text-[10px] text-fog-400">default_genre</span>
               <input
                 className={input}
+                placeholder="e.g. comedy fantasy misunderstanding"
                 value={settings.defaults.genre}
                 onChange={(e) => setSettings({ ...settings, defaults: { ...settings.defaults, genre: e.target.value } })}
               />

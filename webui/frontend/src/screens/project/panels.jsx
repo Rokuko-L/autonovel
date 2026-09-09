@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api/client.js'
+import { api } from '../../api/client.js'
+import { useApp } from '../../state.jsx'
+
+/**
+ * Panels shared by the pipeline dashboard: the evaluation report browser
+ * (formerly the Inspector screen) and the LLM event feed.
+ */
 
 const ROLE_STYLE = {
   writer: 'bg-accent/10 text-accent',
@@ -7,42 +13,32 @@ const ROLE_STYLE = {
   review: 'bg-good/10 text-good',
 }
 
-const DIM_LABEL = {
-  voice_adherence: 'voice',
-  beat_coverage: 'beats',
-  character_voice: 'character',
-  prose_quality: 'prose',
-  engagement: 'engagement',
-  continuity: 'continuity',
-  reader_grounding: 'grounding',
-}
-
 function fmt(n) {
   return n == null ? '—' : n.toLocaleString()
 }
 
-/* ---------------------------------------------------------------- llm tab */
+/* ---------------------------------------------------------------- llm feed */
 
 function EventRow({ ev }) {
   const [open, setOpen] = useState(false)
   return (
-    <li className="border-t border-ink-700 first:border-t-0">
+    <li className="border-t border-line first:border-t-0">
       <button
         onClick={() => setOpen(!open)}
         className="grid w-full grid-cols-[7rem_5rem_1fr_1fr_5.5rem] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-ink-800"
       >
-        <span className="font-mono text-xs text-fog-500">{ev.ts.slice(11, 19)}</span>
-        <span className={`w-fit rounded px-1.5 py-0.5 font-mono text-xs ${ROLE_STYLE[ev.modelKey]}`}>
+        <span className="font-mono text-xs text-fog-500">{ev.ts?.slice(11, 19)}</span>
+        <span className={`w-fit px-1.5 py-0.5 font-mono text-xs ${ROLE_STYLE[ev.modelKey]}`}>
           {ev.modelKey}
         </span>
         <span className="font-mono text-sm text-fog-200">
           {ev.ok ? (
             <>↑ {fmt(ev.tokensIn)} · ↓ {fmt(ev.tokensOut)}</>
           ) : (
-            <span className="text-bad">{ev.error}</span>
+            <span className="text-bad">{ev.error ?? 'failed'}</span>
           )}
           {ev.attempt > 1 && (
-            <span className="ml-2 rounded bg-accent/10 px-1 py-0.5 text-[10px] text-accent">
+            <span className="ml-2 bg-accent/10 px-1 py-0.5 text-[10px] text-accent">
               retry {ev.attempt}
             </span>
           )}
@@ -66,32 +62,42 @@ function EventRow({ ev }) {
   )
 }
 
-function LlmTab() {
-  const [events, setEvents] = useState(null)
-  const [live, setLive] = useState(false)
+/** LLM call feed: history from the bridge + live rows from the SSE stream. */
+export function LlmFeed({ project }) {
+  const { llmEvents } = useApp()
+  const [history, setHistory] = useState(null)
 
   useEffect(() => {
-    api.listLlmEvents().then(setEvents)
-  }, [])
+    setHistory(null)
+    api.listLlmEvents(project).then(setHistory).catch(() => {})
+  }, [project])
 
-  useEffect(() => {
-    if (!live) return
-    return api.subscribeLlmEvents('bells-second-son', (ev) =>
-      setEvents((prev) => [...prev.slice(-99), ev]))
-  }, [live])
+  const events = useMemo(() => {
+    const base = history ?? []
+    const seenTs = new Set(base.map((e) => e.ts))
+    const live = llmEvents.filter((e) => !seenTs.has(e.ts))
+    return [...base, ...live]
+  }, [history, llmEvents])
 
   if (!events) {
     return (
-      <ul className="rounded-xl border border-ink-700 bg-ink-900">
+      <ul className="border border-line bg-ink-900">
         {[0, 1, 2, 3].map((i) => (
-          <li key={i} className="h-12 animate-pulse border-t border-ink-700 first:border-t-0 bg-ink-800"
+          <li key={i} className="h-12 animate-pulse border-t border-line bg-ink-800 first:border-t-0"
             style={{ animationDelay: `${i * 120}ms` }} />
         ))}
       </ul>
     )
   }
+  if (!events.length) {
+    return (
+      <p className="border border-line p-10 font-mono text-sm text-fog-500">
+        [ no llm calls on record ]
+      </p>
+    )
+  }
   return (
-    <ul className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+    <ul className="overflow-hidden border border-line bg-ink-900">
       {[...events].reverse().map((ev, i) => (
         <EventRow key={`${ev.ts}-${i}`} ev={ev} />
       ))}
@@ -99,7 +105,17 @@ function LlmTab() {
   )
 }
 
-/* ------------------------------------------------------- evaluations tab */
+/* ----------------------------------------------------------- eval reports */
+
+const DIM_LABEL = {
+  voice_adherence: 'voice',
+  beat_coverage: 'beats',
+  character_voice: 'character',
+  prose_quality: 'prose',
+  engagement: 'engagement',
+  continuity: 'continuity',
+  reader_grounding: 'grounding',
+}
 
 function DimRow({ name, dim }) {
   const [open, setOpen] = useState(false)
@@ -137,69 +153,84 @@ function DimRow({ name, dim }) {
   )
 }
 
-function EvalPane({ evals }) {
-  // evals: { chNN: [attempt, ...] } — flatten to a chapter-grouped list
+/** Full evaluation browser: attempt history per chapter + the report itself. */
+export function EvalPane({ project }) {
+  const [evals, setEvals] = useState(null)
+
+  useEffect(() => {
+    setEvals(null)
+    api.listEvals(project).then(setEvals).catch(() => {})
+  }, [project])
+
   const groups = useMemo(
-    () => Object.entries(evals)
-      .filter(([k]) => k.startsWith('ch'))
-      .sort(([a], [b]) => a.localeCompare(b)),
+    () => (evals
+      ? Object.entries(evals)
+        .filter(([k]) => k.startsWith('ch'))
+        .sort(([a], [b]) => a.localeCompare(b))
+      : []),
     [evals],
   )
-  const [openCh, setOpenCh] = useState(null)
   const [sel, setSel] = useState(null) // { ch, i }
 
   useEffect(() => {
     if (!groups.length) return
-    setOpenCh(groups[0][0])
-    setSel({ ch: groups[0][0], i: groups[0][1].length - 1 })
-  }, [evals])
+    const first = groups[0]
+    setSel({ ch: first[0], i: first[1].length - 1 })
+  }, [groups])
+
+  if (!evals) {
+    return <div className="h-64 animate-pulse bg-ink-800" />
+  }
+  if (!groups.length) {
+    return (
+      <p className="border border-line p-10 font-mono text-sm text-fog-500">
+        [ no eval logs on disk — reports appear as the judge scores drafts ]
+      </p>
+    )
+  }
 
   const att = sel ? evals[sel.ch]?.[sel.i] : null
+  const openCh = sel?.ch
 
   return (
-    <div className="flex gap-5">
+    <div className="flex flex-col gap-5 xl:flex-row">
       {/* attempt history */}
       <aside className="w-72 shrink-0">
         <p className="section-head mb-2">// attempt_history</p>
-        <ul className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+        <ul className="max-h-[520px] overflow-y-auto border border-line bg-ink-900">
           {groups.map(([ch, atts]) => (
-            <li key={ch} className="border-t border-ink-700 first:border-t-0">
-              <button
-                onClick={() => setOpenCh(openCh === ch ? null : ch)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-ink-800"
-              >
+            <li key={ch} className="border-t border-line first:border-t-0">
+              <div className="flex w-full items-center justify-between px-3 py-2">
                 <span className={`font-mono text-xs ${openCh === ch ? 'text-accent' : 'text-fog-300'}`}>
                   [{ch}]
                 </span>
-                <span className="text-[10px] text-fog-500">{atts.length} tries ▾</span>
-              </button>
-              {openCh === ch && (
-                <ul className="border-t border-ink-800">
-                  {atts.map((a, i) => {
-                    const active = sel?.ch === ch && sel.i === i
-                    return (
-                      <li key={a.ts}>
-                        <button
-                          onClick={() => setSel({ ch, i })}
-                          className={`flex w-full items-center justify-between px-3 py-1.5 text-left font-mono text-xs transition-colors ${
-                            active ? 'bg-ink-800 text-paper' : 'text-fog-400 hover:text-fog-200'
-                          }`}
-                        >
-                          <span>{active ? '> ' : '  '}{a.ts}</span>
-                          <span className="flex items-center gap-2">
-                            <span>{a.overall?.toFixed(2)}</span>
-                            <span className={`border px-1 text-[10px] ${
-                              a.overall >= 6.5 ? 'border-good/40 text-good' : 'border-bad/40 text-bad'
-                            }`}>
-                              [{a.overall >= 6.5 ? 'keep' : 'discard'}]
-                            </span>
+                <span className="text-[10px] text-fog-500">{atts.length} tries</span>
+              </div>
+              <ul className="border-t border-ink-800">
+                {atts.map((a, i) => {
+                  const active = sel?.ch === ch && sel.i === i
+                  return (
+                    <li key={a.ts}>
+                      <button
+                        onClick={() => setSel({ ch, i })}
+                        className={`flex w-full items-center justify-between px-3 py-1.5 text-left font-mono text-xs transition-colors ${
+                          active ? 'bg-ink-800 text-paper' : 'text-fog-400 hover:text-fog-200'
+                        }`}
+                      >
+                        <span>{active ? '> ' : '  '}{a.ts}</span>
+                        <span className="flex items-center gap-2">
+                          <span>{a.overall?.toFixed(2)}</span>
+                          <span className={`border px-1 text-[10px] ${
+                            a.overall >= 6.5 ? 'border-good/40 text-good' : 'border-bad/40 text-bad'
+                          }`}>
+                            [{a.overall >= 6.5 ? 'keep' : 'discard'}]
                           </span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
             </li>
           ))}
         </ul>
@@ -207,13 +238,9 @@ function EvalPane({ evals }) {
 
       {/* eval report */}
       <div className="min-w-0 flex-1">
-        {!att ? (
-          <p className="rounded-xl border border-ink-700 p-10 font-mono text-sm text-fog-500">
-            [ no eval logs on disk ]
-          </p>
-        ) : (
+        {!att ? null : (
           <>
-            <header className="mb-4 flex items-end justify-between">
+            <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="font-display text-lg lowercase tracking-tight text-paper">
                   {sel.ch} <span className="text-fog-500">//</span> attempt {sel.i + 1}
@@ -233,15 +260,15 @@ function EvalPane({ evals }) {
 
             <section className="mb-5">
               <p className="section-head mb-2">// dimension_scores</p>
-              <ul className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+              <ul className="overflow-hidden border border-line bg-ink-900">
                 {Object.entries(att.dims).map(([k, v]) => (
                   <DimRow key={k} name={k} dim={v} />
                 ))}
               </ul>
             </section>
 
-            <section className="mb-5 grid grid-cols-2 gap-4">
-              <div className="border border-ink-700 bg-ink-900 p-4">
+            <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="border border-line bg-ink-900 p-4">
                 <p className="section-head mb-2 text-good">// strongest</p>
                 <ul className="space-y-2">
                   {att.strongest.map((s, i) => (
@@ -249,7 +276,7 @@ function EvalPane({ evals }) {
                   ))}
                 </ul>
               </div>
-              <div className="border-l-2 border-bad border-ink-700 bg-ink-900 p-4">
+              <div className="border border-line border-l-2 border-l-bad bg-ink-900 p-4">
                 <p className="section-head mb-2 text-bad">// weakest</p>
                 <ul className="space-y-2">
                   {att.weakestSentences.map((s, i) => (
@@ -284,49 +311,6 @@ function EvalPane({ evals }) {
           </>
         )}
       </div>
-    </div>
-  )
-}
-
-/* -------------------------------------------------------------- screen */
-
-export default function Inspector() {
-  const [evals, setEvals] = useState(null)
-  const [tab, setTab] = useState('evals')
-
-  useEffect(() => {
-    api.listEvals().then(setEvals)
-  }, [])
-
-  return (
-    <div>
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <p className="section-head">05 · every verdict on record</p>
-          <h1 className="mt-1 font-display text-xl lowercase tracking-tight text-paper">evaluations</h1>
-        </div>
-        <div className="flex gap-1 rounded-lg border border-ink-700 p-1">
-          {[['evals', 'evaluations'], ['llm', 'llm_events']].map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`rounded px-3 py-1.5 font-mono text-xs transition-colors ${
-                tab === id ? 'bg-accent/10 text-accent' : 'text-fog-400 hover:text-fog-200'
-              }`}
-            >
-              [{label}]
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {tab === 'llm' ? (
-        <LlmTab />
-      ) : evals ? (
-        <EvalPane evals={evals} />
-      ) : (
-        <div className="h-64 animate-pulse rounded-xl bg-ink-800" />
-      )}
     </div>
   )
 }

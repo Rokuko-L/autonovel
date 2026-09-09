@@ -1,31 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap');
 @import "tailwindcss";
 
-@theme {
-  /* warm blacks — never pure #000 */
-  --color-ink-950: #0a0a08;
-  --color-ink-900: #101010;
-  --color-ink-850: #14140f;
-  --color-ink-800: #1a1a16;
-  --color-ink-700: #26251f;
-  --color-ink-600: #36342b;
+/*
+ * EMBER-CONSOLE EDITORIAL — design system
+ * Modern brutalism with a tactile overlay: high-density terminal utility,
+ * publishing-house prose legibility. Sharp 0px geometry, 1px structural
+ * borders, tonal layering (no shadows), warm-earth palette, one ember accent.
+ */
 
-  /* cream fog ramp */
-  --color-fog-500: #7a7568;
-  --color-fog-400: #98927f;
-  --color-fog-300: #bab49e;
-  --color-fog-200: #ddd7c3;
-  --color-paper: #ece7d5;
+@theme {
+  /* warm earth — brown-black surfaces, stepped up in lightness */
+  --color-ink-950: #1d100d;   /* background */
+  --color-ink-900: #261815;   /* panel-low */
+  --color-ink-850: #2b1c19;   /* panel-mid */
+  --color-ink-800: #362623;   /* container-high */
+  --color-ink-700: #41312d;   /* container-highest / subtle tracks */
+  --color-ink-600: #59413a;   /* border-muted / heavy tracks */
+
+  /* cream text ramp (on-surface → dim) */
+  --color-fog-500: #a98a81;   /* text-dim */
+  --color-fog-400: #c9a89e;   /* dim↔muted */
+  --color-fog-300: #e1bfb6;   /* text-muted */
+  --color-fog-200: #efd2ca;   /* between muted and on-surface */
+  --color-paper: #f7ddd7;     /* on-surface */
 
   /* the one accent: ember. locked. */
   --color-accent: #ff6a3d;
-  --color-accent-dim: #b34a2c;
+  --color-accent-dim: #ae3104;
 
-  --color-good: #9db85c;
-  --color-bad: #e05252;
+  /* olive: stable system states (kept ✓, passing gates) */
+  --color-good: #cbc7b5;
+  /* error ramp */
+  --color-bad: #ffb4ab;
 
-  --font-display: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
-  --font-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", monospace;
-  --font-prose: Georgia, "Times New Roman", serif;
+  /* cyan: technical metadata & data-viz only */
+  --color-cyan: #58d7eb;
+
+  --font-display: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-prose: "Source Serif 4", Georgia, "Times New Roman", serif;
+
+  --color-line: #59413a;      /* structural border */
 }
 
 html {
@@ -39,14 +54,14 @@ body {
   font-size: 13px;
 }
 
-/* subtle CRT grain — fixed layer, never on scrolling containers */
+/* tactile overlay: faint 2px CRT scanlines — fixed layer, never scrolls */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 60;
   pointer-events: none;
-  opacity: 0.05;
+  opacity: 0.04;
   background-image: repeating-linear-gradient(
     0deg,
     transparent 0px,
@@ -56,8 +71,32 @@ body::after {
 }
 
 ::selection {
-  background: var(--color-accent-dim);
-  color: var(--color-paper);
+  background: var(--color-accent);
+  color: var(--color-ink-950);
+}
+
+/* ---------------------------------------------------------------- system */
+
+/* scrollbars: 4px solid ember thumb, sharp corners */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 0;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 0;
 }
 
 /* shared editorial marks */
@@ -74,4 +113,106 @@ body::after {
 .section-head::before {
   content: "// ";
   color: var(--color-fog-500);
+}
+
+/* docked panel grid: 1px structural borders, no gutters */
+.dock {
+  border: 1px solid var(--color-line);
+  background: var(--color-line);
+}
+.dock > * {
+  background: var(--color-ink-900);
+  border-radius: 0;
+}
+
+/* inline onboarding hint: a square ? that reveals context on hover/tap */
+.hint-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.hint-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--color-ink-600);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--color-fog-500);
+  cursor: help;
+  transition: color 0.15s, border-color 0.15s;
+}
+.hint-btn:hover {
+  color: var(--color-ink-950);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+.hint-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-850);
+  font-family: var(--font-prose);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-fog-300);
+  pointer-events: none;
+}
+
+/* empty state: explains what the view becomes once the pipeline fills it */
+.empty-state {
+  display: flex;
+  min-height: 240px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px dashed var(--color-ink-600);
+  padding: 40px 24px;
+  background: var(--color-ink-900);
+}
+
+/* terminal-line inputs: `>` style, bottom border only, ember on focus */
+.field-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-ink-600);
+  background: transparent;
+  padding: 8px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-paper);
+  outline: none;
+  transition: border-color 0.15s;
+  border-radius: 0;
+}
+.field-input:focus {
+  border-bottom-color: var(--color-accent);
+}
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-fog-500);
+  letter-spacing: 0.05em;
+}
+
+/* the blinker: a solid ember rectangle that pulses */
+.blinker {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--color-accent);
+  animation: blinker-pulse 1.4s ease-in-out infinite;
+}
+@keyframes blinker-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }

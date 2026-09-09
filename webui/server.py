@@ -2,8 +2,9 @@
 
 Implements the shapes declared in webui/frontend/src/api/contract.js on top of
 whatever the pipeline has already written to projects/<name>/ (state.json,
-results.tsv, eval_logs, briefs, edit_logs, chapters). Read-only phase: run
-launching / settings mutation come later with a RunManager.
+results.tsv, eval_logs, briefs, edit_logs, chapters), plus run lifecycle:
+POST /api/projects launches run_pipeline.py through run_manager, and
+GET /api/stream is an SSE feed (state snapshots, log tail, llm events).
 
 Run from the repo root:
     uv run uvicorn server:app --app-dir webui --port 8600
@@ -13,6 +14,7 @@ Single-user local console: project resolution goes through paths.py's global
 set_project_name under a lock, not a per-request context.
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -20,18 +22,27 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
 
 ROOT = Path(__file__).resolve().parent.parent
-for _p in (ROOT, ROOT / "scratch"):
+WEBUI_DIR = Path(__file__).resolve().parent
+for _p in (ROOT, ROOT / "scratch", WEBUI_DIR):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
 from core import paths  # noqa: E402
 import gen_webui_fixtures as gen  # noqa: E402
 from pipeline import pipeline_infra  # noqa: E402
+from run_manager import RunManager, SEEDS_DIR  # noqa: E402
+
+run_manager = RunManager()
 
 app = FastAPI(title="autonovel operator console", docs_url="/api/docs")
+app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 _proj_lock = threading.Lock()
 
@@ -52,16 +63,22 @@ def default_project() -> str:
     return max(cands)[1]
 
 
-def project_dir(name: str | None) -> tuple[str, Path]:
-    """Validate the project name (path-isolation check) and return (name, dir)."""
-    resolved = name or default_project()
+def resolve_name(name: str) -> str:
+    """Validate a project name (path-isolation check); no existence requirement."""
     with _proj_lock:
         try:
-            paths.set_project_name(resolved)
+            paths.set_project_name(name)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
-        p = paths.get_project_dir()
-    if not (p / "state.json").exists():
+    return name
+
+
+def project_dir(name: str | None, must_exist: bool = True) -> tuple[str, Path]:
+    """Validate the project name and return (name, dir)."""
+    resolved = name or default_project()
+    resolve_name(resolved)
+    p = paths.get_project_dir()
+    if must_exist and not (p / "state.json").exists():
         raise HTTPException(404, f"unknown project: {resolved}")
     return resolved, p
 
@@ -77,25 +94,125 @@ def norm_phase(state: dict) -> str:
     return "export" if phase.startswith("complete") else phase
 
 
+def run_snapshot(p: Path) -> dict:
+    st = run_manager.status(p)
+    return {
+        "running": st["running"],
+        "pid": st.get("pid"),
+        "runStartedAt": st.get("startedAt"),
+        "exitCode": st.get("exitCode"),
+    }
+
+
+# ---------------------------------------------------------------- projects
+
+
 @app.get("/api/projects")
 def list_projects():
     name, p = project_dir(None)
-    return gen.gen_projects(load_state(p), p)
+    items = gen.gen_projects(load_state(p), p)
+    for item in items:
+        _, ip = project_dir(item["name"])
+        sf = ip / "state.json"
+        item["updatedAt"] = _iso(sf.stat().st_mtime) if sf.exists() else None
+        item["running"] = run_manager.status(ip)["running"]
+    items.sort(key=lambda x: x.get("updatedAt") or "", reverse=True)
+    return items
 
 
-@app.get("/api/run-state")
-def run_state(project: str | None = Query(None)):
-    name, p = project_dir(project)
-    state = load_state(p)
+class CreateProject(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    genre: str = ""
+    notes: str = ""           # raw premise text (written to a seed file)…
+    notesPath: str = ""       # …or a path to an existing file (takes precedence)
+    chapters: int = Field(default=24, ge=4, le=200)
+    wordsPerChapter: int = Field(default=3000, ge=500, le=8000)
+    revisionCycles: int = Field(default=3, ge=0, le=6)
+    perspective: str = Field(default="third_person", pattern="^(first_person|third_person)$")
+    fromScratch: bool = True
+
+
+@app.post("/api/projects")
+def create_project(req: CreateProject):
+    """Validate wizard input and launch run_pipeline.py for a new project."""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "project name is required")
+    try:
+        resolve_name(name)
+    except HTTPException:
+        raise HTTPException(400, f"invalid project name: {name!r}") from None
+    if not req.genre.strip():
+        raise HTTPException(
+            400, "genre is required for a fresh project — the pipeline's sanity check exits without it")
+
+    p = paths.get_project_dir()
+    if req.fromScratch and p.exists() and any(p.iterdir()):
+        raise HTTPException(
+            409, f"project dir already has content: {name} — pick another name or clear it first")
+
+    notes_arg = req.notesPath.strip()
+    if not notes_arg and req.notes.strip():
+        SEEDS_DIR.mkdir(parents=True, exist_ok=True)
+        seed = SEEDS_DIR / f"{name}.txt"
+        seed.write_text(req.notes, encoding="utf-8")
+        notes_arg = str(seed)
+
+    cli = [
+        "--project", name, "--from-scratch",
+        "--genre", req.genre.strip(),
+        "--chapters", str(req.chapters),
+        "--words-per-chapter", str(req.wordsPerChapter),
+        "--revision-cycles", str(req.revisionCycles),
+        "--perspective", req.perspective,
+    ]
+    if notes_arg:
+        cli += ["--notes", notes_arg]
+
+    p.mkdir(parents=True, exist_ok=True)
+    try:
+        meta = run_manager.launch(p, cli)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    return {"ok": True, "project": name, **run_snapshot(p), "logPath": meta.get("logPath")}
+
+
+@app.post("/api/run/stop")
+def run_stop(project: str | None = Query(None)):
+    _, p = project_dir(project)
+    stopped = run_manager.stop(p)
+    return {"ok": True, "stopped": stopped}
+
+
+@app.get("/api/run-status")
+def run_status(project: str | None = Query(None)):
+    _, p = project_dir(project)
+    return {"project": p.name, **run_snapshot(p)}
+
+
+# --------------------------------------------------------------- snapshots
+
+
+def run_state_fields(p: Path, state: dict) -> dict:
     return {
-        "project": name,
+        "project": p.name,
         "phase": norm_phase(state),
         "iteration": state.get("iteration", 0),
         "foundationScore": state.get("foundation_score", 0) or 0,
         "loreScore": state.get("lore_score", 0) or 0,
-        "stallCount": state.get("foundation_stall_count", 0),
+        "chaptersTotal": state.get("chapters_total", 0) or 0,
+        "chaptersDone": state.get("chapters_drafted", 0) or 0,
+        "revisionCycle": state.get("revision_cycle", 0) or 0,
+        **run_snapshot(p),
+    }
+
+
+@app.get("/api/run-state")
+def run_state(project: str | None = Query(None)):
+    _, p = project_dir(project)
+    return {
         "startedAt": _iso((p / "state.json").stat().st_mtime),
-        "running": False,  # no RunManager yet — true liveness lands with run launch
+        **run_state_fields(p, load_state(p)),
     }
 
 
@@ -150,6 +267,178 @@ def llm_events(project: str | None = Query(None)):
 def foundation(project: str | None = Query(None)):
     _, p = project_dir(project)
     return gen.gen_foundation(p, load_state(p))
+
+
+# ------------------------------------------------------------ entity graph
+
+GRAPH_CACHE = ".entity_graph.json"
+
+
+class GraphNode(BaseModel):
+    name: str
+    group: str
+    importance: int = Field(ge=1, le=10)
+    summary: str = ""
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    kind: str = "unknown"
+    label: str = ""
+
+
+class GraphArrangement(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
+GRAPH_SYSTEM = (
+    "You are a narrative-cartography engine. You map the entity web of a novel "
+    "from its character registry, world bible, and canon. You answer with JSON only."
+)
+
+GRAPH_PROMPT = """Below are a novel's character registry, world bible, and canon log.
+
+Build the entity graph a reader would want to explore.
+
+Rules:
+- nodes: every NAMED character with a real role; include factions/locations only when they act like agents in the story. Skip trivia.
+- group: a short lowercase faction/arc label that clusters allies (e.g. "royal court", "maledictus conspiracy", "beastfolk"). Reuse the same label for members of the same cluster.
+- importance: 1-10 narrative weight (protagonist 9-10, minor named role 1-3).
+- summary: one line (max 140 chars) describing who they are and what they want.
+- edges: only meaningful relationships (max ~4 per node). kind is exactly one of: ally, rival, family, mentor, secret, serves.
+- label: 3-8 words describing the relationship ("hides his resurrection from", "sworn shield of").
+- every edge's source/target MUST be a node name, verbatim.
+- the CANON log holds facts established while drafting — relationships there may
+  have evolved past the registry (betrayals, deaths, new alliances). Canon wins.
+
+Answer with JSON only, shape:
+{{"nodes": [{{"name": "...", "group": "...", "importance": 7, "summary": "..."}}],
+  "edges": [{{"source": "...", "target": "...", "kind": "ally", "label": "..."}}]}}
+
+=== CHARACTER REGISTRY ===
+{characters}
+
+=== WORLD BIBLE ===
+{world}
+
+=== CANON (established while drafting) ===
+{canon}
+"""
+
+
+def _excerpt(text: str, cap: int) -> str:
+    """Head+tail excerpt when a doc exceeds the prompt budget.
+
+    Canon entries are appended while drafting, so the tail holds the newest
+    facts and the head the foundation-era ones; the middle is what gets cut.
+    """
+    if len(text) <= cap:
+        return text
+    head = cap // 3
+    tail = cap - head
+    marker = "\n…[middle of document truncated to fit the prompt budget]…\n"
+    return text[:head] + marker + text[-tail:]
+
+
+def _graph_input_fingerprint(p: Path) -> dict:
+    """Size+mtime of the source docs — used to flag a stale cached arrangement."""
+    out = {}
+    for name in ("characters.md", "world.md", "canon.md"):
+        f = p / name
+        if f.exists():
+            st = f.stat()
+            out[name] = [st.st_size, int(st.st_mtime)]
+    return out
+
+
+def _heuristic_entities(p: Path, state: dict) -> dict:
+    """Co-mention graph from the fixture generator — the no-LLM fallback."""
+    return gen.gen_foundation(p, state)["entities"]
+
+
+def _graph_to_entities(arr: GraphArrangement) -> dict:
+    """Map the LLM arrangement into the contract's entities shape."""
+    nodes = [
+        {
+            "id": f"n{i}", "label": n.name.strip(), "kind": "character",
+            "group": n.group, "importance": n.importance,
+            "desc": n.summary, "mentions": [], "status": None,
+        }
+        for i, n in enumerate(arr.nodes)
+    ]
+    name_to_id = {n["label"].lower(): n["id"] for n in nodes}
+    edges = []
+    for e in arr.edges:
+        src, dst = name_to_id.get(e.source.strip().lower()), name_to_id.get(e.target.strip().lower())
+        if src and dst and src != dst:
+            edges.append({"from": src, "to": dst, "label": e.label, "kind": e.kind})
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.get("/api/entity-graph")
+def entity_graph(project: str | None = Query(None)):
+    """Cached LLM arrangement if present, else the heuristic co-mention graph.
+    `stale` flags a cache whose source docs changed since it was generated."""
+    _, p = project_dir(project)
+    cache = p / GRAPH_CACHE
+    if cache.exists():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            cached["llm"] = True
+            if cached.get("inputs") is not None:
+                cached["stale"] = cached["inputs"] != _graph_input_fingerprint(p)
+            return cached
+        except json.JSONDecodeError:
+            pass  # corrupt cache — fall through to the heuristic graph
+    return {"llm": False, "entities": _heuristic_entities(p, load_state(p))}
+
+
+@app.post("/api/entity-graph")
+def arrange_entity_graph(project: str | None = Query(None)):
+    """Ask the writer model to arrange the entity graph; cache the result."""
+    _, p = project_dir(project)
+    state = load_state(p)
+    chars = (p / "characters.md")
+    world = (p / "world.md")
+    if not chars.exists():
+        raise HTTPException(404, "no characters.md on disk — the foundation phase hasn't run")
+    canon = (p / "canon.md")
+
+    prompt = GRAPH_PROMPT.format(
+        characters=_excerpt(chars.read_text(encoding="utf-8"), 24000),
+        world=_excerpt(world.read_text(encoding="utf-8"), 20000) if world.exists() else "(none)",
+        canon=_excerpt(canon.read_text(encoding="utf-8"), 50000) if canon.exists() else "(none yet)",
+    )
+    from core.llm import call_llm
+    from core.validation import OutputValidationError, parse_validated
+
+    text = call_llm(prompt, system=GRAPH_SYSTEM, model_key="writer",
+                    max_tokens=8000, temperature=0.2)
+    try:
+        arr = parse_validated(GraphArrangement, text, context="entity graph")
+    except OutputValidationError as e:
+        # one self-correction retry with the validator's feedback
+        text = call_llm(
+            f"{prompt}\n\nYour previous answer was rejected: {e.feedback}\n"
+            "Answer again with corrected JSON only.",
+            system=GRAPH_SYSTEM, model_key="writer", max_tokens=8000, temperature=0.1)
+        try:
+            arr = parse_validated(GraphArrangement, text, context="entity graph retry")
+        except OutputValidationError as e2:
+            raise HTTPException(502, f"llm graph arrangement failed validation: {e2.feedback}") from e2
+
+    entities = _graph_to_entities(arr)
+    if not entities["nodes"]:
+        raise HTTPException(502, "llm returned an empty graph")
+    cache = {"generatedAt": datetime.now(timezone.utc).isoformat(),
+             "inputs": _graph_input_fingerprint(p),
+             "entities": entities}
+    tmp = p / (GRAPH_CACHE + ".tmp")
+    tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, p / GRAPH_CACHE)
+    return {"llm": True, "generatedAt": cache["generatedAt"], "entities": entities}
 
 
 @app.get("/api/ledger")
@@ -207,3 +496,89 @@ def settings():
         },
         "defaults": {"genre": "", "chapterCount": 24, "notes": ""},
     }
+
+
+# ------------------------------------------------------------------ stream
+
+
+def _new_lines(path: Path, offset: int) -> tuple[int, list[str]]:
+    """Read new complete lines past a byte offset; returns (new_offset, lines).
+
+    Byte-based so multi-byte UTF-8 characters can't corrupt the offset.
+    Holds a trailing partial line back until it completes; restarts from zero
+    if the file shrank (rotated log).
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return offset, []
+    if size < offset:
+        offset = 0
+    if size == offset:
+        return offset, []
+    with open(path, "rb") as fh:
+        fh.seek(offset)
+        chunk = fh.read()
+    if not chunk:
+        return offset, []
+    if not chunk.endswith(b"\n"):
+        cut = chunk.rfind(b"\n")
+        if cut == -1:
+            return offset, []
+        chunk = chunk[:cut + 1]
+    return offset + len(chunk), chunk.decode("utf-8", errors="replace").splitlines()
+
+
+def _sse(event: str, data) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.get("/api/stream")
+async def stream(request: Request, project: str | None = Query(None)):
+    """SSE feed for one project: `state` snapshots (~2s), `log` tail lines,
+    `llm` tail events. Tail sources cover runs launched from the CLI too —
+    the pipeline always writes logs/<ts>_pipeline.log."""
+    _, p = project_dir(project)
+
+    async def event_gen():
+        log_path = run_manager.log_path(p)
+        log_offset = log_path.stat().st_size if log_path and log_path.exists() else 0
+        llm_path = p / "llm_events.jsonl"
+        llm_offset = llm_path.stat().st_size if llm_path.exists() else 0
+        tick = 0
+        while True:
+            if await request.is_disconnected():
+                return
+            tick += 1
+            frames = []
+            if tick % 2 == 1:
+                try:
+                    state = load_state(p)
+                    frames.append(_sse("state", run_state_fields(p, state)))
+                except (json.JSONDecodeError, OSError):
+                    pass  # mid-write state.json — skip this tick
+            if log_path is None or not log_path.exists():
+                log_path = run_manager.log_path(p)
+                if log_path and log_path.exists():
+                    log_offset = log_path.stat().st_size
+            if log_path is not None:
+                log_offset, lines = await asyncio.to_thread(_new_lines, log_path, log_offset)
+                for line in lines:
+                    frames.append(_sse("log", {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "level": "raw", "text": line,
+                    }))
+            llm_offset, lines = await asyncio.to_thread(_new_lines, llm_path, llm_offset)
+            for line in lines:
+                if line.strip():
+                    try:
+                        frames.append(_sse("llm", json.loads(line)))
+                    except json.JSONDecodeError:
+                        pass
+            if frames:
+                yield "".join(frames)
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
