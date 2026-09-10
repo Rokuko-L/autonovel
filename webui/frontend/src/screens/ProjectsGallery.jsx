@@ -252,7 +252,7 @@ export default function ProjectsGallery() {
   const [wizard, setWizard] = useState(false)
 
   useEffect(() => {
-    document.title = 'autonovel · projects'
+    document.title = 'gesaku · projects'
   }, [])
 
   const doLaunch = async (form) => {

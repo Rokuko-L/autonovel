@@ -1,6 +1,6 @@
 """Minimal single-request API smoke check through core.llm's own builder.
 
-Uses whatever provider/endpoint the env resolves to (AUTONOVEL_PROVIDER,
+Uses whatever provider/endpoint the env resolves to (GESAKU_PROVIDER,
 per-role overrides, base URLs, extra headers). Model id via argv[1].
 
 Usage: uv run python scratch/check_api_minimal.py [model_id]

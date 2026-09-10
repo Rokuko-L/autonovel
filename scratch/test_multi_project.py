@@ -230,10 +230,10 @@ def test_from_scratch_cleanup(tmp_root: Path):
 def main():
     print("\n=== test_multi_project.py ===\n")
 
-    with tempfile.TemporaryDirectory(prefix="autonovel_test_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="gesaku_test_") as tmp:
         tmp_root = Path(tmp)
         # Create minimal project root markers
-        (tmp_root / "pyproject.toml").write_text("[tool.autonovel]")
+        (tmp_root / "pyproject.toml").write_text("[tool.gesaku]")
 
         print("1. Project directory isolation:")
         test_project_dir_isolation(tmp_root)

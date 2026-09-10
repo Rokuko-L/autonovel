@@ -1,4 +1,4 @@
-# autonovel — Overview
+# gesaku — Overview
 
 An autonomous pipeline that writes a complete novel from a single premise:
 genre config → world/characters/outline/canon → chapter drafts → revision

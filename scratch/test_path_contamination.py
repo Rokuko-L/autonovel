@@ -156,7 +156,7 @@ def test_mock_call_llm():
 def test_registry_path_is_in_projects():
     """Registry path should always resolve inside projects/, never at root."""
     orig_root = paths._root_dir
-    with tempfile.TemporaryDirectory(prefix="autonovel_reg_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="gesaku_reg_") as tmp:
         tmp_root = Path(tmp)
         paths._root_dir = tmp_root
         (tmp_root / ".env").write_text("ANTHROPIC_API_KEY=test")
@@ -170,10 +170,10 @@ def test_registry_path_is_in_projects():
 def main():
     print("\n=== test_path_contamination.py ===\n")
 
-    with tempfile.TemporaryDirectory(prefix="autonovel_cont_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="gesaku_cont_") as tmp:
         tmp_root = Path(tmp)
         # Minimal project root marker
-        (tmp_root / "pyproject.toml").write_text("[tool.autonovel]")
+        (tmp_root / "pyproject.toml").write_text("[tool.gesaku]")
 
         print("1. No root contamination after mock pipeline run:")
         test_no_root_contamination(tmp_root)

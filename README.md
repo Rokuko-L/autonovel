@@ -1,6 +1,6 @@
 <div align="center">
 
-# autonovel
+# gesaku
 
 An autonomous pipeline that writes a complete novel from a single premise.
 Feed it a genre and a one-sentence idea — it builds the world, characters,
@@ -12,7 +12,7 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch): t
 
 ## What is this?
 
-autonovel is a fully automated novel-generation pipeline. You provide a genre and a premise, and it:
+gesaku is a fully automated novel-generation pipeline. You provide a genre and a premise, and it:
 
 1. **Generates a genre configuration** — system prompts, evaluation criteria, and generation templates tailored to your genre
 2. **Builds the foundation** — world bible, character registry, chapter outline, foreshadowing ledger, canon
@@ -46,7 +46,7 @@ Verify: `uv --version`
 
 ### Get an API Key
 
-autonovel supports any Anthropic-compatible provider:
+gesaku supports any Anthropic-compatible provider:
 
 - **Anthropic** — get a key at https://console.anthropic.com/
 - **DeepSeek** — get a key at https://platform.deepseek.com/ and use `https://api.deepseek.com/anthropic` as base URL
@@ -104,7 +104,7 @@ sudo apt install fonts-ebgaramond
 ## Quick Start
 
 ```bash
-git clone <repo-url> && cd autonovel
+git clone <repo-url> && cd gesaku
 cp .env.example .env
 # Edit .env with your API key and model choices
 
@@ -125,58 +125,58 @@ Copy `.env.example` to `.env` and set:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AUTONOVEL_PROVIDER` | inferred | API dialect for all roles: `anthropic` or `openai` |
-| `AUTONOVEL_{ROLE}_PROVIDER` | — | Per-role dialect override (e.g. cheap `openai` writer + `anthropic` judge) |
+| `GESAKU_PROVIDER` | inferred | API dialect for all roles: `anthropic` or `openai` |
+| `GESAKU_{ROLE}_PROVIDER` | — | Per-role dialect override (e.g. cheap `openai` writer + `anthropic` judge) |
 | `ANTHROPIC_API_KEY` | — | Anthropic-dialect key (first-party or any compat gateway) |
 | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic-dialect endpoint — e.g. `https://api.deepseek.com/anthropic` for DeepSeek |
 | `OPENAI_API_KEY` | — | OpenAI-dialect key (first-party, OpenRouter, Groq, Together, LiteLLM…) |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-dialect endpoint — keep gateway prefixes like `/api/v1` or `/v1` |
-| `AUTONOVEL_WRITER_MODEL` | provider default (`claude-sonnet-4-6` / `gpt-5.2`) | Model for drafting and revision (free-form id, gateway namespacing OK) |
-| `AUTONOVEL_JUDGE_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for evaluation and scoring |
-| `AUTONOVEL_REVIEW_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for deep prose analysis |
-| `AUTONOVEL_EXTRA_HEADERS` | — | JSON object merged into every request (e.g. OpenRouter's `HTTP-Referer`/`X-Title`) |
-| `AUTONOVEL_GENRE` | — | Default genre (instead of `--genre`) |
-| `AUTONOVEL_CHAPTERS` | `24` | Default chapter count |
-| `AUTONOVEL_NOTES` | — | Default story premise |
-| `AUTONOVEL_PROJECT` | `default` | Active project name |
-| `AUTONOVEL_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
-| `AUTONOVEL_CHAPTER_THRESHOLD` | `6.5` | Drafting keep gate per chapter |
-| `AUTONOVEL_MAX_CHAPTER_ATTEMPTS` | `5` | Quality retries per chapter |
-| `AUTONOVEL_MIN_REVISION_CYCLES` | `3` | Floor before plateau stop is allowed |
-| `AUTONOVEL_MAX_REVISION_CYCLES` | `6` | Cap on revision cycles |
-| `AUTONOVEL_PLATEAU_DELTA` | `0.3` | Novel-score delta below which a cycle counts as stalled |
+| `GESAKU_WRITER_MODEL` | provider default (`claude-sonnet-4-6` / `gpt-5.2`) | Model for drafting and revision (free-form id, gateway namespacing OK) |
+| `GESAKU_JUDGE_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for evaluation and scoring |
+| `GESAKU_REVIEW_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for deep prose analysis |
+| `GESAKU_EXTRA_HEADERS` | — | JSON object merged into every request (e.g. OpenRouter's `HTTP-Referer`/`X-Title`) |
+| `GESAKU_GENRE` | — | Default genre (instead of `--genre`) |
+| `GESAKU_CHAPTERS` | `24` | Default chapter count |
+| `GESAKU_NOTES` | — | Default story premise |
+| `GESAKU_PROJECT` | `default` | Active project name |
+| `GESAKU_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
+| `GESAKU_CHAPTER_THRESHOLD` | `6.5` | Drafting keep gate per chapter |
+| `GESAKU_MAX_CHAPTER_ATTEMPTS` | `5` | Quality retries per chapter |
+| `GESAKU_MIN_REVISION_CYCLES` | `3` | Floor before plateau stop is allowed |
+| `GESAKU_MAX_REVISION_CYCLES` | `6` | Cap on revision cycles |
+| `GESAKU_PLATEAU_DELTA` | `0.3` | Novel-score delta below which a cycle counts as stalled |
 
 ### Example: DeepSeek `.env` (Anthropic dialect)
 
 ```
 ANTHROPIC_API_KEY=sk-deepseek-your-key
 ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
-AUTONOVEL_WRITER_MODEL=deepseek-v4-flash
-AUTONOVEL_JUDGE_MODEL=deepseek-v4-pro
-AUTONOVEL_REVIEW_MODEL=deepseek-v4-pro
+GESAKU_WRITER_MODEL=deepseek-v4-flash
+GESAKU_JUDGE_MODEL=deepseek-v4-pro
+GESAKU_REVIEW_MODEL=deepseek-v4-pro
 ```
 
 ### Example: OpenRouter `.env` (OpenAI dialect)
 
 ```
-AUTONOVEL_PROVIDER=openai
+GESAKU_PROVIDER=openai
 OPENAI_API_KEY=sk-or-v1-your-key
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
-AUTONOVEL_EXTRA_HEADERS={"HTTP-Referer": "https://your-site.example", "X-Title": "autonovel"}
-AUTONOVEL_WRITER_MODEL=anthropic/claude-sonnet-4.5
-AUTONOVEL_JUDGE_MODEL=deepseek/deepseek-v4-pro
-AUTONOVEL_REVIEW_MODEL=anthropic/claude-opus-4.5
+GESAKU_EXTRA_HEADERS={"HTTP-Referer": "https://your-site.example", "X-Title": "gesaku"}
+GESAKU_WRITER_MODEL=anthropic/claude-sonnet-4.5
+GESAKU_JUDGE_MODEL=deepseek/deepseek-v4-pro
+GESAKU_REVIEW_MODEL=anthropic/claude-opus-4.5
 ```
 
 ### Example: mixed providers (cheap writer, strong judge)
 
 ```
-AUTONOVEL_PROVIDER=openai
+GESAKU_PROVIDER=openai
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
 OPENAI_API_KEY=sk-or-v1-your-key
-AUTONOVEL_JUDGE_PROVIDER=anthropic
-AUTONOVEL_JUDGE_MODEL=claude-opus-4-6
-AUTONOVEL_WRITER_MODEL=deepseek/deepseek-v4-pro
+GESAKU_JUDGE_PROVIDER=anthropic
+GESAKU_JUDGE_MODEL=claude-opus-4-6
+GESAKU_WRITER_MODEL=deepseek/deepseek-v4-pro
 ```
 
 ## Pipeline Phases
@@ -207,7 +207,7 @@ uv run python run_pipeline.py --project mynovel               # multi-project
 uv run python run_pipeline.py --project mynovel --from-scratch
 ```
 
-All flags can also be set via environment variables (`AUTONOVEL_GENRE`, `AUTONOVEL_CHAPTERS`, `AUTONOVEL_NOTES`).
+All flags can also be set via environment variables (`GESAKU_GENRE`, `GESAKU_CHAPTERS`, `GESAKU_NOTES`).
 
 ## Project Structure
 
@@ -286,6 +286,6 @@ Changes propagate downward (lore change → outline change → chapter revision)
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Rokuko-L/autonovel&type=Date)](https://star-history.com/#Rokuko-L/autonovel&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Rokuko-L/gesaku&type=Date)](https://star-history.com/#Rokuko-L/gesaku&Date)
 
 </div>

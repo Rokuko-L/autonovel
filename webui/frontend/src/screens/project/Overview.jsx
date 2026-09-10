@@ -94,7 +94,7 @@ export default function Overview({ project }) {
   const [stopping, setStopping] = useState(false)
 
   useEffect(() => {
-    document.title = `autonovel · ${project}`
+    document.title = `gesaku · ${project}`
     api.getScoreHistory(project).then(setScores).catch(() => {})
     api.listProjects().then((ps) => setMeta(ps.find((p) => p.name === project))).catch(() => {})
   }, [project])

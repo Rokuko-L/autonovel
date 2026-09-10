@@ -10,7 +10,7 @@ export default function LedgerView({ project }) {
   const [data, setData] = useState(null)
 
   useEffect(() => {
-    document.title = `autonovel · ${project} · ledger`
+    document.title = `gesaku · ${project} · ledger`
     api.getLedger(project).then(setData).catch(() => {})
   }, [project])
 

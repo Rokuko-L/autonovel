@@ -40,7 +40,7 @@ from run_manager import RunManager, SEEDS_DIR  # noqa: E402
 
 run_manager = RunManager()
 
-app = FastAPI(title="autonovel operator console", docs_url="/api/docs")
+app = FastAPI(title="gesaku operator console", docs_url="/api/docs")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -539,15 +539,15 @@ def settings():
     env = _read_env_file()
     # Merge process env over file (load_dotenv already applied at import)
     merged = {**env, **{k: v for k, v in os.environ.items()}}
-    genre = merged.get("AUTONOVEL_GENRE", "")
+    genre = merged.get("GESAKU_GENRE", "")
     try:
-        chapter_count = int(float(merged.get("AUTONOVEL_CHAPTERS", "24") or 24))
+        chapter_count = int(float(merged.get("GESAKU_CHAPTERS", "24") or 24))
     except ValueError:
         chapter_count = 24
     return {
         "baseUrl": merged.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
         "apiKeyMasked": _mask(merged.get("ANTHROPIC_API_KEY")),
-        "models": {r: merged.get(f"AUTONOVEL_{r.upper()}_MODEL", "writer_combo")
+        "models": {r: merged.get(f"GESAKU_{r.upper()}_MODEL", "writer_combo")
                    for r in ("writer", "judge", "review")},
         "thresholds": {
             "foundation": pipeline_infra.foundation_threshold(),
@@ -561,7 +561,7 @@ def settings():
         "defaults": {
             "genre": genre,
             "chapterCount": chapter_count,
-            "notes": merged.get("AUTONOVEL_NOTES", ""),
+            "notes": merged.get("GESAKU_NOTES", ""),
         },
     }
 
@@ -577,28 +577,28 @@ def settings_commit(payload: SettingsPayload):
         for role in ("writer", "judge", "review"):
             val = (payload.models.get(role) or "").strip()
             if val:
-                updates[f"AUTONOVEL_{role.upper()}_MODEL"] = val
+                updates[f"GESAKU_{role.upper()}_MODEL"] = val
     if payload.thresholds:
         if payload.thresholds.get("foundation") is not None:
-            updates["AUTONOVEL_FOUNDATION_THRESHOLD"] = str(float(payload.thresholds["foundation"]))
+            updates["GESAKU_FOUNDATION_THRESHOLD"] = str(float(payload.thresholds["foundation"]))
         if payload.thresholds.get("chapter") is not None:
-            updates["AUTONOVEL_CHAPTER_THRESHOLD"] = str(float(payload.thresholds["chapter"]))
+            updates["GESAKU_CHAPTER_THRESHOLD"] = str(float(payload.thresholds["chapter"]))
     if payload.heuristics:
         if payload.heuristics.get("maxChapterAttempts") is not None:
-            updates["AUTONOVEL_MAX_CHAPTER_ATTEMPTS"] = str(int(payload.heuristics["maxChapterAttempts"]))
+            updates["GESAKU_MAX_CHAPTER_ATTEMPTS"] = str(int(payload.heuristics["maxChapterAttempts"]))
         if payload.heuristics.get("revisionCycles") is not None:
-            updates["AUTONOVEL_MIN_REVISION_CYCLES"] = str(int(payload.heuristics["revisionCycles"]))
+            updates["GESAKU_MIN_REVISION_CYCLES"] = str(int(payload.heuristics["revisionCycles"]))
         if payload.heuristics.get("plateauDelta") is not None:
-            updates["AUTONOVEL_PLATEAU_DELTA"] = str(float(payload.heuristics["plateauDelta"]))
+            updates["GESAKU_PLATEAU_DELTA"] = str(float(payload.heuristics["plateauDelta"]))
     if payload.defaults:
         genre = payload.defaults.get("genre")
         if genre is not None and str(genre).strip():
-            updates["AUTONOVEL_GENRE"] = str(genre).strip()
+            updates["GESAKU_GENRE"] = str(genre).strip()
         if payload.defaults.get("chapterCount") is not None:
-            updates["AUTONOVEL_CHAPTERS"] = str(int(payload.defaults["chapterCount"]))
+            updates["GESAKU_CHAPTERS"] = str(int(payload.defaults["chapterCount"]))
         notes = payload.defaults.get("notes")
         if notes is not None:
-            updates["AUTONOVEL_NOTES"] = str(notes)
+            updates["GESAKU_NOTES"] = str(notes)
 
     if not updates:
         raise HTTPException(400, "no settings to write")

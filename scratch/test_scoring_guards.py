@@ -140,7 +140,7 @@ class RunFoundationLoopTest(unittest.TestCase):
         import run_pipeline as rp
         from core import paths as paths_mod
 
-        tmp = Path(tempfile.mkdtemp(prefix="autonovel_loop_"))
+        tmp = Path(tempfile.mkdtemp(prefix="gesaku_loop_"))
         (tmp / "projects" / "looptest").mkdir(parents=True)
         orig_root = paths_mod._root_dir
         paths_mod._root_dir = tmp

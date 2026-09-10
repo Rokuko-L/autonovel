@@ -10,7 +10,7 @@ import run_pipeline
 
 def main():
     # Set active project env to test_wordcount_v2
-    os.environ["AUTONOVEL_PROJECT"] = "test_wordcount_v2"
+    os.environ["GESAKU_PROJECT"] = "test_wordcount_v2"
     
     # 1. Test get_historical_best_for_chapter helper
     print("Testing get_historical_best_for_chapter helper...")

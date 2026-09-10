@@ -1,9 +1,9 @@
 ---
-name: autonovel-docs
-description: Read or update the autonovel repo's documentation. Use this skill when asked about project docs, to explain a system, to update docs after code changes, or when working in D:\Tugas\LLM\autonovel.
+name: gesaku-docs
+description: Read or update the gesaku repo's documentation. Use this skill when asked about project docs, to explain a system, to update docs after code changes, or when working in D:\Tugas\LLM\autonovel.
 ---
 
-# autonovel Documentation Skill
+# Gesaku Documentation Skill
 
 ## CRITICAL: Two Kinds of .md Files
 

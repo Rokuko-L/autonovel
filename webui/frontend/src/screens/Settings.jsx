@@ -43,7 +43,7 @@ export default function Settings() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    document.title = 'autonovel · settings'
+    document.title = 'gesaku · settings'
     api.getSettings().then((s) => {
       setSettings(s)
       initial.current = JSON.stringify(s)

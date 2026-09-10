@@ -286,20 +286,20 @@ def repair_missing_placeholders(config):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Initialize genre configuration for the novel pipeline")
-    parser.add_argument("--genre", default=os.environ.get("AUTONOVEL_GENRE", ""),
+    parser.add_argument("--genre", default=os.environ.get("GESAKU_GENRE", ""),
                         help="Genre description (e.g., 'Cyberpunk Noir', 'High School Romance')")
-    parser.add_argument("--chapters", default=os.environ.get("AUTONOVEL_CHAPTERS", "24"),
+    parser.add_argument("--chapters", default=os.environ.get("GESAKU_CHAPTERS", "24"),
                         help="Number of chapters (or 'short story', 'novella', 'epic 40-chapter saga')")
     parser.add_argument("--words-per-chapter", type=int, default=3200,
                         help="Target word count per chapter (default: 3200)")
     parser.add_argument("--perspective", default="", choices=["", "first_person", "third_person"],
                         help="Force narrative perspective (first_person / third_person). Empty = let foundation decide.")
-    parser.add_argument("--notes", default=os.environ.get("AUTONOVEL_NOTES", ""),
+    parser.add_argument("--notes", default=os.environ.get("GESAKU_NOTES", ""),
                         help="User's specific ideas: character names, plot twists, Chekhov's guns")
     args = parser.parse_args()
 
     if not args.genre:
-        print("ERROR: No genre specified. Use --genre or set AUTONOVEL_GENRE env var.", file=sys.stderr)
+        print("ERROR: No genre specified. Use --genre or set GESAKU_GENRE env var.", file=sys.stderr)
         sys.exit(1)
 
     if not os.environ.get("ANTHROPIC_API_KEY", ""):

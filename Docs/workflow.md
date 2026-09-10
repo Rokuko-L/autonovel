@@ -1,6 +1,6 @@
 # WORKFLOW
 
-Step-by-step guide to running autonovel.
+Step-by-step guide to running gesaku.
 
 For the full technical pipeline specification, see [pipeline/spec.md](pipeline/spec.md).
 
@@ -10,14 +10,14 @@ For the full technical pipeline specification, see [pipeline/spec.md](pipeline/s
 
 ```bash
 # 1. Setup
-cd ~/autonovel
+cd ~/gesaku
 cp .env.example .env   # Add your Anthropic API key
 
 # 2. Generate a seed concept (or write your own in seed.txt)
 uv run python seed.py
 
 # 3. Create a branch for your novel
-git checkout -b autonovel/my-novel
+git checkout -b gesaku/my-novel
 
 # 4. Run the full pipeline
 uv run python run_pipeline.py --from-scratch

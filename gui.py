@@ -48,12 +48,12 @@ DEFAULT_SETTINGS = {
     "skip_opus_review": False
 }
 
-class AutonovelApp(ctk.CTk):
+class GesakuApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         # Window configuration
-        self.title("Autonovel Orchestrator Client")
+        self.title("Gesaku Orchestrator Client")
         self.geometry("950x780")
         self.minsize(850, 650)
         self.configure(fg_color=THEME["bg_main"])
@@ -976,5 +976,5 @@ class AutonovelApp(ctk.CTk):
 
 
 if __name__ == "__main__":
-    app = AutonovelApp()
+    app = GesakuApp()
     app.mainloop()

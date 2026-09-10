@@ -53,7 +53,7 @@ export default function RevisionView({ project }) {
   const [sel, setSel] = useState(0)
 
   useEffect(() => {
-    document.title = `autonovel · ${project} · revision`
+    document.title = `gesaku · ${project} · revision`
     api.getRevision(project).then(setRev).catch(() => {})
   }, [project])
 

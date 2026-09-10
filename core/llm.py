@@ -2,7 +2,7 @@
 
 Any endpoint that speaks either wire format works: first-party APIs, OpenRouter,
 Groq, Together, LiteLLM proxies, DeepSeek's Anthropic-compat endpoint, vLLM/Ollama.
-Dialect is chosen per role via AUTONOVEL_{ROLE}_PROVIDER (or AUTONOVEL_PROVIDER);
+Dialect is chosen per role via GESAKU_{ROLE}_PROVIDER (or GESAKU_PROVIDER);
 see Docs/core/llm-client.md for the full config matrix.
 """
 
@@ -17,7 +17,7 @@ import httpx
 ROLES = ("writer", "judge", "review")
 
 # Role -> default model per provider. Defaults are only used when the
-# AUTONOVEL_{ROLE}_MODEL env var is unset; any model id is a free-form string.
+# GESAKU_{ROLE}_MODEL env var is unset; any model id is a free-form string.
 DEFAULT_MODELS = {
     "anthropic": {
         "writer": "claude-sonnet-4-6",
@@ -32,13 +32,13 @@ DEFAULT_MODELS = {
 }
 
 MODEL_ENV_VARS = {
-    "writer": "AUTONOVEL_WRITER_MODEL",
-    "judge": "AUTONOVEL_JUDGE_MODEL",
-    "review": "AUTONOVEL_REVIEW_MODEL",
+    "writer": "GESAKU_WRITER_MODEL",
+    "judge": "GESAKU_JUDGE_MODEL",
+    "review": "GESAKU_REVIEW_MODEL",
 }
 
 PROVIDER_ENV_VARS = {
-    role: f"AUTONOVEL_{role.upper()}_PROVIDER" for role in ROLES
+    role: f"GESAKU_{role.upper()}_PROVIDER" for role in ROLES
 }
 
 BASE_URL_ENV_VARS = {
@@ -242,31 +242,31 @@ def set_client(client):
     _client = client
 
 def _load_extra_headers() -> dict:
-    """Parse AUTONOVEL_EXTRA_HEADERS (JSON object) for gateway-specific headers.
+    """Parse GESAKU_EXTRA_HEADERS (JSON object) for gateway-specific headers.
 
     OpenRouter wants HTTP-Referer/X-Title; other gateways have their own
     requirements. One generic escape hatch instead of vendor special-cases.
     """
-    raw = os.getenv("AUTONOVEL_EXTRA_HEADERS", "").strip()
+    raw = os.getenv("GESAKU_EXTRA_HEADERS", "").strip()
     if not raw:
         return {}
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ProviderError(
-            f"AUTONOVEL_EXTRA_HEADERS is not valid JSON: {e}\n"
+            f"GESAKU_EXTRA_HEADERS is not valid JSON: {e}\n"
             f"Got: {raw[:120]!r}"
         ) from e
     if not isinstance(parsed, dict):
         raise ProviderError(
-            f"AUTONOVEL_EXTRA_HEADERS must be a JSON object, got {type(parsed).__name__}"
+            f"GESAKU_EXTRA_HEADERS must be a JSON object, got {type(parsed).__name__}"
         )
     return {str(k): str(v) for k, v in parsed.items()}
 
 def resolve_provider(model_key: str) -> str:
     """Resolve the provider dialect for one role.
 
-    Precedence: AUTONOVEL_{ROLE}_PROVIDER > AUTONOVEL_PROVIDER > inference
+    Precedence: GESAKU_{ROLE}_PROVIDER > GESAKU_PROVIDER > inference
     (OPENAI_API_KEY set and ANTHROPIC_API_KEY unset -> openai, else anthropic).
     """
     explicit = os.environ.get(PROVIDER_ENV_VARS[model_key], "").strip().lower()
@@ -276,11 +276,11 @@ def resolve_provider(model_key: str) -> str:
                 f"{PROVIDER_ENV_VARS[model_key]} must be 'anthropic' or 'openai', got {explicit!r}"
             )
         return explicit
-    default = os.environ.get("AUTONOVEL_PROVIDER", "").strip().lower()
+    default = os.environ.get("GESAKU_PROVIDER", "").strip().lower()
     if default:
         if default not in ("anthropic", "openai"):
             raise ProviderError(
-                f"AUTONOVEL_PROVIDER must be 'anthropic' or 'openai', got {default!r}"
+                f"GESAKU_PROVIDER must be 'anthropic' or 'openai', got {default!r}"
             )
         return default
     if os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):

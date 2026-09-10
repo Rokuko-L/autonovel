@@ -5,7 +5,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 # Set project environment variable to serious
-os.environ["AUTONOVEL_PROJECT"] = "serious"
+os.environ["GESAKU_PROJECT"] = "serious"
 
 # Add project root to sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

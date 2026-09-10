@@ -46,7 +46,7 @@ async function send(path, body) {
 }
 
 // Active project, mirrored into localStorage so a reload keeps context.
-let activeProject = localStorage.getItem('autonovel_active_project') ?? ''
+let activeProject = localStorage.getItem('gesaku_active_project') ?? ''
 
 const q = (project) => {
   const name = project ?? activeProject
@@ -56,8 +56,8 @@ const q = (project) => {
 export const api = {
   setActiveProject(name) {
     activeProject = name
-    if (name) localStorage.setItem('autonovel_active_project', name)
-    else localStorage.removeItem('autonovel_active_project')
+    if (name) localStorage.setItem('gesaku_active_project', name)
+    else localStorage.removeItem('gesaku_active_project')
   },
 
   getActiveProject() {

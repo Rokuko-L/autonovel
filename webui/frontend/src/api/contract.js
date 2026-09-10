@@ -12,7 +12,7 @@
  *  - LogLine        → run_pipeline stdout stream (step/banner already emit)
  *  - LlmEvent       → <project>/llm_events.jsonl via core/llm._emit_llm_event
  *  - ScorePoint     → registry JSONL rows written by pipeline_infra.log_result
- *  - Settings       → .env (ANTHROPIC_API_KEY/BASE_URL, AUTONOVEL_*_MODEL)
+ *  - Settings       → .env (ANTHROPIC_API_KEY/BASE_URL, GESAKU_*_MODEL)
  */
 
 /**
