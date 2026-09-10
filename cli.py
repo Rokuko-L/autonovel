@@ -377,7 +377,7 @@ def _tail(
 def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
     root = _find_root()
     _bootstrap(root)
-    from run_manager import run_manager  # type: ignore
+    from webui.run_manager import run_manager
 
     project = args.project
     project_dir = _project_dir(root, project)
@@ -424,7 +424,7 @@ def cmd_run(args: argparse.Namespace, passthrough: list[str]) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     root = _find_root()
     _bootstrap(root)
-    from run_manager import run_manager  # type: ignore
+    from webui.run_manager import run_manager
 
     project_dir = _project_dir(root, args.project)
     st = run_manager.status(project_dir)
@@ -456,7 +456,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 def cmd_logs(args: argparse.Namespace) -> int:
     root = _find_root()
     _bootstrap(root)
-    from run_manager import run_manager  # type: ignore
+    from webui.run_manager import run_manager
 
     project_dir = _project_dir(root, args.project)
     log_path = run_manager.log_path(project_dir)
@@ -469,7 +469,7 @@ def cmd_logs(args: argparse.Namespace) -> int:
 def cmd_stop(args: argparse.Namespace) -> int:
     root = _find_root()
     _bootstrap(root)
-    from run_manager import run_manager  # type: ignore
+    from webui.run_manager import run_manager
 
     project_dir = _project_dir(root, args.project)
     ok = run_manager.stop(project_dir)
