@@ -1,99 +1,163 @@
-import { useState } from 'react'
-import Projects from './screens/Projects.jsx'
-import Foundation from './screens/Foundation.jsx'
-import Ledger from './screens/Ledger.jsx'
-import Tournament from './screens/Tournament.jsx'
-import Monitor from './screens/Monitor.jsx'
-import Inspector from './screens/Inspector.jsx'
-import Reader from './screens/Reader.jsx'
-import Revision from './screens/Revision.jsx'
-import Stats from './screens/Stats.jsx'
+import { useEffect } from 'react'
+import { api } from './api/client.js'
+import { useRoute, navigate, projectRoute } from './router.js'
+import { AppProvider, useApp } from './state.jsx'
+import ProjectHeader from './components/ProjectHeader.jsx'
+import ProjectsGallery from './screens/ProjectsGallery.jsx'
 import Settings from './screens/Settings.jsx'
+import Overview from './screens/project/Overview.jsx'
+import PipelineDashboard from './screens/project/PipelineDashboard.jsx'
+import FoundationView from './screens/project/FoundationView.jsx'
+import Manuscript from './screens/project/Manuscript.jsx'
+import RevisionView from './screens/project/RevisionView.jsx'
+import LedgerView from './screens/project/LedgerView.jsx'
+import Arena from './screens/project/Arena.jsx'
 
-const NAV = [
-  { id: 'projects', num: '01', label: 'projects' },
-  { id: 'foundation', num: '02', label: 'foundation' },
-  { id: 'ledger', num: '03', label: 'beats & harvests' },
-  { id: 'tournament', num: '03b', label: 'chapter arena' },
-  { id: 'monitor', num: '04', label: 'live run' },
-  { id: 'inspector', num: '05', label: 'evaluations' },
-  { id: 'reader', num: '06', label: 'manuscript' },
-  { id: 'revision', num: '07', label: 'revision' },
-  { id: 'stats', num: '08', label: 'costs' },
-  { id: 'settings', num: '09', label: 'settings' },
+/*
+ * Information architecture:
+ *   top level    → projects (shelf) · workspace · settings   (3 items)
+ *   project level→ overview · pipeline · foundation · manuscript · revision
+ *                  + contextual tools (beats & harvests, chapter arena)
+ */
+
+const PROJECT_NAV = [
+  { id: 'overview', label: 'overview' },
+  { id: 'pipeline', label: 'pipeline' },
+  { id: 'foundation', label: 'foundation' },
+  { id: 'manuscript', label: 'manuscript' },
+  { id: 'revision', label: 'revision' },
 ]
 
-const SCREENS = {
-  projects: Projects,
-  foundation: Foundation,
-  ledger: Ledger,
-  tournament: Tournament,
-  monitor: Monitor,
-  inspector: Inspector,
-  reader: Reader,
-  revision: Revision,
-  stats: Stats,
-  settings: Settings,
+const PROJECT_TOOLS = [
+  { id: 'ledger', label: 'beats & harvests' },
+  { id: 'arena', label: 'chapter arena' },
+]
+
+function TopNav({ route }) {
+  const { projects, runState } = useApp()
+  const active = route.name === 'project' ? route.project : null
+  const meta = active ? projects?.find((p) => p.name === active) : null
+  const running = runState?.running ?? false
+
+  const item = (num, label, target, isActive) => (
+    <button
+      onClick={() => navigate(target)}
+      className={`border-b-2 px-1 pb-2 pt-1 font-mono text-xs transition-colors ${
+        isActive ? 'border-accent text-paper' : 'border-transparent text-fog-400 hover:text-fog-200'
+      }`}
+    >
+      {isActive ? '>' : ''}[{num}] {label}
+    </button>
+  )
+
+  return (
+    <nav className="flex shrink-0 items-end gap-5 border-b border-line bg-ink-950 px-5 pt-3">
+      <button onClick={() => navigate('/projects')} className="pb-2">
+        <span className="font-display text-sm font-semibold tracking-tight text-paper lowercase">
+          autonovel<span className="blinker ml-0.5 align-middle" style={{ width: 6, height: 12 }} />
+        </span>
+      </button>
+      {item('01', 'projects', '/projects', route.name === 'projects')}
+      {active && item('02', meta?.title && meta.title !== 'Untitled' ? meta.title : active,
+        projectRoute(active), route.name === 'project')}
+      <div className="ml-auto pb-2">
+        {item('03', 'settings', '/settings', route.name === 'settings')}
+      </div>
+    </nav>
+  )
+}
+
+function Workspace({ route }) {
+  const { projects, runState, live } = useApp()
+  const project = route.project
+  const view = route.view
+  const running = runState?.running ?? false
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <ProjectHeader project={project} projects={projects} runState={runState} />
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* second-level nav: phase dashboards + inspection tools */}
+        <nav className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line bg-ink-900/60 px-3 py-2 lg:w-44 lg:flex-col lg:gap-0 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-0 lg:py-3">
+          {PROJECT_NAV.map(({ id, label }, i) => (
+            <button
+              key={id}
+              onClick={() => navigate(projectRoute(project, id))}
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-left font-mono text-xs transition-colors lg:border-l-2 ${
+                view === id
+                  ? 'border-accent bg-ink-800 text-paper'
+                  : 'border-transparent text-fog-400 hover:text-fog-200'
+              }`}
+            >
+              {view === id ? '>' : ''}[{String(i + 1).padStart(2, '0')}] {label}
+            </button>
+          ))}
+          <p className="mt-3 hidden px-3 pb-1 font-mono text-[9px] uppercase tracking-widest text-fog-500 lg:block">
+            inspection tools
+          </p>
+          {PROJECT_TOOLS.map(({ id, label }, i) => (
+            <button
+              key={id}
+              onClick={() => navigate(projectRoute(project, id))}
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-left font-mono text-xs transition-colors lg:border-l-2 ${
+                view === id
+                  ? 'border-accent bg-ink-800 text-paper'
+                  : 'border-transparent text-fog-500 hover:text-fog-200'
+              }`}
+            >
+              {view === id ? '>' : ''}[t{i + 1}] {label}
+            </button>
+          ))}
+          <div className="mt-auto hidden px-3 pb-2 lg:block">
+            <p className="flex items-center gap-1.5 font-mono text-[10px] text-fog-500">
+              <span className={`h-1.5 w-1.5 ${live ? 'bg-good' : 'bg-ink-600'}`} />
+              {running ? 'run active' : live ? 'watching' : 'offline'}
+            </p>
+          </div>
+        </nav>
+
+        {/* render as ELEMENTS, never fn calls — fn calls break hook ownership */}
+        <main className="min-w-0 flex-1 overflow-y-auto p-6">
+          {view === 'overview' && <Overview project={project} />}
+          {view === 'pipeline' && <PipelineDashboard project={project} tab={route.tab} />}
+          {view === 'foundation' && <FoundationView project={project} tab={route.tab} />}
+          {view === 'manuscript' && <Manuscript project={project} />}
+          {view === 'revision' && <RevisionView project={project} />}
+          {view === 'ledger' && <LedgerView project={project} />}
+          {view === 'arena' && <Arena project={project} />}
+        </main>
+      </div>
+    </div>
+  )
+}
+
+function Shell() {
+  const route = useRoute()
+  const { setProject } = useApp()
+
+  useEffect(() => {
+    if (route.name === 'project') {
+      api.setActiveProject(route.project)
+      setProject(route.project)
+    }
+  }, [route.name, route.project, setProject])
+
+  return (
+    <div className="flex h-screen flex-col">
+      <TopNav route={route} />
+      {route.name === 'projects' && <ProjectsGallery />}
+      {route.name === 'settings' && (
+        <main className="min-w-0 flex-1 overflow-y-auto p-8"><Settings /></main>
+      )}
+      {route.name === 'project' && <Workspace route={route} key={route.project} />}
+    </div>
+  )
 }
 
 export default function App() {
-  const [screen, setScreen] = useState('foundation')
-
   return (
-    <div className="flex h-screen">
-      <nav className="flex w-52 shrink-0 flex-col border-r border-ink-700 bg-ink-900 py-4">
-        <div className="mb-6 px-5">
-          <p className="font-display text-sm font-semibold tracking-tight text-paper lowercase">
-            autonovel<span className="animate-pulse text-accent">_</span>
-          </p>
-          <p className="mt-0.5 font-mono text-[10px] text-fog-500">v0.3 · structured pipeline</p>
-        </div>
-
-        <ul>
-          {NAV.map(({ id, num, label }) => (
-            <li key={id}>
-              <button
-                onClick={() => setScreen(id)}
-                className={`group flex w-full items-baseline gap-2 px-5 py-[7px] text-left text-[13px] transition-colors ${
-                  screen === id
-                    ? 'bg-ink-800 text-paper'
-                    : 'text-fog-400 hover:text-fog-200'
-                }`}
-              >
-                <span
-                  className={`text-[10px] ${screen === id ? 'text-accent' : 'text-fog-500'}`}
-                >
-                  [{num}]
-                </span>
-                <span className="lowercase">{label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-auto px-5 pb-2">
-          <p className="section-head">active</p>
-          <p className="mt-1 truncate text-xs text-fog-300">sir the confortable v3</p>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-accent">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            running
-          </p>
-        </div>
-      </nav>
-
-      <main className="min-w-0 flex-1 overflow-y-auto p-8">
-        {/* render as ELEMENTS, never fn calls — fn calls break hook ownership */}
-        {screen === 'projects' && <Projects />}
-        {screen === 'foundation' && <Foundation />}
-        {screen === 'ledger' && <Ledger />}
-        {screen === 'tournament' && <Tournament />}
-        {screen === 'monitor' && <Monitor />}
-        {screen === 'inspector' && <Inspector />}
-        {screen === 'reader' && <Reader />}
-        {screen === 'revision' && <Revision />}
-        {screen === 'stats' && <Stats />}
-        {screen === 'settings' && <Settings />}
-      </main>
-    </div>
+    <AppProvider>
+      <Shell />
+    </AppProvider>
   )
 }

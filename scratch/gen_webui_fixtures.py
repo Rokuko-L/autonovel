@@ -36,15 +36,37 @@ def split_h3(md: str):
     return out
 
 
+# Character registry entries: '## **1. NAME**' or '### **A. NAME (role)**' —
+# an ordinal prefix is required so subsections ('### **Personality & Flaws**')
+# are excluded and stay inside the owning character's body block.
+CHAR_HEAD = re.compile(
+    r"^#{2,3}\s+\*\*(?:([A-Za-z]|\d+)[\.\)]\s+)?(.+?)\*\*\s*$", re.M)
+
+
+# Registry section headers that pattern-match a character entry but aren't one
+SECTION_WORDS = ("supporting characters", "replacement behaviors", "themes",
+                 "character arcs", "registry", "antagonists", "minor characters")
+
+
+def display_name(raw: str) -> str:
+    """Role prefixes ('THE NARRATOR: DANIEL VEY') and ALL-CAPS names cleaned."""
+    name = raw.split(":", 1)[1].strip() if ": " in raw and raw.index(":") < 40 else raw
+    probe = name.split("(")[0]
+    if probe.isupper():
+        name = name.title()
+    return name
+
+
 HONORIFICS = {"king", "queen", "prince", "princess", "lady", "lord",
-              "sir", "archmage", "the", "master", "dame", "captain"}
+              "sir", "archmage", "the", "master", "dame", "captain",
+              "ms", "mr", "mrs", "dr"}
 
 
 def key_name(full: str) -> str:
     """First real given name, skipping honorific prefixes."""
     s = full.split(",")[0].split("(")[0].replace('"', "")
     words = [w for w in s.split() if w]
-    if words and words[0].lower() in HONORIFICS and len(words) > 1:
+    if words and words[0].lower().rstrip(".") in HONORIFICS and len(words) > 1:
         words = words[1:]
     # stop at prepositions: 'Eris of the Spire' -> 'Eris'
     out = []
@@ -81,29 +103,33 @@ def gen_foundation(p: Path, state: dict) -> dict:
 
     # -- character nodes ------------------------------------------------
     nodes, char_blocks = [], []
-    for title, body in split_h3(docs["characters"]):
-        m = re.match(r"(\d+)\.\s+(.+)", title)
-        if not m:
-            continue
+    heads = [m for m in CHAR_HEAD.finditer(docs["characters"]) if m.group(1)]
+    for idx, m in enumerate(heads):
         full_name = m.group(2)
-        kn = key_name(full_name)
-        # aliases: quoted nicknames ('Liliana “Lily” ...' -> also matches 'Lily')
+        if any(w in full_name.lower() for w in SECTION_WORDS):
+            continue
+        end = heads[idx + 1].start() if idx + 1 < len(heads) else len(docs["characters"])
+        kn = key_name(display_name(full_name))
+        if not kn:
+            continue
+        # aliases: quoted nicknames ('Daniel "Danny" Vey' -> also matches 'Danny')
         # handles both straight and typographic quotes
         aliases = {kn, *re.findall(r"[\"“]([^\"”]+)[\"”]", full_name)}
-        low = body.lower()
+        aliases = {a if not a.isupper() else a.title() for a in aliases}
+        body = docs["characters"][m.end():end]
         status = None
-        if re.search(r"\bdead\b|deceased|\bkilled\b", low):
+        if re.search(r"\bdead\b|deceased|\bkilled\b", body.lower() + m.group(0).lower()):
             status = "dead?"
-        elif re.search(r"\bmissing\b|\bunknown\b|presumed", low):
+        elif re.search(r"\bmissing\b|\bunknown\b|presumed", body.lower()):
             status = "unknown"
-        char_blocks.append((kn, aliases, body))
         desc = clean(body)
         nodes.append({
-            "id": f"c{m.group(1)}", "label": kn,
+            "id": f"c{idx + 1}", "label": kn,
             "kind": "character", "status": status,
             "desc": desc[:400] + ("…" if len(desc) > 400 else ""),
             "mentions": mentions_for(aliases),
         })
+        char_blocks.append((kn, aliases, body))
 
     # edges: co-mention between character blocks (real relationships!)
     edges, seen = [], set()
@@ -217,15 +243,16 @@ def gen_ledger(p: Path, state: dict) -> dict:
     rm = p / ".outline_roadmap.md"
     if rm.exists():
         txt = rm.read_text(encoding="utf-8")
+        # body may follow the heading directly (no blank line)
         for m in re.finditer(
-                r"^###\s+Chapter\s+(\d+):\s*([^\n]*)\n\n(.+?)(?=\n###|\Z)",
+                r"^###\s+Chapter\s+(\d+):\s*([^\n]*)\n+(.+?)(?=\n###|\Z)",
                 txt, re.M | re.S):
             num, slug, body = int(m.group(1)), m.group(2).strip(), m.group(3).strip()
             sentences = re.split(r"(?<=[.!?])\s+", body)
             roadmap.append({
                 "chapter": num,
-                "title": slug.replace("_", " ") or f"chapter {num}",
-                "beats": [s.strip() for s in sentences[:3] if s.strip()],
+                "title": clean(slug).replace("_", " ") or f"chapter {num}",
+                "beats": [clean(s) for s in sentences[:3] if clean(s)],
             })
         roadmap.sort(key=lambda c: c["chapter"])
     roadmap = roadmap[:6]
@@ -244,7 +271,7 @@ def gen_ledger(p: Path, state: dict) -> dict:
                 thread, planted, harvested = row
                 pm = re.search(r"[Cc]h\.?\s*(\d+)", planted)
                 hm = re.search(r"[Cc]h\.?\s*(\d+)", harvested)
-                if not pm:
+                if not pm and not hm:
                     continue
                 label = clean(thread)
                 if len(label) >= 58:
@@ -254,15 +281,19 @@ def gen_ledger(p: Path, state: dict) -> dict:
                         label = clean(full)
                     else:
                         label = label.rsplit(" ", 1)[0] + "…"
+                # either cell may be empty: no harvest = open thread, no plant =
+                # a payoff the ledger never recorded a plant for
                 threads.append({
                     "thread": label,
-                    "planted": int(pm.group(1)),
-                    "harvest": int(hm.group(1)) if hm else total,
+                    "planted": int(pm.group(1)) if pm else None,
+                    "harvest": int(hm.group(1)) if hm else None,
                     "status": "paid off" if hm else "open",
                 })
-    threads.sort(key=lambda t: t["planted"])
+    threads.sort(key=lambda t: (t["planted"] or t["harvest"] or 0,
+                                t["harvest"] or 9999))
 
-    return {"premiseBeats": premise, "roadmap": roadmap, "threads": threads}
+    return {"premiseBeats": premise, "roadmap": roadmap, "threads": threads,
+            "chaptersTotal": total}
 
 
 def gen_projects(state: dict, p: Path) -> list:

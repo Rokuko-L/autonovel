@@ -7,20 +7,33 @@ phase functions and CLI; this module holds everything they share.
 
 | Constant | Meaning |
 |---|---|
-| `FOUNDATION_THRESHOLD = 7.5` | Foundation loop exits above this (override: `AUTONOVEL_FOUNDATION_THRESHOLD` env) |
+| `FOUNDATION_THRESHOLD = 7.5` | Foundation loop exits above this |
 | `FOUNDATION_PLATEAU_ITERS = 3` | Consecutive non-improving foundation iterations → proceed with best docs |
 | `CHAPTER_THRESHOLD = 6.5` | Chapter retry gate |
 | `MAX_FOUNDATION_ITERS / MAX_CHAPTER_ATTEMPTS / MAX_OUTLINE_ATTEMPTS` | Retry budgets |
 | `MIN/MAX_REVISION_CYCLES`, `PLATEAU_DELTA` | Revision loop bounds + plateau sensitivity |
 | `PHASE_ORDER` | `["foundation", "drafting", "revision", "export"]` |
 
+Gate overrides are read at call time via helpers (defaults above; env wins):
+
+| Helper | Env var |
+|---|---|
+| `foundation_threshold()` | `AUTONOVEL_FOUNDATION_THRESHOLD` |
+| `chapter_threshold()` | `AUTONOVEL_CHAPTER_THRESHOLD` |
+| `max_chapter_attempts()` | `AUTONOVEL_MAX_CHAPTER_ATTEMPTS` |
+| `min_revision_cycles()` / `max_revision_cycles()` | `AUTONOVEL_MIN_REVISION_CYCLES` / `AUTONOVEL_MAX_REVISION_CYCLES` |
+| `plateau_delta()` | `AUTONOVEL_PLATEAU_DELTA` |
+
 ## State & Registry
 
 - `load_state / default_state / save_state` — `projects/<name>/state.json`
   checkpointing; written after every phase/step so crashes resume cleanly
-  (rerun without `--from-scratch`).
+  (rerun without `--from-scratch`). `save_state` delegates to
+  `paths.save_json_atomic`. `novel_score` is `null` until a real full-novel
+  score exists (`0.0` means "scored zero"; use `store_novel_score` /
+  `fmt_score` — plateau logic skips until both sides are numeric).
 - `load_registry / update_registry` — `projects/registry.json` session
-  registry (atomic writes via `paths.save_registry`).
+  registry (atomic via `paths.save_registry` → `save_json_atomic`).
 - `log_result(commit, phase, score, words, verdict, note)` — appends to
   `results.tsv`; one row per attempt (`keep`/`discard`/`forced`/`cycle`).
 

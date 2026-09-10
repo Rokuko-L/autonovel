@@ -38,9 +38,13 @@
  * @property {number} iteration         // foundation iteration or chapter number
  * @property {number} foundationScore
  * @property {number} loreScore
- * @property {number} stallCount        // foundation_stall_count (plateau detector)
- * @property {string} startedAt         // ISO
- * @property {boolean} running
+ * @property {number} chaptersTotal     // planned chapter count (0 if unset)
+ * @property {number} chaptersDone      // chapters drafted so far
+ * @property {number} revisionCycle
+ * @property {boolean} running          // RunManager liveness (pid probe)
+ * @property {number|null} pid
+ * @property {string|null} runStartedAt // ISO, when the run was launched
+ * @property {number|null} exitCode     // set once the supervised run exits
  */
 
 /**
@@ -120,6 +124,15 @@
  */
 
 /** evals.json shape: { ch_01: EvalAttempt[], ... } (chapter-id keyed) */
+
+/**
+ * Entity graph (GET /api/entity-graph). Two dialects:
+ *  - heuristic (llm:false): nodes {id,label,kind,status,desc,mentions}, edges {from,to,label}
+ *  - llm-arranged (llm:true): nodes gain {group, importance 1-10, desc=one-line summary},
+ *    edges gain {kind: "ally"|"rival"|"family"|"mentor"|"secret"|"serves"}.
+ * POST /api/entity-graph asks the writer model to re-arrange and caches it
+ * (projects/<name>/.entity_graph.json).
+ */
 
 /**
  * One adversarial cut from edit_logs/chNN_cuts.json.

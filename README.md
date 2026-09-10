@@ -140,6 +140,11 @@ Copy `.env.example` to `.env` and set:
 | `AUTONOVEL_NOTES` | — | Default story premise |
 | `AUTONOVEL_PROJECT` | `default` | Active project name |
 | `AUTONOVEL_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
+| `AUTONOVEL_CHAPTER_THRESHOLD` | `6.5` | Drafting keep gate per chapter |
+| `AUTONOVEL_MAX_CHAPTER_ATTEMPTS` | `5` | Quality retries per chapter |
+| `AUTONOVEL_MIN_REVISION_CYCLES` | `3` | Floor before plateau stop is allowed |
+| `AUTONOVEL_MAX_REVISION_CYCLES` | `6` | Cap on revision cycles |
+| `AUTONOVEL_PLATEAU_DELTA` | `0.3` | Novel-score delta below which a cycle counts as stalled |
 
 ### Example: DeepSeek `.env` (Anthropic dialect)
 

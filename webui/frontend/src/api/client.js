@@ -9,37 +9,78 @@ import revision from '../fixtures/revision.json'
 import tournament from '../fixtures/tournament.json'
 
 /**
- * Mock API client — implements the contract in contract.js from fixtures.
- * THE swap point on wiring day: same function names, real fetch() calls.
- * Streaming endpoints (log tail, live events) are exposed as subscribe()
- * functions so screens never know the difference.
+ * API client — implements the contract in contract.js.
+ * Talks to the FastAPI bridge (webui/server.py, port 8600 via the vite
+ * proxy); if the server isn't up, falls back to the generated fixtures so
+ * the console stays browsable offline.
+ * Live updates arrive over SSE (GET /api/stream) via subscribeStream();
+ * on stream failure callers can fall back to polling getRunState.
  */
 
-const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms))
+async function live(path, fallback) {
+  try {
+    const res = await fetch(path)
+    if (!res.ok) throw new Error(`${res.status} ${path}`)
+    return await res.json()
+  } catch {
+    return fallback
+  }
+}
+
+async function send(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+  if (!res.ok) {
+    let detail = `${res.status}`
+    try {
+      detail = (await res.json()).detail ?? detail
+    } catch { /* keep status code */ }
+    const err = new Error(detail)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
+// Active project, mirrored into localStorage so a reload keeps context.
+let activeProject = localStorage.getItem('autonovel_active_project') ?? ''
+
+const q = (project) => {
+  const name = project ?? activeProject
+  return name ? `?project=${encodeURIComponent(name)}` : ''
+}
 
 export const api = {
+  setActiveProject(name) {
+    activeProject = name
+    if (name) localStorage.setItem('autonovel_active_project', name)
+    else localStorage.removeItem('autonovel_active_project')
+  },
+
+  getActiveProject() {
+    return activeProject
+  },
+
   async listProjects() {
-    await delay()
-    return projects
+    return live('/api/projects', projects)
   },
 
-  async getRunState(_project) {
-    await delay()
-    return runState
+  async getRunState(project) {
+    return live(`/api/run-state${q(project)}`, runState)
   },
 
-  async getScoreHistory(_project) {
-    await delay()
-    return scoreHistory
+  async getScoreHistory(project) {
+    return live(`/api/score-history${q(project)}`, scoreHistory)
   },
 
-  async listLlmEvents(_project) {
-    await delay(200)
-    return llmEvents
+  async listLlmEvents(project) {
+    return live(`/api/llm-events${q(project)}`, llmEvents)
   },
 
   async getStats(project) {
-    await delay()
     const evts = await this.listLlmEvents(project)
     const ok = evts.filter((e) => e.ok)
     const sum = (k) => ok.reduce((a, e) => a + (e[k] ?? 0), 0)
@@ -62,63 +103,92 @@ export const api = {
   },
 
   async getSettings() {
-    await delay()
-    return settings
+    return live('/api/settings', settings)
   },
 
-  async listChapters(_project) {
-    await delay()
-    return chapters
+  /** Persist settings to .env; returns the refreshed settings payload. */
+  saveSettings(payload) {
+    return send('/api/settings', payload)
   },
 
-  /** evals.json is keyed by the pipeline's `chNN` (zero-padded-2, no underscore). */
-  async getEvals(_project, chapterId) {
-    await delay()
-    return evals[chapterId.replace('ch_', 'ch')] ?? []
+  async listChapters(project) {
+    return live(`/api/chapters${q(project)}`, chapters)
   },
 
-  async listEvals(_project) {
-    await delay()
-    return evals
+  /** evals map is keyed by the pipeline's eval-log chapter key (`ch01`). */
+  async getEvals(project, chapterId) {
+    const map = await this.listEvals(project)
+    return map[chapterId.replace('ch_', 'ch')] ?? []
   },
 
-  async getRevision(_project) {
-    await delay()
-    return revision
+  async listEvals(project) {
+    return live(`/api/evals${q(project)}`, evals)
   },
 
-  async listMatches(_project) {
-    await delay()
-    return tournament
+  async getRevision(project) {
+    return live(`/api/revision${q(project)}`, revision)
   },
 
-  /** Live log tail. Mock replays a scripted run; real impl subscribes to SSE. */
-  subscribeLogs(_project, onLine) {
-    const script = [
-      ['step', 'Generating world bible...'],
-      ['raw', '  [world] continents: 3, magic system: debt-based'],
-      ['step', 'Evaluating foundation...'],
-      ['step', 'Foundation score: 6.4  (lore: 5.9, prev best: 6.2)'],
-      ['step', 'Foundation Iteration 7', 'banner'],
-      ['step', 'Generating outline (part 1)...'],
-    ]
-    let i = 0
-    const t = setInterval(() => {
-      if (i >= script.length) return clearInterval(t)
-      const [level, text] = script[i++]
-      onLine({ ts: new Date().toISOString(), level, text })
-    }, 900)
-    return () => clearInterval(t)
+  async listMatches(project) {
+    return live(`/api/tournament${q(project)}`, tournament)
   },
 
-  /** Live LLM event feed. Real impl tails llm_events.jsonl over SSE. */
-  subscribeLlmEvents(_project, onEvent) {
-    let i = 0
-    const t = setInterval(() => {
-      const base = llmEvents[i % llmEvents.length]
-      i += 1
-      onEvent({ ...base, ts: new Date().toISOString(), durationMs: base.durationMs + i * 37 })
-    }, 2500)
-    return () => clearInterval(t)
+  async getFoundation(project) {
+    return live(`/api/foundation${q(project)}`, null)
+  },
+
+  /** LLM-arranged entity graph if cached, else the heuristic co-mention graph. */
+  async getEntityGraph(project) {
+    return live(`/api/entity-graph${q(project)}`, null)
+  },
+
+  /** Ask the writer model to re-arrange the graph (slow — one LLM call). */
+  arrangeEntityGraph(project) {
+    return send(`/api/entity-graph${q(project)}`)
+  },
+
+  async getLedger(project) {
+    return live(`/api/ledger${q(project)}`, null)
+  },
+
+  /** Launch run_pipeline.py for a new project (creation wizard). */
+  createProject(payload) {
+    return send('/api/projects', payload)
+  },
+
+  /** Terminate the project's live run. */
+  stopRun(project) {
+    return send(`/api/run/stop${q(project)}`)
+  },
+
+  /**
+   * SSE subscription for one project. Handlers: onState(runState),
+   * onLog({ts, level, text}), onLlm(llmEvent). Returns a cleanup fn.
+   * Falls back to nothing on error — callers should poll getRunState then.
+   */
+  subscribeStream(project, { onState, onLog, onLlm }) {
+    if (!window.EventSource) return () => {}
+    const url = `/api/stream${q(project)}`
+    const es = new EventSource(url)
+    let failed = false
+    es.addEventListener('state', (e) => {
+      try { onState?.(JSON.parse(e.data)) } catch { /* malformed frame */ }
+    })
+    es.addEventListener('log', (e) => {
+      try { onLog?.(JSON.parse(e.data)) } catch { /* malformed frame */ }
+    })
+    es.addEventListener('llm', (e) => {
+      try { onLlm?.(JSON.parse(e.data)) } catch { /* malformed frame */ }
+    })
+    es.onerror = () => {
+      // EventSource retries on its own; surface the first failure so the
+      // caller can degrade to polling.
+      if (!failed) {
+        failed = true
+        es.onerror = null
+        onState?.(null, { streamFailed: true })
+      }
+    }
+    return () => es.close()
   },
 }

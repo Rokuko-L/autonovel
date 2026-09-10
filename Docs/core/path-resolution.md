@@ -12,7 +12,8 @@ being derived from the active project name at call time.
 | `set_project_name(name)` | Sets the active project. **Validates path isolation**: resolved dir must be inside `projects/` (blocks `../`, `.`, absolute escapes). Also sets `AUTONOVEL_PROJECT` env var so subprocesses inherit it. |
 | `get_project_name() -> str` | Explicit set → `AUTONOVEL_PROJECT` env → `"default"`. |
 | `get_project_dir() -> Path` | `projects/<name>/`, re-validated on every call. |
-| `save_registry(data, path)` | Atomic JSON write: tmp file + `os.replace`, cleanup on failure. |
+| `save_json_atomic(data, path)` | Atomic JSON write: tmp file + `os.replace`, cleanup on failure. |
+| `save_registry(data, path)` | Thin wrapper over `save_json_atomic` (kept for call-site clarity). |
 
 ## Folder Helpers (side effects: mkdir)
 
@@ -38,7 +39,8 @@ Plus:
 2. Any user-derived name must pass through `set_project_name`.
 3. Tests may patch internals directly: `paths._root_dir`,
    `paths._project_name` (see `scratch/test_utils.py`).
-4. Writes to shared JSON (registry, state) must be atomic.
+4. Writes to shared JSON (registry, state, active_genre) must be atomic
+   (`paths.save_json_atomic`).
 
 Related: [llm-client.md](llm-client.md) ·
 [../pipeline/state-and-git.md](../pipeline/state-and-git.md) ·

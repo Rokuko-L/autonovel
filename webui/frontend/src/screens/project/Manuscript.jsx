@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api/client.js'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { api } from '../../api/client.js'
+import { navigate, projectRoute } from '../../router.js'
+import { EmptyState, mdInline, Skel } from '../../components/ui.jsx'
 
 function ScoreDonut({ score }) {
   const pct = Math.max(0, Math.min(1, (score ?? 0) / 10))
@@ -27,7 +29,7 @@ function ScoreDonut({ score }) {
 function Panel({ label, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="border-b border-ink-700 last:border-b-0">
+    <section className="border-b border-line last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-ink-900"
@@ -40,75 +42,81 @@ function Panel({ label, children, defaultOpen = true }) {
   )
 }
 
-export default function Reader() {
+/**
+ * Manuscript reader: the actual prose, chapter by chapter, with each
+ * chapter's score and the judge's notes alongside.
+ */
+export default function Manuscript({ project }) {
   const [chapters, setChapters] = useState(null)
   const [evals, setEvals] = useState({})
   const [sel, setSel] = useState(0)
 
   useEffect(() => {
-    api.listChapters().then((cs) => {
+    document.title = `autonovel · ${project} · manuscript`
+    setChapters(null)
+    api.listChapters(project).then((cs) => {
       setChapters(cs)
       const first = cs.findIndex((c) => c.status === 'kept')
       setSel(first >= 0 ? first : 0)
     })
-  }, [])
+  }, [project])
 
   const ch = chapters?.[sel]
+  const chId = ch?.id
+  const proseRef = useRef(null)
+  // a new chapter always starts at the top, never mid-scroll
   useEffect(() => {
-    if (!ch) return
+    proseRef.current?.scrollTo({ top: 0 })
+  }, [chId])
+  useEffect(() => {
+    if (!chId) return undefined
     let stale = false
-    api.getEvals('sir-the-confortable-v3', ch.id).then((a) => {
-      if (!stale) setEvals((prev) => ({ ...prev, [ch.id]: a }))
+    api.getEvals(project, chId).then((a) => {
+      if (!stale) setEvals((prev) => ({ ...prev, [chId]: a }))
     })
     return () => { stale = true }
-  }, [ch?.id])
+  }, [project, chId])
 
   const attempt = useMemo(() => {
-    if (!ch) return null
-    const list = evals[ch.id]
+    if (!chId) return null
+    const list = evals[chId]
     return list?.length ? list[list.length - 1] : null
-  }, [ch?.id, evals])
+  }, [chId, evals])
 
   if (!chapters) {
+    return <Skel className="h-[60vh]" />
+  }
+  if (!chapters.length) {
     return (
-      <div className="grid grid-cols-[12rem_1fr_18rem] gap-6">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-96 animate-pulse rounded-xl bg-ink-800" />
-        ))}
-      </div>
+      <EmptyState icon="❞" title="no chapters on disk yet">
+        during the drafting phase the pipeline writes every chapter here — judged, scored, and retried until it
+        clears the gate. once drafts exist you'll read them in this reader, with scores and revision notes alongside.
+      </EmptyState>
     )
   }
 
   const go = (d) => setSel((s) => Math.max(0, Math.min(chapters.length - 1, s + d)))
-  const [heading, ...rest] = ch.prose.split('\n')
+  const [, ...rest] = ch.prose.split('\n')
   const paras = rest.join('\n').split(/\n\s*\n/).filter((p) => p.trim())
 
   return (
-    <div className="-m-8 flex h-[calc(100vh-1px)] flex-col">
+    <div className="-m-6 flex h-[calc(100vh-8.5rem)] flex-col">
       {/* control bar */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-ink-700 px-5">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-line px-2">
         <p className="font-mono text-xs text-fog-400">
-          <span className="text-accent">[06]</span> manuscript // prose_reader
+          manuscript <span className="opacity-50">//</span> prose_reader
         </p>
         <div className="flex items-center gap-2">
-          <button onClick={() => go(-1)} disabled={sel === 0}
-            className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:border-accent/50 hover:text-accent disabled:opacity-40">
-            ‹ prev
-          </button>
-          <button onClick={() => go(1)} disabled={sel === chapters.length - 1}
-            className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:border-accent/50 hover:text-accent disabled:opacity-40">
-            next ›
-          </button>
-          <span className="mx-1 h-4 w-px bg-ink-600" />
-          <button className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:border-accent/50 hover:text-accent">
-            [export pdf]
+          <button onClick={() => navigate(projectRoute(project, 'arena'))}
+            className="border border-ink-600 px-3 py-1 font-mono text-xs text-fog-400 transition-colors hover:border-accent/50 hover:text-accent">
+            compare in arena
           </button>
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
         {/* chapter rail */}
-        <nav className="w-52 shrink-0 overflow-y-auto border-r border-ink-700 bg-ink-900 py-2">
+        <nav className="w-52 shrink-0 overflow-y-auto border-b border-line bg-ink-900 py-2 xl:border-b-0 xl:border-r">
           <p className="section-head px-4 pb-2">// chapters</p>
           <ul>
             {chapters.map((c, i) => (
@@ -121,8 +129,7 @@ export default function Reader() {
                       : 'text-fog-400 hover:text-fog-200'
                   }`}
                 >
-                  {i === sel && <span className="text-accent">&gt;</span>}
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  <span className={`h-1.5 w-1.5 shrink-0 ${
                     c.status === 'kept' ? 'bg-good' : c.status === 'discarded' ? 'bg-bad' : 'border border-fog-500'
                   }`} />
                   <span className="flex-1">{c.id}</span>
@@ -134,8 +141,8 @@ export default function Reader() {
         </nav>
 
         {/* prose */}
-        <article className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-prose px-10 py-10">
+        <article ref={proseRef} className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[720px] px-10 py-10">
             <p className="font-mono text-xs text-fog-500">
               {ch.id} <span className="opacity-50">//</span> {ch.title}
             </p>
@@ -151,10 +158,10 @@ export default function Reader() {
             </div>
             <div className="mt-8 space-y-5 font-prose text-[17px] leading-[1.75] text-fog-200">
               {paras.map((p, i) => (
-                <p key={i} className="whitespace-pre-wrap">{p.trim()}</p>
+                <p key={i} className="whitespace-pre-wrap">{mdInline(p.trim())}</p>
               ))}
             </div>
-            <div className="mt-12 flex justify-between border-t border-ink-700 pt-4 font-mono text-[10px] text-fog-500">
+            <div className="mt-12 flex justify-between border-t border-line pt-4 font-mono text-[10px] text-fog-500">
               <button onClick={() => go(-1)} disabled={sel === 0} className="hover:text-accent disabled:opacity-40">
                 ‹ {chapters[sel - 1]?.id ?? 'start'}
               </button>
@@ -167,7 +174,7 @@ export default function Reader() {
         </article>
 
         {/* analysis rail */}
-        <aside className="w-72 shrink-0 overflow-y-auto border-l border-ink-700 bg-ink-900">
+        <aside className="w-72 shrink-0 overflow-y-auto border-t border-line bg-ink-900 xl:border-l xl:border-t-0">
           <Panel label="// chapter_score">
             <ScoreDonut score={ch.score} />
             {attempt && (
@@ -186,21 +193,25 @@ export default function Reader() {
           </Panel>
 
           <Panel label={`// attempts (${ch.attempts.length})`}>
-            <ul className="space-y-1 font-mono text-xs">
-              {ch.attempts.map((a, i) => (
-                <li key={i} className="flex items-center justify-between">
-                  <span className="text-fog-500">attempt {i + 1}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-fog-300">{a.score.toFixed(2)}</span>
-                    <span className={`border px-1 text-[10px] ${
-                      a.status === 'keep' ? 'border-good/40 text-good' : 'border-bad/40 text-bad'
-                    }`}>
-                      [{a.status}]
+            {ch.attempts.length ? (
+              <ul className="space-y-1 font-mono text-xs">
+                {ch.attempts.map((a, i) => (
+                  <li key={i} className="flex items-center justify-between">
+                    <span className="text-fog-500">attempt {i + 1}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-fog-300">{a.score.toFixed(2)}</span>
+                      <span className={`border px-1 text-[10px] ${
+                        a.status === 'keep' ? 'border-good/40 text-good' : 'border-bad/40 text-bad'
+                      }`}>
+                        [{a.status}]
+                      </span>
                     </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="font-mono text-[11px] text-fog-500">[ no attempts recorded ]</p>
+            )}
           </Panel>
 
           {attempt && (

@@ -144,7 +144,7 @@ def run_foundation(state: dict) -> dict:
 
     best_score = state.get("foundation_score", 0.0)
     iteration = state.get("iteration", 0)
-    threshold = float(os.getenv("AUTONOVEL_FOUNDATION_THRESHOLD", str(FOUNDATION_THRESHOLD)))
+    threshold = foundation_threshold()
     stall_count = state.get("foundation_stall_count", 0)
 
     if iteration == 0:
@@ -351,6 +351,74 @@ def update_canon_from_eval(ch: int, attempt_num: int = None, eval_log_path=None)
         print(f"  WARN: Could not extract canon entries from eval log: {e}", file=sys.stderr)
 
 
+REVISION_CANON_HEADER = "## Revision Sync"
+
+
+def resync_canon_after_cycle(kept_results: list, cycle: int):
+    """Rebuild the ## Revision Sync section from this cycle's kept chapter evals.
+
+    Foundation / draft-era ## As of Chapter N sections are left intact. The
+    revision-sync block is replaceable so later cycles do not stack duplicates.
+    """
+    core_entries: list[str] = []
+    inc_entries: list[str] = []
+    for r in kept_results:
+        log_path = r.get("eval_log_path")
+        if not log_path:
+            continue
+        p = Path(log_path)
+        if not p.exists():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  WARN: canon resync could not read {p}: {e}", file=sys.stderr)
+            continue
+        for entry in data.get("new_canon_entries") or []:
+            if isinstance(entry, str):
+                inc_entries.append(entry)
+            elif isinstance(entry, dict):
+                fact = entry.get("fact", "")
+                if not fact:
+                    continue
+                (core_entries if entry.get("scope") == "core" else inc_entries).append(fact)
+
+    # Dedupe while preserving order
+    def _uniq(items):
+        seen = set()
+        out = []
+        for x in items:
+            key = x.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(x.strip())
+        return out
+
+    core_entries = _uniq(core_entries)
+    inc_entries = _uniq(inc_entries)
+    if not core_entries and not inc_entries:
+        return
+
+    canon_path = paths.get_canon_path()
+    text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
+    text = re.sub(
+        rf"\n*{re.escape(REVISION_CANON_HEADER)}\n.*?(?=\n## |\Z)",
+        "\n",
+        text,
+        flags=re.DOTALL,
+    )
+    block = [f"\n{REVISION_CANON_HEADER}\n\n", f"*Cycle {cycle} post-revision extraction*\n"]
+    if core_entries:
+        block.append("\n### Core\n\n")
+        block.extend(f"- {e}\n" for e in core_entries)
+    if inc_entries:
+        block.append("\n### Incremental\n\n")
+        block.extend(f"- {e}\n" for e in inc_entries)
+    canon_path.write_text(text.rstrip() + "\n" + "".join(block), encoding="utf-8")
+    step(f"Canon resync: {len(core_entries)} core, {len(inc_entries)} incremental "
+         f"entries from {len(kept_results)} revised chapter(s)")
+
+
 # ---------------------------------------------------------------------------
 # PHASE 2 — DRAFTING
 # ---------------------------------------------------------------------------
@@ -377,7 +445,9 @@ def run_drafting(state: dict) -> dict:
 
     # Hard floor for force-keeping a failed chapter: below this we skip and record,
     # we do NOT ship sub-garbage as canon.
-    force_keep_floor = CHAPTER_THRESHOLD - 2.0
+    chapter_gate = chapter_threshold()
+    max_attempts = max_chapter_attempts()
+    force_keep_floor = chapter_gate - 2.0
 
     chapters_dir = paths.get_chapters_dir()  # also creates the directory
 
@@ -392,8 +462,8 @@ def run_drafting(state: dict) -> dict:
         retry_feedback = ""
         slop_repaired = False
 
-        for attempt in range(1, MAX_CHAPTER_ATTEMPTS + 1):
-            step(f"Attempt {attempt}/{MAX_CHAPTER_ATTEMPTS}")
+        for attempt in range(1, max_attempts + 1):
+            step(f"Attempt {attempt}/{max_attempts}")
             # Inner infra-retry loop: timeouts, empty files, and truncations don't burn quality attempts
             quality_attempt = False
             for infra in range(1, INFRA_MAX_ATTEMPTS + 1):
@@ -458,7 +528,7 @@ def run_drafting(state: dict) -> dict:
                 eval_log_path = Path(log_m.group(1))
                 attempt_log_paths[attempt] = eval_log_path
 
-            if score >= CHAPTER_THRESHOLD:
+            if score >= chapter_gate:
                 fb_path = paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
                 fb_path.unlink(missing_ok=True)
                 commit_hash = git_add_commit(
@@ -481,7 +551,7 @@ def run_drafting(state: dict) -> dict:
                     best_attempt_num = attempt
                     step(f"New best fallback score for Ch {ch}: {score}")
 
-                step(f"Score {score} < {CHAPTER_THRESHOLD}, discarding attempt")
+                step(f"Score {score} < {chapter_gate}, discarding attempt")
                 log_result("discarded", f"ch{ch:02d}", score, word_count,
                            "discard", f"Chapter {ch} attempt {attempt}")
                 # Feed the judge's findings back into the next attempt
@@ -541,7 +611,7 @@ def run_drafting(state: dict) -> dict:
                             rep_eval = uv_run(f"pipeline/evaluate.py --chapter={ch}", timeout=300)
                             rep_score = parse_score(rep_eval.stdout, "overall_score")
                             step(f"Repaired Ch {ch} score: {rep_score}")
-                            if rep_score >= CHAPTER_THRESHOLD:
+                            if rep_score >= chapter_gate:
                                 step(f"Repair lifted Ch {ch} over the bar — keeping")
                                 fb_path = paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt"
                                 fb_path.unlink(missing_ok=True)
@@ -583,12 +653,12 @@ def run_drafting(state: dict) -> dict:
                 and best_word_count >= min_words
             )
             if force_worthy:
-                step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts, "
+                step(f"WARNING: Chapter {ch} failed all {max_attempts} attempts, "
                      f"keeping best attempt {best_attempt_num} (score {best_score}, floor {force_keep_floor}) and moving on")
                 ch_file = chapters_dir / f"ch_{ch:02d}.md"
                 ch_file.write_text(best_draft_content, encoding="utf-8")
                 commit_hash = git_add_commit(
-                    f"ch{ch:02d}: best-effort (score {best_score}, attempt {best_attempt_num}) after {MAX_CHAPTER_ATTEMPTS} attempts")
+                    f"ch{ch:02d}: best-effort (score {best_score}, attempt {best_attempt_num}) after {max_attempts} attempts")
                 log_result(commit_hash, f"ch{ch:02d}", best_score, best_word_count,
                            "forced", f"Chapter {ch}: kept best-effort after max attempts")
                 state["chapters_drafted"] = ch
@@ -602,7 +672,7 @@ def run_drafting(state: dict) -> dict:
                 else:
                     reason = (f"best score {best_score} below force-keep floor {force_keep_floor} "
                               f"or word count {best_word_count} below {min_words}")
-                step(f"WARNING: Chapter {ch} failed all {MAX_CHAPTER_ATTEMPTS} attempts ({reason}). "
+                step(f"WARNING: Chapter {ch} failed all {max_attempts} attempts ({reason}). "
                      f"Marking chapter as SKIPPED in state — it will be absent from the manuscript.")
                 (paths.get_project_dir() / f"retry_feedback_ch{ch:02d}.txt").unlink(missing_ok=True)
                 log_result("skipped", f"ch{ch:02d}", best_score, best_word_count,
@@ -615,9 +685,6 @@ def run_drafting(state: dict) -> dict:
                 save_state(state)
 
     # All chapters drafted
-    # TODO: revision phase may rewrite chapter text without re-syncing canon.md.
-    # Future work: after each revision cycle, re-run canon extraction from
-    # the revised chapters and replace the ## As of Chapter N sections.
     state["phase"] = "revision"
     state["current_focus"] = "full_novel"
     state["chapters_drafted"] = total
@@ -699,8 +766,8 @@ def build_eval_feedback(eval_log_path):
         raw_score = adjusted_score = 0.0
     slop_penalty = slop.get("slop_penalty") or 0.0
     tic_penalty = slop.get("prose_tic_penalty") or 0.0
-    near_clean = (raw_score >= CHAPTER_THRESHOLD
-                  and adjusted_score >= CHAPTER_THRESHOLD - 1.0
+    near_clean = (raw_score >= chapter_threshold()
+                  and adjusted_score >= chapter_threshold() - 1.0
                   and slop_penalty < 2.0 and tic_penalty < 1.0)
 
     if not lines:
@@ -787,7 +854,7 @@ def parse_panel_consensus(panel_path: Path) -> list[dict]:
 
 def run_revision(
     state: dict,
-    max_cycles: int = MAX_REVISION_CYCLES,
+    max_cycles: int | None = None,
     skip_adversarial_editing: bool = False,
     skip_mechanical_cuts: bool = False,
     skip_reader_panel: bool = False,
@@ -800,10 +867,13 @@ def run_revision(
     """
     banner("PHASE 3: REVISION", "=")
 
+    if max_cycles is None:
+        max_cycles = max_revision_cycles()
+
     briefs_dir = paths.get_briefs_dir()        # also creates the directory
     edit_logs_dir = paths.get_edit_logs_dir()  # also creates the directory
 
-    prev_score = state.get("novel_score", 0.0)
+    prev_score = state.get("novel_score")  # None = never scored
     start_cycle = state.get("revision_cycle", 0) + 1
     tolerance = 0.8
 
@@ -893,20 +963,20 @@ def run_revision(
                     log_result(commit_hash, f"rev-cycle-{cycle}-cuts", post_cuts_score,
                                count_words_in_chapters(), "keep",
                                f"Cycle {cycle}: Step 2 mechanical cuts kept {post_adv_score}->{post_cuts_score}")
-                    state["novel_score"] = post_cuts_score
+                    store_novel_score(state, post_cuts_score)
                 else:
                     step(f"Mechanical cuts made the novel worse ({post_cuts_score} < {post_adv_score - 0.05}), reverting cuts")
                     git_reset_hard("HEAD")
                     log_result("reverted", f"rev-cycle-{cycle}-cuts", post_cuts_score,
                                count_words_in_chapters(), "discard",
                                f"Cycle {cycle}: Step 2 mechanical cuts regressed {post_adv_score}->{post_cuts_score}")
-                    state["novel_score"] = post_adv_score
+                    store_novel_score(state, post_adv_score)
             else:
                 if skip_mechanical_cuts:
                     step("Skipping mechanical cuts as requested")
                 else:
                     step("apply_cuts.py not found, skipping mechanical cuts")
-                state["novel_score"] = post_adv_score
+                store_novel_score(state, post_adv_score)
         else:
             step("Skipping both adversarial editing and mechanical cuts — no Cycle edits to apply")
 
@@ -964,7 +1034,7 @@ def run_revision(
                             f"Focus: address the {question.replace('_', ' ')} issue.\n"
                             f"Preserve existing voice, character work, and essential beats.\n"
                         )
-                        brief_file.write_text(brief_content)
+                        brief_file.write_text(brief_content, encoding="utf-8")
 
                     if not brief_file.exists():
                         return {"ch_num": ch_num, "error": "no brief file",
@@ -975,6 +1045,10 @@ def run_revision(
 
                     post_eval = uv_run(f"pipeline/evaluate.py --chapter={ch_num}", timeout=300)
                     post_score = parse_score(post_eval.stdout, "overall_score")
+                    eval_log_path = None
+                    m = re.search(r"eval_log:\s*(\S+)", post_eval.stdout)
+                    if m:
+                        eval_log_path = m.group(1)
 
                     ch_file = paths.get_chapters_dir() / f"ch_{ch_num:02d}.md"
                     word_count = len(ch_file.read_text(encoding="utf-8").split()) if ch_file.exists() else 0
@@ -991,6 +1065,7 @@ def run_revision(
                         "baseline": baseline,
                         "hist_best_commit": hist_best_commit,
                         "brief_name": brief_file.name,
+                        "eval_log_path": eval_log_path,
                     }
                 except Exception as e:
                     return {"ch_num": ch_num, "error": str(e)}
@@ -1015,6 +1090,7 @@ def run_revision(
                         step(f"  Ch {item['chapter']}: unexpected error — {e}")
 
             # Serialized: git add/commit or revert per chapter
+            kept_this_cycle = []
             for r in sorted(results, key=lambda x: x["ch_num"]):
                 if r.get("error"):
                     continue
@@ -1027,6 +1103,7 @@ def run_revision(
                     log_result(commit_hash, f"rev-ch{ch_num:02d}", r["post_score"],
                                r["word_count"], "keep",
                                f"Cycle {cycle}: {r['question']} improved {r['pre_score']}->{r['post_score']}")
+                    kept_this_cycle.append(r)
                 else:
                     step(f"Ch {ch_num}: score dropped ({r['post_score']} < {r['baseline'] - tolerance}), reverting")
                     ch_file = paths.get_chapters_dir() / f"ch_{ch_num:02d}.md"
@@ -1044,6 +1121,8 @@ def run_revision(
                     log_result("reverted", f"rev-ch{ch_num:02d}", r["post_score"],
                                r["word_count"], "discard",
                                f"Cycle {cycle}: {r['question']} regressed {r['pre_score']}->{r['post_score']}")
+            if kept_this_cycle:
+                resync_canon_after_cycle(kept_this_cycle, cycle)
         elif not skip_targeted_revisions:
             step("No strong consensus items found from panel")
         else:
@@ -1059,39 +1138,47 @@ def run_revision(
                 step(f"WARNING: could not parse any score from full eval — keeping previous score. {e}")
                 novel_score = prev_score
 
-            if novel_score == 0.0:
+            if novel_score is None or novel_score <= 0.0:
                 # 0.0 is almost always a judge failure — retry once
-                step("Novel score 0.0 detected, retrying evaluation...")
+                step("Novel score missing/0.0 detected, retrying evaluation...")
                 retry_eval = uv_run("pipeline/evaluate.py --full", timeout=600)
                 try:
                     novel_score = parse_score_any(retry_eval.stdout, "novel_score", "overall_score")
                 except ValueError as e:
                     step(f"WARNING: retry eval unparseable — keeping previous score. {e}")
                     novel_score = prev_score
-                if novel_score <= 0.0:
-                    step("Novel score still 0.0 after retry — keeping previous score")
+                if novel_score is None or novel_score <= 0.0:
+                    step("Novel score still unusable after retry — keeping previous score")
                     novel_score = prev_score
         else:
             step("Skipping full novel evaluation as requested")
             novel_score = prev_score
 
         total_words = count_words_in_chapters()
-        step(f"Novel score: {novel_score}  (prev: {prev_score}, words: {total_words})")
+        step(f"Novel score: {fmt_score(novel_score)}  (prev: {fmt_score(prev_score)}, words: {total_words})")
 
         # Commit cycle results
         commit_hash = git_add_commit(
-            f"revision cycle {cycle} complete: novel_score {novel_score}")
-        log_result(commit_hash, f"revision-cycle-{cycle}", novel_score,
+            f"revision cycle {cycle} complete: novel_score {fmt_score(novel_score)}")
+        log_result(commit_hash, f"revision-cycle-{cycle}", fmt_score(novel_score),
                    total_words, "cycle",
-                   f"Cycle {cycle}: novel_score {prev_score}->{novel_score}")
+                   f"Cycle {cycle}: novel_score {fmt_score(prev_score)}->{fmt_score(novel_score)}")
 
-        state["novel_score"] = novel_score
+        stored = store_novel_score(state, novel_score)
         state["revision_cycle"] = cycle
         save_state(state)
 
         # -- Step 7: Plateau detection --
         if not skip_full_novel_eval:
-            if cycle >= MIN_REVISION_CYCLES and abs(novel_score - prev_score) < PLATEAU_DELTA:
+            plateau = plateau_delta()
+            min_cycles = min_revision_cycles()
+            comparable = (
+                cycle >= min_cycles
+                and stored is not None
+                and prev_score is not None
+                and abs(stored - prev_score) < plateau
+            )
+            if comparable:
                 # Secondary gate: don't stop while >30% of chapters are below threshold
                 total_ch = get_total_chapters(state)
                 below = 0
@@ -1101,17 +1188,18 @@ def run_revision(
                     if hist_commit == "HEAD" and last_score == 0.0:
                         continue  # no history yet, skip
                     with_history += 1
-                    if last_score < CHAPTER_THRESHOLD:
+                    if last_score < chapter_threshold():
                         below += 1
                 pct_below = below / with_history * 100 if with_history > 0 else 0
                 if pct_below > 30:
                     step(f"Plateau suppressed: {below}/{with_history} scored chapters below threshold ({pct_below:.0f}% > 30%) — continuing revision")
                 else:
-                    step(f"Plateau detected (delta {abs(novel_score - prev_score):.2f} "
-                         f"< {PLATEAU_DELTA}) after {cycle} cycles — stopping")
+                    step(f"Plateau detected (delta {abs(stored - prev_score):.2f} "
+                         f"< {plateau}) after {cycle} cycles — stopping")
                     break
 
-        prev_score = novel_score
+        if stored is not None:
+            prev_score = stored
 
     # =========================================================
     # PHASE 3b: OPUS REVIEW LOOP (deep, prose-level refinement)
@@ -1266,7 +1354,7 @@ def run_revision(
     save_state(state)
 
     banner(f"REVISION COMPLETE — {state.get('revision_cycle', 0)} cycles, "
-           f"novel_score {state.get('novel_score', 0)}")
+           f"novel_score {fmt_score(state.get('novel_score'))}")
     return state
 
 
@@ -1470,7 +1558,7 @@ Rules:
     # 6. Final commit
     commit_hash = git_add_commit("export: manuscript, outline, arc summary, PDF")
     total_words = count_words_in_chapters()
-    log_result(commit_hash, "export", state.get("novel_score", "?"),
+    log_result(commit_hash, "export", fmt_score(state.get("novel_score")),
                total_words, "export", "Final export")
 
     if shutil.which("tectonic") and not compiled:
@@ -1690,7 +1778,7 @@ def run_pipeline(args):
     print(f"  State: phase={state.get('phase')}, "
           f"foundation_score={state.get('foundation_score', 0)}, "
           f"chapters={state.get('chapters_drafted', 0)}/{state.get('chapters_total', '?')}, "
-          f"novel_score={state.get('novel_score', 0)}")
+          f"novel_score={fmt_score(state.get('novel_score'))}")
 
     start_time = datetime.now()
 
@@ -1769,7 +1857,7 @@ def run_pipeline(args):
         "created_at": state.get("created_at", datetime.now().isoformat()),
         "last_modified": datetime.now().isoformat(),
         "phase": state.get("phase", "unknown"),
-        "novel_score": state.get("novel_score", 0.0),
+        "novel_score": state.get("novel_score"),
         "word_count": count_words_in_chapters(),
     })
 
@@ -1780,7 +1868,7 @@ def run_pipeline(args):
     print(f"  Foundation: {state.get('foundation_score', 0)}")
     print(f"  Chapters:   {state.get('chapters_drafted', 0)}/{state.get('chapters_total', '?')}")
     print(f"  Words:      {count_words_in_chapters()}")
-    print(f"  Novel:      {state.get('novel_score', 0)}")
+    print(f"  Novel:      {fmt_score(state.get('novel_score'))}")
     print(f"  Cycles:     {state.get('revision_cycle', 0)}")
 
     # Restore stdout/stderr and close the log file
