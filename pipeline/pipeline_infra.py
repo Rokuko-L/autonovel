@@ -116,27 +116,27 @@ def _env_int(name: str, default: int) -> int:
 
 
 def foundation_threshold() -> float:
-    return _env_float("AUTONOVEL_FOUNDATION_THRESHOLD", FOUNDATION_THRESHOLD)
+    return _env_float("GESAKU_FOUNDATION_THRESHOLD", FOUNDATION_THRESHOLD)
 
 
 def chapter_threshold() -> float:
-    return _env_float("AUTONOVEL_CHAPTER_THRESHOLD", CHAPTER_THRESHOLD)
+    return _env_float("GESAKU_CHAPTER_THRESHOLD", CHAPTER_THRESHOLD)
 
 
 def max_chapter_attempts() -> int:
-    return _env_int("AUTONOVEL_MAX_CHAPTER_ATTEMPTS", MAX_CHAPTER_ATTEMPTS)
+    return _env_int("GESAKU_MAX_CHAPTER_ATTEMPTS", MAX_CHAPTER_ATTEMPTS)
 
 
 def min_revision_cycles() -> int:
-    return _env_int("AUTONOVEL_MIN_REVISION_CYCLES", MIN_REVISION_CYCLES)
+    return _env_int("GESAKU_MIN_REVISION_CYCLES", MIN_REVISION_CYCLES)
 
 
 def max_revision_cycles() -> int:
-    return _env_int("AUTONOVEL_MAX_REVISION_CYCLES", MAX_REVISION_CYCLES)
+    return _env_int("GESAKU_MAX_REVISION_CYCLES", MAX_REVISION_CYCLES)
 
 
 def plateau_delta() -> float:
-    return _env_float("AUTONOVEL_PLATEAU_DELTA", PLATEAU_DELTA)
+    return _env_float("GESAKU_PLATEAU_DELTA", PLATEAU_DELTA)
 
 def ensure_gitignore_projects():
     """Ensure root .gitignore contains a rule for projects/ to prevent nested-repo commits."""

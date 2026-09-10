@@ -18,11 +18,11 @@ Gate overrides are read at call time via helpers (defaults above; env wins):
 
 | Helper | Env var |
 |---|---|
-| `foundation_threshold()` | `AUTONOVEL_FOUNDATION_THRESHOLD` |
-| `chapter_threshold()` | `AUTONOVEL_CHAPTER_THRESHOLD` |
-| `max_chapter_attempts()` | `AUTONOVEL_MAX_CHAPTER_ATTEMPTS` |
-| `min_revision_cycles()` / `max_revision_cycles()` | `AUTONOVEL_MIN_REVISION_CYCLES` / `AUTONOVEL_MAX_REVISION_CYCLES` |
-| `plateau_delta()` | `AUTONOVEL_PLATEAU_DELTA` |
+| `foundation_threshold()` | `GESAKU_FOUNDATION_THRESHOLD` |
+| `chapter_threshold()` | `GESAKU_CHAPTER_THRESHOLD` |
+| `max_chapter_attempts()` | `GESAKU_MAX_CHAPTER_ATTEMPTS` |
+| `min_revision_cycles()` / `max_revision_cycles()` | `GESAKU_MIN_REVISION_CYCLES` / `GESAKU_MAX_REVISION_CYCLES` |
+| `plateau_delta()` | `GESAKU_PLATEAU_DELTA` |
 
 ## State & Registry
 

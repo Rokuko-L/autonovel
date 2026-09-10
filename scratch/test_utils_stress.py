@@ -10,7 +10,7 @@ from pathlib import Path
 class TestUtilsStress(unittest.TestCase):
     def setUp(self):
         # Store original environment and project name
-        self.orig_env_project = os.environ.get("AUTONOVEL_PROJECT")
+        self.orig_env_project = os.environ.get("GESAKU_PROJECT")
         self.orig_project_name = paths._project_name
         paths._project_name = None
 
@@ -24,9 +24,9 @@ class TestUtilsStress(unittest.TestCase):
     def tearDown(self):
         # Restore environment and project name
         if self.orig_env_project is not None:
-            os.environ["AUTONOVEL_PROJECT"] = self.orig_env_project
-        elif "AUTONOVEL_PROJECT" in os.environ:
-            del os.environ["AUTONOVEL_PROJECT"]
+            os.environ["GESAKU_PROJECT"] = self.orig_env_project
+        elif "GESAKU_PROJECT" in os.environ:
+            del os.environ["GESAKU_PROJECT"]
         paths._project_name = self.orig_project_name
 
         # Clean up any temporary folders created in projects

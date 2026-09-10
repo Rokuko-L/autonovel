@@ -1,12 +1,11 @@
 [project]
-name = "autonovel"
+name = "gesaku"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "python-dotenv>=1.2.2",
-    "customtkinter>=5.2.2",
     "loguru>=0.7.3",
     "pydantic>=2.0",
     "fastapi>=0.141.1",

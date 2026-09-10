@@ -307,7 +307,7 @@ export default function PipelineDashboard({ project, tab }) {
   const activeTab = TABS.some((t) => t.id === tab) ? tab : 'run'
 
   useEffect(() => {
-    document.title = `autonovel · ${project} · pipeline`
+    document.title = `gesaku · ${project} · pipeline`
   }, [project])
 
   return (

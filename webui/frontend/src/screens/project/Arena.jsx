@@ -13,7 +13,7 @@ export default function Arena({ project }) {
   const [history, setHistory] = useState([])
 
   useEffect(() => {
-    document.title = `autonovel · ${project} · arena`
+    document.title = `gesaku · ${project} · arena`
     api.listMatches(project).then(setMatches).catch(() => {})
   }, [project])
 

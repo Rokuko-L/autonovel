@@ -2,7 +2,7 @@
 """
 mock_llm.py -- Offline mock for the LLM API layer.
 
-Every LLM call in autonovel flows through llm.call_llm(). Scripts bind
+Every LLM call in gesaku flows through llm.call_llm(). Scripts bind
 it at import time ("from llm import call_llm"), so installing the
 mock rebinds EVERY module in sys.modules that still holds the original
 reference. Install before or after importing pipeline modules -- both work.

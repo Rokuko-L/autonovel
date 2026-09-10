@@ -32,7 +32,7 @@ webui/frontend/src/api/client.js ── fetch + SSE (/api/stream) ──> screen
 satisfy it. Project names pass through `paths.set_project_name` (path-isolation
 check). The default project is the most recently touched `state.json`; the
 frontend pins the active project via the hash route (`#/p/<name>/…`), mirrored
-in `localStorage.autonovel_active_project`.
+in `localStorage.gesaku_active_project`.
 
 ## Run lifecycle (webui/run_manager.py)
 

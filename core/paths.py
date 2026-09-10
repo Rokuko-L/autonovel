@@ -45,14 +45,14 @@ def set_project_name(name: str):
     if not is_rel or proposed_dir == projects_root:
         raise ValueError("Invalid project name: path isolation violation")
     _project_name = name
-    os.environ["AUTONOVEL_PROJECT"] = name
+    os.environ["GESAKU_PROJECT"] = name
 
 def get_project_name() -> str:
-    """Retrieve the active project name, falling back to AUTONOVEL_PROJECT env or 'default'."""
+    """Retrieve the active project name, falling back to GESAKU_PROJECT env or 'default'."""
     global _project_name
     if _project_name is not None:
         return _project_name
-    env_name = os.environ.get("AUTONOVEL_PROJECT")
+    env_name = os.environ.get("GESAKU_PROJECT")
     if env_name:
         return env_name
     return "default"

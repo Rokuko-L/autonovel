@@ -1,6 +1,6 @@
 """Manual API smoke check against the resolved provider endpoint.
 
-Reads the same config the pipeline uses (AUTONOVEL_PROVIDER, per-role
+Reads the same config the pipeline uses (GESAKU_PROVIDER, per-role
 overrides, base URLs, extra headers) and fires real requests through
 core.llm's own request builder — what this validates is exactly what a
 run will send.

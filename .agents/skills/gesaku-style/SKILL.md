@@ -1,9 +1,9 @@
 ---
-name: autonovel-style
-description: Applies the autonovel repo's Python coding style and structural rules. Use this whenever writing or reviewing code in D:\Tugas\LLM\autonovel.
+name: gesaku-style
+description: Applies the gesaku repo's Python coding style and structural rules. Use this whenever writing or reviewing code in D:\Tugas\LLM\autonovel.
 ---
 
-# autonovel Coding Style
+# Gesaku Coding Style
 
 ## Module Layout (where new code goes)
 

@@ -1,4 +1,4 @@
-# Project: Autonovel Pipeline Refactoring (COMPLETED — historical record)
+# Project: Gesaku Pipeline Refactoring (COMPLETED — historical record)
 
 > Status: all milestones shipped. Note that `utils.py` has since been split
 > into `core/` modules (`paths.py`, `llm.py`, ...) — wherever this document
@@ -6,7 +6,7 @@
 > [../core/path-resolution.md](../core/path-resolution.md).
 
 ## Architecture
-Autonovel is a fully automated novel generation pipeline. The goal of this refactoring is to support multi-project isolation so that different novels/sessions can run concurrently under `projects/<project_name>/`.
+Gesaku is a fully automated novel generation pipeline. The goal of this refactoring is to support multi-project isolation so that different novels/sessions can run concurrently under `projects/<project_name>/`.
 
 - **Registry System**: `projects/registry.json` tracks project sessions atomically.
 - **Path Resolution**: `utils.py` acts as the dynamic path resolution provider, determining folders and files dynamically based on active configuration.
@@ -46,7 +46,7 @@ Autonovel is a fully automated novel generation pipeline. The goal of this refac
 - `utils.set_project_name(name: str)`
   - Explicitly sets the active project name in global or session-level configuration memory.
 - `utils.get_project_name() -> str`
-  - Gets the active project name, falling back to `AUTONOVEL_PROJECT` env var, and then defaults to `"default"`.
+  - Gets the active project name, falling back to `GESAKU_PROJECT` env var, and then defaults to `"default"`.
 - `utils.save_registry(data: dict, path: Path)`
   - Atomically writes registry JSON data via `.tmp` file and rename, with cleanup on JSON serialization failure.
 - `utils.get_chapters_dir() -> Path`

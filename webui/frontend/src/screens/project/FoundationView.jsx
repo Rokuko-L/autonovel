@@ -30,7 +30,7 @@ export default function FoundationView({ project, tab }) {
     setGraph(null)
     setSel(null)
     setArrangeError(null)
-    document.title = `autonovel · ${project} · foundation`
+    document.title = `gesaku · ${project} · foundation`
     api.getFoundation(project).then((d) => { if (d) setData(d) })
     api.getEntityGraph(project).then((g) => { if (g) setGraph(g) })
   }, [project])

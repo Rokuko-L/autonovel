@@ -2,7 +2,7 @@
 """
 run_pipeline.py — Fully automated novel pipeline orchestrator.
 
-Runs the complete autonovel pipeline from seed concept to finished novel.
+Runs the complete gesaku pipeline from seed concept to finished novel.
 Manages state, git commits, evaluation, and retry logic.
 
 Usage:
@@ -272,7 +272,7 @@ def run_foundation(state: dict) -> dict:
             step(f"Foundation PLATEAU: {stall_count} consecutive iterations without "
                  f"improvement (best {best_score} vs threshold {threshold}) — "
                  f"proceeding to drafting with the best docs. Lower "
-                 f"AUTONOVEL_FOUNDATION_THRESHOLD to keep pushing.")
+                 f"GESAKU_FOUNDATION_THRESHOLD to keep pushing.")
             break
     else:
         step(f"WARNING: max iterations ({MAX_FOUNDATION_ITERS}) reached "
@@ -901,8 +901,8 @@ def run_revision(
                 # Parallelism: default 4 workers even for local proxies —
                 # build_arc_summary/build_outline already run 4-12 concurrent
                 # LLM calls against the same endpoint. Override with
-                # AUTONOVEL_MAX_WORKERS (e.g. =1 for weak single-request models).
-                max_workers = int(os.getenv("AUTONOVEL_MAX_WORKERS", "4"))
+                # GESAKU_MAX_WORKERS (e.g. =1 for weak single-request models).
+                max_workers = int(os.getenv("GESAKU_MAX_WORKERS", "4"))
                 with ThreadPoolExecutor(max_workers=max_workers) as pool:
                     futures = {
                         pool.submit(uv_run, f"adversarial_edit.py {ch}", 600): ch
@@ -1071,8 +1071,8 @@ def run_revision(
                     return {"ch_num": ch_num, "error": str(e)}
 
             # Parallelism: default 4 workers even for local proxies —
-            # override with AUTONOVEL_MAX_WORKERS (e.g. =1 for weak models).
-            max_workers = int(os.getenv("AUTONOVEL_MAX_WORKERS", "4"))
+            # override with GESAKU_MAX_WORKERS (e.g. =1 for weak models).
+            max_workers = int(os.getenv("GESAKU_MAX_WORKERS", "4"))
             max_workers = max(1, min(max_workers, len(consensus_items)))
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 futures = {pool.submit(_revise_one, item): item for item in consensus_items}
@@ -1614,9 +1614,9 @@ def sanity_check(args):
         ok = False
 
     # 5. Genre is specified (skip if already configured from a previous run)
-    if not args.genre and not os.getenv("AUTONOVEL_GENRE"):
+    if not args.genre and not os.getenv("GESAKU_GENRE"):
         if not paths.get_active_genre_path().exists() and not (root_dir / "active_genre.json").exists():
-            print("FAIL: provide --genre or set AUTONOVEL_GENRE in .env", file=sys.stderr)
+            print("FAIL: provide --genre or set GESAKU_GENRE in .env", file=sys.stderr)
             ok = False
 
     # --- Warnings (non-fatal) ---
@@ -1774,7 +1774,7 @@ def run_pipeline(args):
             start_idx = 0
         phases = PHASE_ORDER[start_idx:]
 
-    banner(f"AUTONOVEL PIPELINE — phases: {', '.join(phases)}")
+    banner(f"GESAKU PIPELINE — phases: {', '.join(phases)}")
     print(f"  State: phase={state.get('phase')}, "
           f"foundation_score={state.get('foundation_score', 0)}, "
           f"chapters={state.get('chapters_drafted', 0)}/{state.get('chapters_total', '?')}, "
@@ -1853,7 +1853,7 @@ def run_pipeline(args):
     # Update project registry with final metadata
     update_registry(args.project, {
         "title": state.get("title", args.project),
-        "genre": args.genre or os.getenv("AUTONOVEL_GENRE", "unknown"),
+        "genre": args.genre or os.getenv("GESAKU_GENRE", "unknown"),
         "created_at": state.get("created_at", datetime.now().isoformat()),
         "last_modified": datetime.now().isoformat(),
         "phase": state.get("phase", "unknown"),
@@ -1879,7 +1879,7 @@ def run_pipeline(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Autonovel pipeline orchestrator — seed to finished novel",
+        description="Gesaku pipeline orchestrator — seed to finished novel",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
@@ -1893,7 +1893,7 @@ Examples:
 """)
 
     parser.add_argument(
-        "--project", default=os.environ.get("AUTONOVEL_PROJECT", "default"),
+        "--project", default=os.environ.get("GESAKU_PROJECT", "default"),
         help="Project name (creates isolated session in projects/<name>/)")
     parser.add_argument(
         "--from-scratch", action="store_true",
@@ -1926,17 +1926,17 @@ Examples:
         "--skip-opus-review", action="store_true",
         help="Skip Opus review loop phase")
     parser.add_argument(
-        "--perspective", default=os.environ.get("AUTONOVEL_PERSPECTIVE", ""),
+        "--perspective", default=os.environ.get("GESAKU_PERSPECTIVE", ""),
         choices=["", "first_person", "third_person"],
         help="Force narrative perspective (first_person / third_person). "
              "Empty = foundation decides.")
-    parser.add_argument("--genre", default=os.environ.get("AUTONOVEL_GENRE", ""),
+    parser.add_argument("--genre", default=os.environ.get("GESAKU_GENRE", ""),
                         help="Genre description (e.g., 'Cyberpunk Noir')")
-    parser.add_argument("--chapters", default=os.environ.get("AUTONOVEL_CHAPTERS", "24"),
+    parser.add_argument("--chapters", default=os.environ.get("GESAKU_CHAPTERS", "24"),
                         help="Number of chapters (or 'short story', 'novella', etc.)")
     parser.add_argument("--words-per-chapter", type=int, default=3200,
                         help="Target word count per chapter (default: 3200)")
-    parser.add_argument("--notes", default=os.environ.get("AUTONOVEL_NOTES", ""),
+    parser.add_argument("--notes", default=os.environ.get("GESAKU_NOTES", ""),
                         help="Story premise or file path (e.g., --notes my_ideas.txt). "
                              "Auto-expands if <300 words, auto-summarizes if >1500.")
 

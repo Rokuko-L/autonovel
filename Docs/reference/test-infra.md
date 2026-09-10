@@ -1,12 +1,12 @@
-# Autonovel E2E Test Infrastructure Documentation
+# Gesaku E2E Test Infrastructure Documentation
 
-This document describes the End-to-End (E2E) Test Infrastructure for the Autonovel isolated project refactoring. The E2E test suite validates project isolation, dynamic path helper resolution, CLI integration, lifecycle management, git guard containment, and typesetting sandboxing.
+This document describes the End-to-End (E2E) Test Infrastructure for the Gesaku isolated project refactoring. The E2E test suite validates project isolation, dynamic path helper resolution, CLI integration, lifecycle management, git guard containment, and typesetting sandboxing.
 
 ---
 
 ## 1. System Architecture Overview
 
-Autonovel is a fully automated novel generation pipeline. To support concurrent runs, it implements the following isolated project session architecture under the root directory:
+Gesaku is a fully automated novel generation pipeline. To support concurrent runs, it implements the following isolated project session architecture under the root directory:
 
 - **Registry System (`projects/registry.json`)**: Tracks active project sessions atomically.
 - **Dynamic Path Resolution (`utils.py`)**: Dynamically resolves folders and files under `projects/<project_name>/`.
@@ -114,7 +114,7 @@ This file contains tests verifying active project state, atomic registry writes,
 45. **`test_f5_pipeline_lifecycle_resume`**: Verify pipeline reads state and resumes from previous stage.
 46. **`test_f5_pipeline_lifecycle_from_scratch`**: Verify starting fresh deletes existing files and resets state to foundation.
 47. **`test_f5_pipeline_multi_project_isolation`**: Verify concurrent runs in Project A and B do not overlap or corrupt each other.
-48. **`test_f7_subprocess_inherits_project_env`**: Verify spawned scripts receive `AUTONOVEL_PROJECT` in environment variables.
+48. **`test_f7_subprocess_inherits_project_env`**: Verify spawned scripts receive `GESAKU_PROJECT` in environment variables.
 49. **`test_f7_typesetting_subprocess_cwd`**: Verify tectonic compilation is run with typeset directory as working directory.
 50. **`test_f7_typesetting_pdf_sandboxed`**: Verify PDF is generated inside the isolated typeset folder.
 51. **`test_f7_typesetting_aux_files_contained`**: Verify auxiliary build outputs do not leak to project root or parent.

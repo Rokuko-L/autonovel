@@ -129,7 +129,7 @@ class ValidationRetryIntegrationTest(unittest.TestCase):
             self.assertIn("CHAPTER A", mock.last_prompt())
         finally:
             paths._project_name = orig_name
-            os.environ.pop("AUTONOVEL_PROJECT", None)
+            os.environ.pop("GESAKU_PROJECT", None)
             shutil.rmtree(paths.get_project_dir(), ignore_errors=True)
 
 

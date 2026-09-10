@@ -54,7 +54,7 @@ function TopNav({ route }) {
     <nav className="flex shrink-0 items-end gap-5 border-b border-line bg-ink-950 px-5 pt-3">
       <button onClick={() => navigate('/projects')} className="pb-2">
         <span className="font-display text-sm font-semibold tracking-tight text-paper lowercase">
-          autonovel<span className="blinker ml-0.5 align-middle" style={{ width: 6, height: 12 }} />
+          gesaku<span className="blinker ml-0.5 align-middle" style={{ width: 6, height: 12 }} />
         </span>
       </button>
       {item('01', 'projects', '/projects', route.name === 'projects')}

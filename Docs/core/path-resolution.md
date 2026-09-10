@@ -1,6 +1,6 @@
 # Path Resolution & Project Isolation (`core/paths.py`)
 
-All file access in autonovel goes through `paths.py`. Nothing may hardcode
+All file access in gesaku goes through `paths.py`. Nothing may hardcode
 `projects/<name>/...` strings — multi-project isolation depends on every path
 being derived from the active project name at call time.
 
@@ -9,8 +9,8 @@ being derived from the active project name at call time.
 | Function | Purpose |
 |---|---|
 | `get_root_dir() -> Path` | Walks up from `__file__` to find `pyproject.toml`/`.env`. Cached in `_root_dir`; raises `RuntimeError` if missing. |
-| `set_project_name(name)` | Sets the active project. **Validates path isolation**: resolved dir must be inside `projects/` (blocks `../`, `.`, absolute escapes). Also sets `AUTONOVEL_PROJECT` env var so subprocesses inherit it. |
-| `get_project_name() -> str` | Explicit set → `AUTONOVEL_PROJECT` env → `"default"`. |
+| `set_project_name(name)` | Sets the active project. **Validates path isolation**: resolved dir must be inside `projects/` (blocks `../`, `.`, absolute escapes). Also sets `GESAKU_PROJECT` env var so subprocesses inherit it. |
+| `get_project_name() -> str` | Explicit set → `GESAKU_PROJECT` env → `"default"`. |
 | `get_project_dir() -> Path` | `projects/<name>/`, re-validated on every call. |
 | `save_json_atomic(data, path)` | Atomic JSON write: tmp file + `os.replace`, cleanup on failure. |
 | `save_registry(data, path)` | Thin wrapper over `save_json_atomic` (kept for call-site clarity). |

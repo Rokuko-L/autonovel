@@ -11,8 +11,8 @@ LiteLLM proxies, DeepSeek's Anthropic-compat endpoint, vLLM/Ollama.
 
 Dialect resolution per role (`writer`/`judge`/`review`):
 
-1. `AUTONOVEL_{ROLE}_PROVIDER` (e.g. `AUTONOVEL_JUDGE_PROVIDER=anthropic`)
-2. `AUTONOVEL_PROVIDER` (global default)
+1. `GESAKU_{ROLE}_PROVIDER` (e.g. `GESAKU_JUDGE_PROVIDER=anthropic`)
+2. `GESAKU_PROVIDER` (global default)
 3. Inference: `OPENAI_API_KEY` set and `ANTHROPIC_API_KEY` unset → `openai`, else `anthropic`
 
 Invalid values raise `ProviderError` naming the exact env var to fix.
@@ -36,12 +36,12 @@ providers. Unsolicited SSE stream bodies are parsed for both chunk shapes.
 
 | Variable | Purpose |
 |---|---|
-| `AUTONOVEL_PROVIDER` | Global dialect: `anthropic` \| `openai` |
-| `AUTONOVEL_{ROLE}_PROVIDER` | Per-role dialect override |
+| `GESAKU_PROVIDER` | Global dialect: `anthropic` \| `openai` |
+| `GESAKU_{ROLE}_PROVIDER` | Per-role dialect override |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` | Anthropic-dialect credentials + endpoint (any compat gateway) |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` | OpenAI-dialect credentials + endpoint (include the `/v1` prefix if the gateway uses one) |
-| `AUTONOVEL_{ROLE}_MODEL` | Model id — free-form string, gateway namespacing (`deepseek/deepseek-v4-pro`) works as-is |
-| `AUTONOVEL_EXTRA_HEADERS` | JSON object merged into every request (OpenRouter `HTTP-Referer`/`X-Title`, etc.) |
+| `GESAKU_{ROLE}_MODEL` | Model id — free-form string, gateway namespacing (`deepseek/deepseek-v4-pro`) works as-is |
+| `GESAKU_EXTRA_HEADERS` | JSON object merged into every request (OpenRouter `HTTP-Referer`/`X-Title`, etc.) |
 
 ## Key Types
 

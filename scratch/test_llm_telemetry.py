@@ -38,7 +38,7 @@ def api_response(status=200, body=None):
 
 class LLMTelemetryTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="autonovel_telem_"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="gesaku_telem_"))
         (self.tmp / "projects").mkdir()
         self._orig_root = paths._root_dir
         paths._root_dir = self.tmp
@@ -47,7 +47,7 @@ class LLMTelemetryTest(unittest.TestCase):
     def tearDown(self):
         paths._root_dir = self._orig_root
         # do not leak project env into other suites
-        os.environ.pop("AUTONOVEL_PROJECT", None)
+        os.environ.pop("GESAKU_PROJECT", None)
 
     def _events(self):
         path = paths.get_llm_events_path()

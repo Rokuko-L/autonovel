@@ -1,4 +1,4 @@
-# autonovel
+# gesaku
 
 Autonomous fantasy novel writing pipeline. The agent writes and refines
 a novel across 5 co-evolving layers, guided by automated evaluation.
@@ -24,7 +24,7 @@ Before ANY writing or evaluation, the agent must internalize:
 
 ## Setup
 
-1. **Tag the run**: Create branch `autonovel/<tag>` from master.
+1. **Tag the run**: Create branch `gesaku/<tag>` from master.
 2. **Read all layer files** for full context.
 3. **Verify state.json** shows phase=foundation.
 4. **Confirm and go**.

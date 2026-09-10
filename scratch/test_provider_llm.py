@@ -27,46 +27,99 @@ def _mock_client(handler):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
+# Keys that resolve_provider / _build_request consult. Ambient shell env AND
+# load_dotenv() (triggered the moment any earlier discover module imports
+# core.paths / core.validation) can populate these — treat both as pollution.
+_LLM_ENV_KEYS = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "GESAKU_PROVIDER",
+    "GESAKU_WRITER_PROVIDER",
+    "GESAKU_JUDGE_PROVIDER",
+    "GESAKU_REVIEW_PROVIDER",
+    "GESAKU_WRITER_MODEL",
+    "GESAKU_JUDGE_MODEL",
+    "GESAKU_REVIEW_MODEL",
+    "GESAKU_EXTRA_HEADERS",
+)
+
+
+def _pinned_provider_env(provider, **overrides):
+    """Env overlay that pins the writer dialect so ambient keys cannot flip it.
+
+    Prefer this over relying on OPENAI_* / ANTHROPIC_* key inference:
+    discover-order load_dotenv() injects ANTHROPIC_API_KEY from the repo
+    .env, which silently turns OpenAI wire-format tests into Anthropic ones.
+    """
+    env = {"GESAKU_WRITER_PROVIDER": provider}
+    env.update(overrides)
+    return env
+
+
+class EnvIsolationTestBase(unittest.TestCase):
+    """Snapshot/restore LLM env + llm._client around every test.
+
+    Minimal discover-order guard: a case that forgets to restore (or a
+    module that mutates env at import time) cannot leak into the next case.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._saved_llm_env = {k: os.environ.get(k) for k in _LLM_ENV_KEYS}
+        self._saved_client = llm._client
+        self.addCleanup(self._restore_isolation)
+
+    def _restore_isolation(self):
+        for key, value in self._saved_llm_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        llm.set_client(self._saved_client)
+
+
 class ProviderResolutionTest(unittest.TestCase):
     def test_default_is_anthropic(self):
         with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+            os.environ.pop("GESAKU_PROVIDER", None)
             os.environ.pop("OPENAI_API_KEY", None)
             self.assertEqual(llm.resolve_provider("writer"), "anthropic")
 
     def test_global_override_applies_to_all_roles(self):
-        with patch.dict(os.environ, {"AUTONOVEL_PROVIDER": "openai"}):
+        with patch.dict(os.environ, {"GESAKU_PROVIDER": "openai"}):
             for role in llm.ROLES:
                 self.assertEqual(llm.resolve_provider(role), "openai")
 
     def test_role_override_beats_global(self):
-        env = {"AUTONOVEL_PROVIDER": "openai", "AUTONOVEL_JUDGE_PROVIDER": "anthropic"}
+        env = {"GESAKU_PROVIDER": "openai", "GESAKU_JUDGE_PROVIDER": "anthropic"}
         with patch.dict(os.environ, env):
             self.assertEqual(llm.resolve_provider("judge"), "anthropic")
             self.assertEqual(llm.resolve_provider("writer"), "openai")
 
     def test_key_inference_openai_only(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-x"}, clear=False):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+            os.environ.pop("GESAKU_PROVIDER", None)
             os.environ["ANTHROPIC_API_KEY"] = ""
             self.assertEqual(llm.resolve_provider("judge"), "openai")
             os.environ["ANTHROPIC_API_KEY"] = "sk-ant"
             self.assertEqual(llm.resolve_provider("judge"), "anthropic")
 
     def test_invalid_provider_raises_actionable_error(self):
-        with patch.dict(os.environ, {"AUTONOVEL_PROVIDER": "mistral"}):
+        with patch.dict(os.environ, {"GESAKU_PROVIDER": "mistral"}):
             with self.assertRaises(llm.ProviderError) as ctx:
                 llm.resolve_provider("writer")
-            self.assertIn("AUTONOVEL_PROVIDER", str(ctx.exception))
+            self.assertIn("GESAKU_PROVIDER", str(ctx.exception))
 
     def test_role_model_env_var_respected(self):
-        with patch.dict(os.environ, {"AUTONOVEL_JUDGE_MODEL": "some/gateway-model"}):
+        with patch.dict(os.environ, {"GESAKU_JUDGE_MODEL": "some/gateway-model"}):
             self.assertEqual(llm._resolve_model("anthropic", "judge"), "some/gateway-model")
         self.assertEqual(
             llm._resolve_model("openai", "judge"), llm.DEFAULT_MODELS["openai"]["judge"])
 
 
-class AnthropicWireFormatTest(unittest.TestCase):
+class AnthropicWireFormatTest(EnvIsolationTestBase):
     """call_llm over the anthropic dialect must emit the same wire format as before."""
 
     def test_request_shape_and_auth(self):
@@ -79,15 +132,13 @@ class AnthropicWireFormatTest(unittest.TestCase):
                 "content": [{"type": "text", "text": "ok"}],
                 "stop_reason": "end_turn",
             })
-        env = {
-            "ANTHROPIC_API_KEY": "sk-ant-test",
-            "ANTHROPIC_BASE_URL": "https://gateway.example",
-        }
-        for var in ("AUTONOVEL_PROVIDER", "AUTONOVEL_WRITER_PROVIDER"):
-            env[var] = ""  # ensure absent
+        env = _pinned_provider_env(
+            "anthropic",
+            ANTHROPIC_API_KEY="sk-ant-test",
+            ANTHROPIC_BASE_URL="https://gateway.example",
+        )
         with patch.dict(os.environ, env, clear=False):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
-            os.environ.pop("AUTONOVEL_WRITER_PROVIDER", None)
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
@@ -108,8 +159,13 @@ class AnthropicWireFormatTest(unittest.TestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             captured["headers"] = dict(request.headers)
             return httpx.Response(200, json={"content": [{"type": "text", "text": "x"}]})
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "", "ANTHROPIC_BASE_URL": "http://localhost:8787"}):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+        env = _pinned_provider_env(
+            "anthropic",
+            ANTHROPIC_API_KEY="",
+            ANTHROPIC_BASE_URL="http://localhost:8787",
+        )
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
@@ -119,7 +175,7 @@ class AnthropicWireFormatTest(unittest.TestCase):
         self.assertNotIn("x-api-key", captured["headers"])
 
 
-class OpenAIWireFormatTest(unittest.TestCase):
+class OpenAIWireFormatTest(EnvIsolationTestBase):
     def test_request_shape_system_message_and_bearer(self):
         captured = {}
         def handler(request: httpx.Request) -> httpx.Response:
@@ -131,11 +187,16 @@ class OpenAIWireFormatTest(unittest.TestCase):
             })
         # gpt-4o (non-reasoning) exercises the max_tokens+temperature path;
         # the reasoning path has its own test below.
-        env = {"OPENAI_API_KEY": "sk-oai", "OPENAI_BASE_URL": "https://openrouter.example/api/v1",
-               "AUTONOVEL_WRITER_MODEL": "gpt-4o"}
+        # Pin openai: ambient ANTHROPIC_API_KEY (shell or load_dotenv from
+        # core.paths) would otherwise flip inference to the anthropic dialect.
+        env = _pinned_provider_env(
+            "openai",
+            OPENAI_API_KEY="sk-oai",
+            OPENAI_BASE_URL="https://openrouter.example/api/v1",
+            GESAKU_WRITER_MODEL="gpt-4o",
+        )
         with patch.dict(os.environ, env, clear=False):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
-            os.environ.pop("AUTONOVEL_WRITER_PROVIDER", None)
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
@@ -159,8 +220,13 @@ class OpenAIWireFormatTest(unittest.TestCase):
             captured["body"] = json.loads(request.content)
             return httpx.Response(200, json={
                 "choices": [{"message": {"content": "x"}, "finish_reason": "stop"}]})
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk", "AUTONOVEL_WRITER_MODEL": "gpt-5.2"}):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+        env = _pinned_provider_env(
+            "openai",
+            OPENAI_API_KEY="sk",
+            GESAKU_WRITER_MODEL="gpt-5.2",
+        )
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
@@ -176,8 +242,9 @@ class OpenAIWireFormatTest(unittest.TestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={
                 "choices": [{"message": {"content": "partial"}, "finish_reason": "length"}]})
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk"}):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+        env = _pinned_provider_env("openai", OPENAI_API_KEY="sk")
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
@@ -196,8 +263,9 @@ class OpenAIWireFormatTest(unittest.TestCase):
         )
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk"}):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+        env = _pinned_provider_env("openai", OPENAI_API_KEY="sk")
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
@@ -207,29 +275,31 @@ class OpenAIWireFormatTest(unittest.TestCase):
         self.assertEqual(out, "Hello")
 
 
-class ExtraHeadersTest(unittest.TestCase):
+class ExtraHeadersTest(EnvIsolationTestBase):
     def test_extra_headers_merged_into_request(self):
         captured = {}
         def handler(request: httpx.Request) -> httpx.Response:
             captured["headers"] = dict(request.headers)
             return httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
-        env = {
-            "OPENAI_API_KEY": "sk",
-            "AUTONOVEL_EXTRA_HEADERS": json.dumps({"X-Title": "autonovel", "HTTP-Referer": "https://example.com"}),
-        }
-        with patch.dict(os.environ, env):
-            os.environ.pop("AUTONOVEL_PROVIDER", None)
+        env = _pinned_provider_env(
+            "openai",
+            OPENAI_API_KEY="sk",
+            GESAKU_EXTRA_HEADERS=json.dumps(
+                {"X-Title": "gesaku", "HTTP-Referer": "https://example.com"}),
+        )
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("GESAKU_PROVIDER", None)
             original = llm.get_client()
             llm.set_client(_mock_client(handler))
             try:
                 llm.call_llm("p", model_key="writer")
             finally:
                 llm.set_client(original)
-        self.assertEqual(captured["headers"]["x-title"], "autonovel")
+        self.assertEqual(captured["headers"]["x-title"], "gesaku")
         self.assertEqual(captured["headers"]["http-referer"], "https://example.com")
 
     def test_invalid_extra_headers_json_raises(self):
-        with patch.dict(os.environ, {"AUTONOVEL_EXTRA_HEADERS": "{not json"}):
+        with patch.dict(os.environ, {"GESAKU_EXTRA_HEADERS": "{not json"}):
             with self.assertRaises(llm.ProviderError):
                 llm._load_extra_headers()
 

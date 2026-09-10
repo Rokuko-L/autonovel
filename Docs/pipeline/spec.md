@@ -1,4 +1,4 @@
-# AUTONOVEL: Reproducible Novel Pipeline
+# GESAKU: Reproducible Novel Pipeline
 
 ## Overview
 
@@ -108,7 +108,7 @@ Everything below is created automatically on a branch.
 INPUT:  seed.txt (user-provided or generated via seed.py)
 OUTPUT: branch created, .env configured
 
-1. git checkout -b autonovel/<tag>
+1. git checkout -b gesaku/<tag>
 2. Verify .env has ANTHROPIC_API_KEY
 3. Verify seed.txt exists and is specific enough
    (world-differentiator, central tension, cost/constraint, sensory hook)
@@ -153,7 +153,7 @@ Known behaviors (smoke run, 4-chapter test):
     LLM-generated rubric is calibrated harshly (the judge prompt tells it to
     revise down scores above 7). FIXED: after 3 consecutive non-improving
     iterations the loop proceeds with the best docs (FOUNDATION_PLATEAU_ITERS);
-    the gate itself is overridable via AUTONOVEL_FOUNDATION_THRESHOLD.
+    the gate itself is overridable via GESAKU_FOUNDATION_THRESHOLD.
     Improvement is strict (pipeline_infra.foundation_plateau): a TIED score
     counts as a stall, so a judge returning flat scores still exits early.
   - --notes accepts inline text or a file path; path resolution only kicks

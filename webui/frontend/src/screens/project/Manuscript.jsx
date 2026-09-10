@@ -52,7 +52,7 @@ export default function Manuscript({ project }) {
   const [sel, setSel] = useState(0)
 
   useEffect(() => {
-    document.title = `autonovel · ${project} · manuscript`
+    document.title = `gesaku · ${project} · manuscript`
     setChapters(null)
     api.listChapters(project).then((cs) => {
       setChapters(cs)
