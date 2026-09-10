@@ -2,319 +2,269 @@
 
 # gesaku
 
-An autonomous pipeline that writes a complete novel from a single premise.
-Feed it a genre and a one-sentence idea — it builds the world, characters,
-outline, drafts every chapter, revises them, and exports a finished manuscript.
+**An autonomous pipeline that writes a complete novel from a single premise.**
 
-Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch): the same modify-evaluate-keep/discard loop, applied to fiction.
+Feed it a genre and a one-sentence idea — it builds the world, characters, and outline, drafts every chapter, revises against its own scores, and exports a finished PDF.
+
+Built for two kinds of operators: **agents** that drive it from the CLI, and **humans** who watch the same run live in a web console.
+
+Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — the modify → evaluate → keep/discard loop, applied to fiction.
 
 </div>
 
-## What is this?
+---
 
-gesaku is a fully automated novel-generation pipeline. You provide a genre and a premise, and it:
+## What you get
 
-1. **Generates a genre configuration** — system prompts, evaluation criteria, and generation templates tailored to your genre
-2. **Builds the foundation** — world bible, character registry, chapter outline, foreshadowing ledger, canon
-3. **Drafts every chapter** — writes sequentially with automatic retries on low scores
-4. **Revises the manuscript** — adversarial editing, reader panel evaluations, automated revision briefs, rewrite cycles with plateau detection
-5. **Exports a finished PDF** — LaTeX typeset novel with a professionally designed layout
+| | |
+|---|---|
+| **Pipeline** | Genre config → foundation (world / characters / outline / canon) → sequential drafting → adversarial revision with plateau detection → LaTeX PDF |
+| **CLI** | `uv run gesaku run --json` — launch, stream structured events, stop. Same supervisor as the UI. |
+| **Console** | `uv run gesaku` — React + FastAPI operator console on `:8600` (projects, pipeline dashboard, scores, SSE live feed) |
+| **Providers** | Anthropic *or* OpenAI dialect — DeepSeek, OpenRouter, Groq, Together, LiteLLM, first-party, … per-role overrides |
+| **Multi-project** | Isolated workspaces under `projects/<name>/` with their own state, logs, and git history |
 
-Each phase scores its output and only keeps improvements (modify → evaluate → keep/discard).
+Every phase scores its output and only keeps improvements.
 
-## What You Need to Install
+---
 
-### Essentials
-
-| Dependency | Version | Why |
-|------------|---------|-----|
-| [Python](https://www.python.org/downloads/) | 3.12+ | Runtime |
-| [uv](https://docs.astral.sh/uv/#installation) | latest | Package manager (replaces pip) |
-| An API key | — | LLM provider (see below) |
-
-### Install uv
+## Quick start
 
 ```bash
-# Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+git clone https://github.com/Rokuko-L/gesaku.git && cd gesaku
+cp .env.example .env
+# put an API key in .env (see Configuration)
 
-# macOS / Linux
+# agent-style: start a novel, stream JSONL
+uv run gesaku run --project demo --from-scratch \
+  --genre "Cyberpunk Noir" \
+  --chapters 12 \
+  --notes "Detective with a heart condition" \
+  --json
+```
+
+In another terminal (optional, same run):
+
+```bash
+uv run gesaku                 # open the console — project appears live
+uv run gesaku status --json
+uv run gesaku logs -f --project demo
+```
+
+A 12-chapter novel typically takes **20–40+ minutes** of wall time depending on models and retries.
+
+`--notes` accepts a string or a file path. Short notes (&lt;300 words) are auto-expanded; long ones (&gt;1500) auto-summarized.
+
+---
+
+## Install
+
+| Need | Why |
+|------|-----|
+| [Python 3.12+](https://www.python.org/downloads/) | Runtime |
+| [uv](https://docs.astral.sh/uv/#installation) | Deps + `uv run gesaku` |
+| An API key | Any Anthropic- or OpenAI-compatible endpoint |
+| Node 20+ | Only for console `--dev` / rebuilding the SPA |
+| [Tectonic](https://tectonic-typesetting.github.io/) | Only for PDF export |
+| EB Garamond fonts | Only for PDF typesetting (`uv run python install_fonts.py`) |
+
+```bash
+# uv (Windows)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+# uv (macOS / Linux)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Verify: `uv --version`
-
-### Get an API Key
-
-gesaku supports any Anthropic-compatible provider:
-
-- **Anthropic** — get a key at https://console.anthropic.com/
-- **DeepSeek** — get a key at https://platform.deepseek.com/ and use `https://api.deepseek.com/anthropic` as base URL
-- **OpenRouter** — get a key at https://openrouter.ai/ and use their Anthropic-compatible endpoint
-
-### Optional: Tectonic (for PDF export)
-
-Required only if you want the pipeline to compile the novel into a PDF.
-
-**Windows:**
-```powershell
-scoop install tectonic
-```
-Or download from [GitHub Releases](https://github.com/tectonic-typesetting/tectonic/releases) — place `tectonic.exe` somewhere in your PATH.
-
-**macOS:**
-```bash
-brew install tectonic
-```
-
-**Linux:**
-```bash
-sudo apt install tectonic          # Debian/Ubuntu
-sudo dnf install tectonic          # Fedora
-sudo pacman -S tectonic            # Arch
-```
-Or download the Linux binary from [GitHub Releases](https://github.com/tectonic-typesetting/tectonic/releases).
-
-Verify: `tectonic --version`
-
-### Optional: EB Garamond Fonts (for PDF typesetting)
-
-The LaTeX output uses EB Garamond. If you skip this, the PDF build will fail at the font stage.
-
-Run the included installer script:
-```bash
-uv run python install_fonts.py
-```
-
-Or install manually:
-
-**Windows:**
-Download from [Google Fonts](https://fonts.google.com/specimen/EB+Garamond) and install for your user (double-click the `.ttf` files → Install).
-
-**macOS:**
-```bash
-brew install --cask font-eb-garamond
-```
-
-**Linux:**
-```bash
-sudo apt install fonts-ebgaramond
-```
-
-## Quick Start
-
-```bash
-git clone <repo-url> && cd gesaku
-cp .env.example .env
-# Edit .env with your API key and model choices
-
-# Run the full pipeline from scratch
-uv run python run_pipeline.py --from-scratch \
-  --genre "Cyberpunk Noir" \
-  --chapters 12 \
-  --notes "Detective with a heart condition"
-```
-
-The first run sets up the project, installs dependencies automatically, and starts the foundation phase. A complete novel (12 chapters) takes roughly 20–40 minutes depending on the model.
-
-The `--notes` flag accepts a raw string or a file path (`--notes my_ideas.txt`). The pipeline auto-expands short notes (<300 words) and auto-summarizes long ones (>1500).
-
-### Operator console
-
-One command from the repo root — FastAPI bridge + web UI, Ctrl+C to stop:
-
-```bash
-uv run gesaku              # serve built webui/frontend/dist on :8600
-uv run gesaku --dev        # vite HMR on :5175, API on :8600
-uv run gesaku --no-open    # don't pop a browser
-```
-
-First time in `--dev`: `cd webui/frontend && npm install`. For static mode: `npm run build` once (or reuse the checked-in `dist/`).
-
-Optional global install from the repo:
+Optional global binary:
 
 ```bash
 uv tool install .
 gesaku --help
 ```
 
-### Agent mode
+---
 
-Drive the pipeline from an agent (or your shell) without opening the UI. Same supervisor and `run.json` contract as the console — a CLI-launched run shows up live in the web UI.
+## Three ways to run
+
+### 1. Agent / CLI (no browser)
+
+Same `RunManager` + `projects/<name>/run.json` contract as the console — the UI shows CLI-launched runs unchanged.
 
 ```bash
-# start + stream stdout (human) or JSONL (agents)
-uv run gesaku run --project noir --genre "Cyberpunk Noir" --notes premise.txt
-uv run gesaku run --project noir --json          # machine-readable events
-uv run gesaku run --project noir --detach --json # fire-and-forget
+# stream human logs
+uv run gesaku run --project noir --genre "…" --notes premise.txt --from-scratch
+
+# machine-readable JSONL (for agents)
+uv run gesaku run --project noir --json
+uv run gesaku run --project noir --detach --json    # fire-and-forget
 
 uv run gesaku status --json
 uv run gesaku logs --project noir -f
 uv run gesaku stop --project noir
 ```
 
-Unknown flags after `run` are passed through to `run_pipeline.py` (`--from-scratch`, `--chapters`, `--phase`, …).
+Flags after `run` that the agent CLI doesn’t claim are passed through to `run_pipeline.py` (`--from-scratch`, `--phase`, `--chapters`, …).
 
-JSONL event types: `started`, `log`, `phase`, `score`, `warn`, `error`, `fatal`, `state`, `done`.
+**JSONL event types:** `started` · `log` · `phase` · `score` · `warn` · `error` · `fatal` · `state` · `done`
+
+### 2. Operator console
+
+```bash
+uv run gesaku              # built SPA + API on http://127.0.0.1:8600
+uv run gesaku --dev        # vite HMR :5175, API :8600
+uv run gesaku --no-open
+```
+
+First time in `--dev`: `cd webui/frontend && npm install`.  
+Static mode uses `webui/frontend/dist` (build with `npm run build` if you changed the frontend).
+
+### 3. Raw orchestrator
+
+```bash
+uv run python run_pipeline.py --from-scratch --genre "…" --notes "…"
+uv run python run_pipeline.py --phase foundation
+uv run python run_pipeline.py --phase drafting
+uv run python run_pipeline.py --phase revision --revision-cycles 5
+uv run python run_pipeline.py --phase export
+uv run python run_pipeline.py --project mynovel --from-scratch
+```
+
+---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set:
+Copy `.env.example` → `.env`.
+
+### Providers & models
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GESAKU_PROVIDER` | inferred | API dialect for all roles: `anthropic` or `openai` |
-| `GESAKU_{ROLE}_PROVIDER` | — | Per-role dialect override (e.g. cheap `openai` writer + `anthropic` judge) |
-| `ANTHROPIC_API_KEY` | — | Anthropic-dialect key (first-party or any compat gateway) |
-| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic-dialect endpoint — e.g. `https://api.deepseek.com/anthropic` for DeepSeek |
-| `OPENAI_API_KEY` | — | OpenAI-dialect key (first-party, OpenRouter, Groq, Together, LiteLLM…) |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-dialect endpoint — keep gateway prefixes like `/api/v1` or `/v1` |
-| `GESAKU_WRITER_MODEL` | provider default (`claude-sonnet-4-6` / `gpt-5.2`) | Model for drafting and revision (free-form id, gateway namespacing OK) |
-| `GESAKU_JUDGE_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for evaluation and scoring |
-| `GESAKU_REVIEW_MODEL` | provider default (`claude-opus-4-6` / `gpt-5.2`) | Model for deep prose analysis |
-| `GESAKU_EXTRA_HEADERS` | — | JSON object merged into every request (e.g. OpenRouter's `HTTP-Referer`/`X-Title`) |
-| `GESAKU_GENRE` | — | Default genre (instead of `--genre`) |
-| `GESAKU_CHAPTERS` | `24` | Default chapter count |
-| `GESAKU_NOTES` | — | Default story premise |
-| `GESAKU_PROJECT` | `default` | Active project name |
-| `GESAKU_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate (plateaus exit after 3 stalled iterations) |
-| `GESAKU_CHAPTER_THRESHOLD` | `6.5` | Drafting keep gate per chapter |
-| `GESAKU_MAX_CHAPTER_ATTEMPTS` | `5` | Quality retries per chapter |
-| `GESAKU_MIN_REVISION_CYCLES` | `3` | Floor before plateau stop is allowed |
-| `GESAKU_MAX_REVISION_CYCLES` | `6` | Cap on revision cycles |
-| `GESAKU_PLATEAU_DELTA` | `0.3` | Novel-score delta below which a cycle counts as stalled |
+| `GESAKU_PROVIDER` | inferred | Dialect for all roles: `anthropic` \| `openai` |
+| `GESAKU_{ROLE}_PROVIDER` | — | Per-role override (`WRITER` / `JUDGE` / `REVIEW`) |
+| `ANTHROPIC_API_KEY` | — | Anthropic-dialect key |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic-dialect endpoint |
+| `OPENAI_API_KEY` | — | OpenAI-dialect key |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-dialect endpoint (keep `/v1` or `/api/v1`) |
+| `GESAKU_WRITER_MODEL` | provider default | Drafting & revision |
+| `GESAKU_JUDGE_MODEL` | provider default | Chapter / foundation scoring |
+| `GESAKU_REVIEW_MODEL` | provider default | Deep prose review |
+| `GESAKU_EXTRA_HEADERS` | — | JSON object merged into every request |
 
-### Example: DeepSeek `.env` (Anthropic dialect)
+### Run defaults & gates
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GESAKU_PROJECT` | `default` | Project name under `projects/` |
+| `GESAKU_GENRE` | — | Default genre |
+| `GESAKU_CHAPTERS` | `24` | Default chapter count |
+| `GESAKU_NOTES` | — | Default premise |
+| `GESAKU_PERSPECTIVE` | — | `first_person` \| `third_person` (empty = foundation decides) |
+| `GESAKU_FOUNDATION_THRESHOLD` | `7.5` | Foundation exit gate |
+| `GESAKU_CHAPTER_THRESHOLD` | `6.5` | Per-chapter keep gate |
+| `GESAKU_MAX_CHAPTER_ATTEMPTS` | `5` | Draft retries |
+| `GESAKU_MIN_REVISION_CYCLES` | `3` | Floor before plateau stop |
+| `GESAKU_MAX_REVISION_CYCLES` | `6` | Revision cap |
+| `GESAKU_PLATEAU_DELTA` | `0.3` | Score delta that counts as stalled |
+
+### Examples
+
+**DeepSeek (Anthropic dialect)**
 
 ```
-ANTHROPIC_API_KEY=sk-deepseek-your-key
+ANTHROPIC_API_KEY=sk-deepseek-…
 ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
 GESAKU_WRITER_MODEL=deepseek-v4-flash
 GESAKU_JUDGE_MODEL=deepseek-v4-pro
 GESAKU_REVIEW_MODEL=deepseek-v4-pro
 ```
 
-### Example: OpenRouter `.env` (OpenAI dialect)
+**OpenRouter (OpenAI dialect)**
 
 ```
 GESAKU_PROVIDER=openai
-OPENAI_API_KEY=sk-or-v1-your-key
+OPENAI_API_KEY=sk-or-v1-…
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
 GESAKU_EXTRA_HEADERS={"HTTP-Referer": "https://your-site.example", "X-Title": "gesaku"}
 GESAKU_WRITER_MODEL=anthropic/claude-sonnet-4.5
 GESAKU_JUDGE_MODEL=deepseek/deepseek-v4-pro
-GESAKU_REVIEW_MODEL=anthropic/claude-opus-4.5
 ```
 
-### Example: mixed providers (cheap writer, strong judge)
+**Mixed: cheap writer, strong judge**
 
 ```
 GESAKU_PROVIDER=openai
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
-OPENAI_API_KEY=sk-or-v1-your-key
+OPENAI_API_KEY=sk-or-v1-…
 GESAKU_JUDGE_PROVIDER=anthropic
 GESAKU_JUDGE_MODEL=claude-opus-4-6
 GESAKU_WRITER_MODEL=deepseek/deepseek-v4-pro
 ```
 
-## Pipeline Phases
+---
 
-### Foundation
-Builds the genre config, world bible, character registry, chapter outline, foreshadowing ledger, and canon. Each iteration generates all five documents, scores them, and keeps only improvements. Loops until `foundation_score > 7.5` or max iterations.
+## Pipeline
 
-### Drafting
-Writes chapters sequentially. Each chapter is evaluated after drafting — low scores trigger a retry with the critique as additional context.
+```
+Foundation   genre config · world · characters · outline · ledger · canon
+             loop until foundation_score ≥ threshold (plateau-aware)
 
-### Revision
-Adversarial editing → apply cuts → reader panel → generate briefs → rewrite chapters. Plateau detection stops the loop when scores stabilize. A full-manuscript dual-persona review catches structural and prose-level issues.
+Drafting     sequential chapters; each scored; low scores retry with critique
 
-### Export
-Rebuilds the outline from final chapters, generates an arc summary, builds LaTeX content, and compiles the PDF via tectonic.
+Revision     adversarial edit → cuts → reader panel → briefs → rewrites
+             + full-manuscript review; stops on plateau or max cycles
 
-## CLI
+Export       rebuild outline · arc summary · LaTeX · tectonic PDF
+```
+
+The novel is six co-evolving layers (voice, world, characters, outline, chapters, canon). Changes propagate down and up; debts are tracked in `state.json`.
+
+---
+
+## Layout
+
+```
+core/           paths · llm · validation · outline · textstats · mock_llm
+pipeline/       evaluate · draft_chapter · revision · review · export helpers
+foundation/     gen_genre_framework · gen_world · gen_characters · gen_outline* …
+prompts/        static LLM templates (paths.load_prompt)
+webui/          server.py (FastAPI :8600) + frontend/ (React 19 + Vite)
+projects/       per-novel workspaces (gitignored)
+scratch/        offline unittest suites (MockLLM)
+cli.py          gesaku — console + agent commands
+run_pipeline.py orchestrator
+Docs/           start at overview.md
+```
+
+Module map and data flow: [Docs/overview.md](Docs/overview.md).  
+Operator console API: [Docs/systems/console-bridge.md](Docs/systems/console-bridge.md).
+
+### Stage scripts
+
+| Script | Phase | Role |
+|--------|-------|------|
+| `foundation/gen_genre_framework.py` | Foundation | Genre prompts + eval criteria |
+| `foundation/gen_world.py` · `gen_characters.py` · `gen_outline*.py` · `gen_canon.py` | Foundation | World, cast, outline, ledger, canon |
+| `pipeline/voice_fingerprint.py` | Foundation | Quantitative voice analysis |
+| `pipeline/draft_chapter.py` · `run_drafts.py` | Drafting | Sequential chapters |
+| `pipeline/evaluate.py` | All | Mechanical slop + LLM judge |
+| `pipeline/adversarial_edit.py` · `apply_cuts.py` · `reader_panel.py` · `gen_brief.py` · `gen_revision.py` · `review.py` | Revision | Edit, cut, panel, brief, rewrite, review |
+| `pipeline/compare_chapters.py` | Revision | Head-to-head tournament |
+| `pipeline/gen_novel_tex.py` | Export | LaTeX template via LLM |
+| `run_pipeline.py` | Orchestration | Phase controller |
+| `cli.py` | CLI | `gesaku` console + agent commands |
+
+---
+
+## Development
 
 ```bash
-uv run python run_pipeline.py                                # resume from state
-uv run python run_pipeline.py --from-scratch ...              # start fresh
-uv run python run_pipeline.py --phase foundation              # run one phase
-uv run python run_pipeline.py --phase drafting
-uv run python run_pipeline.py --phase revision --max-cycles 5
-uv run python run_pipeline.py --phase export
-uv run python run_pipeline.py --genre "Horror" --chapters 8 --notes "file.txt"
-uv run python run_pipeline.py --project mynovel               # multi-project
-uv run python run_pipeline.py --project mynovel --from-scratch
+uv run --frozen ruff check --select F821,F811 .
+uv run --frozen python -m unittest discover -s scratch -p "test_*.py"
 ```
 
-All flags can also be set via environment variables (`GESAKU_GENRE`, `GESAKU_CHAPTERS`, `GESAKU_NOTES`).
+Offline tests use `MockLLM` / mock transports — no network required. CI also proves the suite stays green with a black-hole `ANTHROPIC_BASE_URL`.
 
-## Project Structure
-
-> The full module map and data flow live in [Docs/overview.md](Docs/overview.md).
-
-```
-.
-├── core/                    Shared library (paths, llm, outline, textstats,
-│                            novel_tex, genre, validation, mock_llm)
-├── pipeline/                Stage scripts (evaluate, draft_chapter, review,
-│                            reader_panel, adversarial_edit, apply_cuts,
-│                            repair_slop, build_*, gen_brief, gen_revision,
-│                            sanitize_outline_titles, voice_fingerprint,
-│                            gen_novel_tex, pipeline_infra)
-├── foundation/              Foundation generators (gen_genre_framework,
-│                            gen_world, gen_characters, gen_outline*,
-│                            gen_canon, gen_title, seed)
-├── prompts/                 Static prompt templates
-├── Docs/                    Documentation (start at overview.md)
-├── projects/                Multi-project workspaces (gitignored)
-│   ├── registry.json
-│   └── <project_name>/      state.json, chapters/, eval_logs/, typeset/...
-├── scratch/                 Offline test suites
-├── typeset/                 LaTeX build helper
-├── run_pipeline.py          Pipeline orchestrator (entry point)
-├── cli.py                   Operator console launcher (`uv run gesaku`)
-└── install_fonts.py         EB Garamond font installer
-```
-
-## Scripts Reference
-
-| Script | Phase | Purpose |
-|--------|-------|---------|
-| `foundation/gen_genre_framework.py` | Foundation | Initialize genre config via 2-pass LLM meta-prompt |
-| `foundation/gen_world.py` | Foundation | Seed → world bible |
-| `foundation/gen_characters.py` | Foundation | Seed + world → character registry |
-| `foundation/gen_outline.py` | Foundation | Chapter-by-chapter outline |
-| `foundation/gen_outline_part2.py` | Foundation | Foreshadowing ledger |
-| `foundation/gen_canon.py` | Foundation | Cross-reference hard facts |
-| `pipeline/voice_fingerprint.py` | Foundation | Quantitative prose analysis |
-| `pipeline/draft_chapter.py` | Drafting | Write one chapter |
-| `pipeline/run_drafts.py` | Drafting | Batch sequential drafter |
-| `pipeline/evaluate.py` | All | Mechanical slop scorer + LLM judge |
-| `pipeline/adversarial_edit.py` | Revision | "Cut 500 words" analysis |
-| `pipeline/apply_cuts.py` | Revision | Batch cut applicator |
-| `pipeline/reader_panel.py` | Revision | 4-persona evaluation |
-| `pipeline/gen_brief.py` | Revision | Auto-generate revision briefs |
-| `pipeline/gen_revision.py` | Revision | Rewrite from a brief |
-| `pipeline/review.py` | Revision | Full-manuscript dual-persona review |
-| `pipeline/build_arc_summary.py` | Revision | Generate arc summary |
-| `pipeline/compare_chapters.py` | Revision | Head-to-head Elo tournament |
-| `pipeline/gen_novel_tex.py` | Export | Generate custom LaTeX template via LLM |
-| `run_pipeline.py` | Orchestration | Full pipeline controller |
-| `cli.py` | Console | Launch webui bridge + UI (`uv run gesaku`) |
-
-## Design
-
-The novel is five co-evolving layers:
-
-```
-Voice / Style     → How we write
-World / Setting   → What exists
-Characters        → Who acts
-Outline           → What happens (in what order)
-Chapters          → The actual prose
-Canon             → What is true (cross-cutting)
-```
-
-Changes propagate downward (lore change → outline change → chapter revision) and upward (writing reveals a gap → update lore). The pipeline tracks propagation debts in `state.json`.
+---
 
 ## License
 
