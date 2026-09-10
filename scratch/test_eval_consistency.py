@@ -4,8 +4,9 @@ import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-# Set project environment variable to serious
-os.environ["GESAKU_PROJECT"] = "serious"
+# Project env is set in main() — never at import time. unittest discover
+# imports this module (filename matches test_*.py); writing GESAKU_PROJECT
+# here would leak into every later module in the same process.
 
 # Add project root to sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,29 +57,38 @@ def main():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
 
-    print(f"Starting Novel Evaluator Consistency Test (5 parallel calls on project: serious)\n", flush=True)
-    
-    # Run 5 evaluations in parallel
-    results = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(run_evaluation, i) for i in range(1, 6)]
-        for fut in futures:
-            results.append(fut.result())
-            
-    # Sort results by call number
-    results.sort(key=lambda x: x["call_number"])
-    
-    # Print summary table
-    print("\n" + "="*70, flush=True)
-    print("                  EVALUATION CONSISTENCY SUMMARY", flush=True)
-    print("="*70, flush=True)
-    print(f"{'Call #':<10} | {'Novel Score':<15} | {'Timestamp Completed':<35}", flush=True)
-    print("-"*70, flush=True)
-    for res in results:
-        score_str = str(res["novel_score"])
-        ts_str = res["timestamp_completed"]
-        print(f"{res['call_number']:<10} | {score_str:<15} | {ts_str:<35}", flush=True)
-    print("="*70, flush=True)
+    # Bind the probe project only for this standalone run (restored on exit).
+    prev_project = os.environ.get("GESAKU_PROJECT")
+    os.environ["GESAKU_PROJECT"] = "serious"
+    try:
+        print(f"Starting Novel Evaluator Consistency Test (5 parallel calls on project: serious)\n", flush=True)
+
+        # Run 5 evaluations in parallel
+        results = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(run_evaluation, i) for i in range(1, 6)]
+            for fut in futures:
+                results.append(fut.result())
+
+        # Sort results by call number
+        results.sort(key=lambda x: x["call_number"])
+
+        # Print summary table
+        print("\n" + "="*70, flush=True)
+        print("                  EVALUATION CONSISTENCY SUMMARY", flush=True)
+        print("="*70, flush=True)
+        print(f"{'Call #':<10} | {'Novel Score':<15} | {'Timestamp Completed':<35}", flush=True)
+        print("-"*70, flush=True)
+        for res in results:
+            score_str = str(res["novel_score"])
+            ts_str = res["timestamp_completed"]
+            print(f"{res['call_number']:<10} | {score_str:<15} | {ts_str:<35}", flush=True)
+        print("="*70, flush=True)
+    finally:
+        if prev_project is None:
+            os.environ.pop("GESAKU_PROJECT", None)
+        else:
+            os.environ["GESAKU_PROJECT"] = prev_project
 
 if __name__ == "__main__":
     main()
