@@ -1727,6 +1727,17 @@ def run_pipeline(args):
         voice_template = root_dir / "fuel" / "voice.md"
         if voice_template.exists():
             shutil.copy2(voice_template, paths.get_voice_path())
+            prose_mode = getattr(args, "prose_mode", "") or os.environ.get("GESAKU_PROSE_MODE", "")
+            if prose_mode:
+                from core.genre import load_prose_pack
+                pack = load_prose_pack(prose_mode)
+                if pack:
+                    voice_path = paths.get_voice_path()
+                    existing = voice_path.read_text(encoding="utf-8")
+                    voice_path.write_text(
+                        existing + f"\n\n---\n\n## Prose mode ({prose_mode})\n\n{pack}\n",
+                        encoding="utf-8",
+                    )
                 
         save_state(state)
     else:
@@ -1814,6 +1825,8 @@ def run_pipeline(args):
                         cmd += ["--notes", notes_for_genre]
                     if args.perspective:
                         cmd += ["--perspective", args.perspective]
+                    if getattr(args, "prose_mode", ""):
+                        cmd += ["--prose-mode", args.prose_mode]
                     subprocess.run(cmd, check=True, timeout=900)
                     from core.genre import reload_genre
                     reload_genre()
@@ -1930,6 +1943,11 @@ Examples:
         choices=["", "first_person", "third_person"],
         help="Force narrative perspective (first_person / third_person). "
              "Empty = foundation decides.")
+    parser.add_argument(
+        "--prose-mode", dest="prose_mode",
+        default=os.environ.get("GESAKU_PROSE_MODE", ""),
+        choices=["", "first_intimate", "first_voicey", "third_close", "third_scene"],
+        help="Prose distance pack (fuel/prose/*.md). Empty = no pack.")
     parser.add_argument("--genre", default=os.environ.get("GESAKU_GENRE", ""),
                         help="Genre description (e.g., 'Cyberpunk Noir')")
     parser.add_argument("--chapters", default=os.environ.get("GESAKU_CHAPTERS", "24"),

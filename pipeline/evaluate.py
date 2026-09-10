@@ -422,6 +422,13 @@ def call_judge(prompt, max_tokens=2000):
         system += (f"\n\nPERSPECTIVE RULE: The novel is mandated {expected}. If the chapter drifts "
                    "out of this narration mode, flag it under prose_quality or voice_adherence "
                    "with a specific quote of the offending passage.")
+    from core.genre import prose_mode_system_block
+    prose_block = prose_mode_system_block(genre_cfg)
+    if prose_block:
+        system += (prose_block +
+                   "\n\nPROSE MODE RULE: Score against this pack. Penalize staccato 1–4 word "
+                   "paragraph stacks, empty emotion labels, diary-summary interiority, wrong "
+                   "narrative distance, and repeated stock metaphors. Quote offenders.")
     return call_llm(prompt=prompt, system=system, model_key="judge", max_tokens=max_tokens, beta_context=True, timeout=180)
 
 

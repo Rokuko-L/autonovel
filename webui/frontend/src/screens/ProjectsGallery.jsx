@@ -13,6 +13,19 @@ import { PhaseBadge, ScoreSig, Button, EmptyState, Hint, Skel, timeAgo } from '.
 
 const STEPS = ['identity', 'premise', 'shape', 'launch']
 
+/** Person → allowed prose-distance packs (defaults are the least tick-prone). */
+const PROSE_MODES = {
+  first_person: [
+    { id: 'first_voicey', label: 'voicey', hint: 'personality-forward teller; scene still leads' },
+    { id: 'first_intimate', label: 'intimate', hint: 'close stream-of-consciousness; live inner voice' },
+  ],
+  third_person: [
+    { id: 'third_close', label: 'close limited', hint: 'one head; thought bleeds into narration' },
+    { id: 'third_scene', label: 'scene-first', hint: 'cinematography and action; sparse interiority' },
+  ],
+}
+const DEFAULT_PROSE = { first_person: 'first_voicey', third_person: 'third_close' }
+
 const SEG = {
   wrapper: 'flex border border-ink-600',
   btn: (active) =>
@@ -76,7 +89,7 @@ function Wizard({ onClose, onLaunch }) {
     name: '', genre: '', notes: '', notesPath: '', notesMode: 'text',
     chapters: 24, chaptersCustom: false,
     wordsPerChapter: 3000, wordsCustom: false,
-    revisionCycles: 3, perspective: 'third_person',
+    revisionCycles: 3, perspective: 'third_person', proseMode: 'third_close',
   })
   const [error, setError] = useState(null)
   const [launching, setLaunching] = useState(false)
@@ -155,11 +168,36 @@ function Wizard({ onClose, onLaunch }) {
                 <span className="field-label">narration perspective</span>
                 <div className={SEG.wrapper}>
                   {['third_person', 'first_person'].map((pv) => (
-                    <button key={pv} onClick={() => setForm({ ...form, perspective: pv })} className={SEG.btn(form.perspective === pv)}>
+                    <button
+                      key={pv}
+                      onClick={() => setForm({ ...form, perspective: pv, proseMode: DEFAULT_PROSE[pv] })}
+                      className={SEG.btn(form.perspective === pv)}
+                    >
                       {pv}
                     </button>
                   ))}
                 </div>
+              </div>
+              <div>
+                <span className="field-label">
+                  prose mode
+                  <Hint>How close the camera sits to the POV. Changes drafting rhythm, not plot.</Hint>
+                </span>
+                <div className={SEG.wrapper}>
+                  {(PROSE_MODES[form.perspective] || []).map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setForm({ ...form, proseMode: m.id })}
+                      className={SEG.btn(form.proseMode === m.id)}
+                      title={m.hint}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 font-mono text-[10px] leading-relaxed text-fog-500">
+                  {(PROSE_MODES[form.perspective] || []).find((m) => m.id === form.proseMode)?.hint}
+                </p>
               </div>
             </>
           )}
@@ -213,7 +251,8 @@ function Wizard({ onClose, onLaunch }) {
             <div className="space-y-2 border border-line bg-ink-950 p-4 font-mono text-xs leading-relaxed">
               {[['project', form.name], ['genre', form.genre],
                 ['premise', form.notesMode === 'path' ? form.notesPath : `${form.notes.trim().split(/\s+/).filter(Boolean).length} words pasted`],
-                ['perspective', form.perspective], ['chapters', `${form.chapters} × ${form.wordsPerChapter}w`],
+                ['perspective', form.perspective], ['prose mode', form.proseMode || '—'],
+                ['chapters', `${form.chapters} × ${form.wordsPerChapter}w`],
                 ['revision cycles', String(form.revisionCycles)]].map(([k, v]) => (
                 <p key={k} className="flex justify-between gap-6">
                   <span className="text-fog-500">{k}</span>
@@ -260,6 +299,7 @@ export default function ProjectsGallery() {
       name: form.name, genre: form.genre, notes: form.notes, notesPath: form.notesPath,
       chapters: form.chapters, wordsPerChapter: form.wordsPerChapter,
       revisionCycles: form.revisionCycles, perspective: form.perspective,
+      proseMode: form.proseMode,
     })
     setWizard(false)
     navigate(projectRoute(form.name))

@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from core.genre import load_genre
+from core.genre import load_genre, prose_mode_system_block
 from core import paths
 from core import textstats
 
@@ -35,6 +35,7 @@ def call_writer(prompt, max_tokens=None):
             chapter_system += ("\n\nMANDATORY PERSPECTIVE: Write this chapter in STRICT THIRD-PERSON "
                                "limited narration anchored to the POV character ('he/she/they' or the "
                                "character's name). Never switch to first-person narration.")
+    chapter_system += prose_mode_system_block(genre_cfg)
     estimated_words = genre_cfg["generation"]["outline"]["estimated_words"]
     chapter_count = genre_cfg["generation"]["outline"]["estimated_chapters"]
     target_words = estimated_words // chapter_count
