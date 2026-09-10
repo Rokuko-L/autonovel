@@ -6,8 +6,6 @@
 
 Feed it a genre and a one-sentence idea — it builds the world, characters, and outline, drafts every chapter, revises against its own scores, and exports a finished PDF.
 
-Built for two kinds of operators: **agents** that drive it from the CLI, and **humans** who watch the same run live in a web console.
-
 Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — the modify → evaluate → keep/discard loop, applied to fiction.
 
 </div>
@@ -19,8 +17,8 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch) �
 | | |
 |---|---|
 | **Pipeline** | Genre config → foundation (world / characters / outline / canon) → sequential drafting → adversarial revision with plateau detection → LaTeX PDF |
-| **CLI** | `uv run gesaku run --json` — launch, stream structured events, stop. Same supervisor as the UI. |
-| **Console** | `uv run gesaku` — React + FastAPI operator console on `:8600` (projects, pipeline dashboard, scores, SSE live feed) |
+| **Console** | `uv run gesaku` — web operator UI on `:8600` (projects, pipeline dashboard, scores, live progress) |
+| **CLI** | Launch, watch, and stop runs from the terminal — including from other tools |
 | **Providers** | Anthropic *or* OpenAI dialect — DeepSeek, OpenRouter, Groq, Together, LiteLLM, first-party, … per-role overrides |
 | **Multi-project** | Isolated workspaces under `projects/<name>/` with their own state, logs, and git history |
 
@@ -35,21 +33,19 @@ git clone https://github.com/Rokuko-L/gesaku.git && cd gesaku
 cp .env.example .env
 # put an API key in .env (see Configuration)
 
-# agent-style: start a novel, stream JSONL
+uv run gesaku
+```
+
+That opens the operator console. Create a project in the UI, or kick one off from the terminal:
+
+```bash
 uv run gesaku run --project demo --from-scratch \
   --genre "Cyberpunk Noir" \
   --chapters 12 \
-  --notes "Detective with a heart condition" \
-  --json
+  --notes "Detective with a heart condition"
 ```
 
-In another terminal (optional, same run):
-
-```bash
-uv run gesaku                 # open the console — project appears live
-uv run gesaku status --json
-uv run gesaku logs -f --project demo
-```
+The same run shows up live in the console.
 
 A 12-chapter novel typically takes **20–40+ minutes** of wall time depending on models and retries.
 
@@ -84,30 +80,9 @@ gesaku --help
 
 ---
 
-## Three ways to run
+## How to run
 
-### 1. Agent / CLI (no browser)
-
-Same `RunManager` + `projects/<name>/run.json` contract as the console — the UI shows CLI-launched runs unchanged.
-
-```bash
-# stream human logs
-uv run gesaku run --project noir --genre "…" --notes premise.txt --from-scratch
-
-# machine-readable JSONL (for agents)
-uv run gesaku run --project noir --json
-uv run gesaku run --project noir --detach --json    # fire-and-forget
-
-uv run gesaku status --json
-uv run gesaku logs --project noir -f
-uv run gesaku stop --project noir
-```
-
-Flags after `run` that the agent CLI doesn’t claim are passed through to `run_pipeline.py` (`--from-scratch`, `--phase`, `--chapters`, …).
-
-**JSONL event types:** `started` · `log` · `phase` · `score` · `warn` · `error` · `fatal` · `state` · `done`
-
-### 2. Operator console
+### Operator console
 
 ```bash
 uv run gesaku              # built SPA + API on http://127.0.0.1:8600
@@ -118,7 +93,22 @@ uv run gesaku --no-open
 First time in `--dev`: `cd webui/frontend && npm install`.  
 Static mode uses `webui/frontend/dist` (build with `npm run build` if you changed the frontend).
 
-### 3. Raw orchestrator
+### From the terminal
+
+```bash
+# start + follow logs
+uv run gesaku run --project noir --genre "…" --notes premise.txt --from-scratch
+
+uv run gesaku status
+uv run gesaku logs --project noir -f
+uv run gesaku stop --project noir
+```
+
+Flags after `run` that this CLI doesn’t claim are passed through to `run_pipeline.py` (`--from-scratch`, `--phase`, `--chapters`, …).
+
+Runs started here use the same supervisor as the console — open `uv run gesaku` and watch them live.
+
+### Raw orchestrator
 
 ```bash
 uv run python run_pipeline.py --from-scratch --genre "…" --notes "…"
@@ -128,6 +118,19 @@ uv run python run_pipeline.py --phase revision --revision-cycles 5
 uv run python run_pipeline.py --phase export
 uv run python run_pipeline.py --project mynovel --from-scratch
 ```
+
+### For agents
+
+Same commands, machine-readable output:
+
+```bash
+uv run gesaku run --project noir --json           # JSONL on stdout
+uv run gesaku run --project noir --detach --json  # start and return
+uv run gesaku status --json
+uv run gesaku logs --project noir --json
+```
+
+**Event types:** `started` · `log` · `phase` · `score` · `warn` · `error` · `fatal` · `state` · `done`
 
 ---
 
@@ -230,7 +233,7 @@ prompts/        static LLM templates (paths.load_prompt)
 webui/          server.py (FastAPI :8600) + frontend/ (React 19 + Vite)
 projects/       per-novel workspaces (gitignored)
 scratch/        offline unittest suites (MockLLM)
-cli.py          gesaku — console + agent commands
+cli.py          gesaku — console + run/logs/status/stop
 run_pipeline.py orchestrator
 Docs/           start at overview.md
 ```
@@ -251,7 +254,7 @@ Operator console API: [Docs/systems/console-bridge.md](Docs/systems/console-brid
 | `pipeline/compare_chapters.py` | Revision | Head-to-head tournament |
 | `pipeline/gen_novel_tex.py` | Export | LaTeX template via LLM |
 | `run_pipeline.py` | Orchestration | Phase controller |
-| `cli.py` | CLI | `gesaku` console + agent commands |
+| `cli.py` | CLI | `gesaku` console + run commands |
 
 ---
 
