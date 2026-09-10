@@ -119,6 +119,25 @@ The first run sets up the project, installs dependencies automatically, and star
 
 The `--notes` flag accepts a raw string or a file path (`--notes my_ideas.txt`). The pipeline auto-expands short notes (<300 words) and auto-summarizes long ones (>1500).
 
+### Operator console
+
+One command from the repo root — FastAPI bridge + web UI, Ctrl+C to stop:
+
+```bash
+uv run gesaku              # serve built webui/frontend/dist on :8600
+uv run gesaku --dev        # vite HMR on :5175, API on :8600
+uv run gesaku --no-open    # don't pop a browser
+```
+
+First time in `--dev`: `cd webui/frontend && npm install`. For static mode: `npm run build` once (or reuse the checked-in `dist/`).
+
+Optional global install from the repo:
+
+```bash
+uv tool install .
+gesaku --help
+```
+
 ## Configuration
 
 Copy `.env.example` to `.env` and set:
@@ -233,6 +252,7 @@ All flags can also be set via environment variables (`GESAKU_GENRE`, `GESAKU_CHA
 ├── scratch/                 Offline test suites
 ├── typeset/                 LaTeX build helper
 ├── run_pipeline.py          Pipeline orchestrator (entry point)
+├── cli.py                   Operator console launcher (`uv run gesaku`)
 └── install_fonts.py         EB Garamond font installer
 ```
 
@@ -260,6 +280,7 @@ All flags can also be set via environment variables (`GESAKU_GENRE`, `GESAKU_CHA
 | `pipeline/compare_chapters.py` | Revision | Head-to-head Elo tournament |
 | `pipeline/gen_novel_tex.py` | Export | Generate custom LaTeX template via LLM |
 | `run_pipeline.py` | Orchestration | Full pipeline controller |
+| `cli.py` | Console | Launch webui bridge + UI (`uv run gesaku`) |
 
 ## Design
 
