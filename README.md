@@ -138,6 +138,25 @@ uv tool install .
 gesaku --help
 ```
 
+### Agent mode
+
+Drive the pipeline from an agent (or your shell) without opening the UI. Same supervisor and `run.json` contract as the console — a CLI-launched run shows up live in the web UI.
+
+```bash
+# start + stream stdout (human) or JSONL (agents)
+uv run gesaku run --project noir --genre "Cyberpunk Noir" --notes premise.txt
+uv run gesaku run --project noir --json          # machine-readable events
+uv run gesaku run --project noir --detach --json # fire-and-forget
+
+uv run gesaku status --json
+uv run gesaku logs --project noir -f
+uv run gesaku stop --project noir
+```
+
+Unknown flags after `run` are passed through to `run_pipeline.py` (`--from-scratch`, `--chapters`, `--phase`, …).
+
+JSONL event types: `started`, `log`, `phase`, `score`, `warn`, `error`, `fatal`, `state`, `done`.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and set:

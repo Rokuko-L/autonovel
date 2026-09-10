@@ -191,7 +191,7 @@ class RunManager:
         logs_dir = project_dir / "logs"
         if logs_dir.is_dir():
             candidates = sorted(
-                logs_dir.glob("*_pipeline.log"), key=lambda f: f.stat().st_mtime)
+                logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime)
             if candidates:
                 return candidates[-1]
         return None
