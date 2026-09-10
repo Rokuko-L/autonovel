@@ -45,8 +45,8 @@ webui/            Operator console: server.py (FastAPI bridge, port 8600)
 └── frontend/       React 19 + Vite app; src/api/contract.js declares the
                     API shapes, client.js calls /api with fixture fallback
 
-Root entry points: run_pipeline.py (orchestrator CLI), gui.py (desktop GUI),
-install_fonts.py, _utf8.py (UTF-8 enforcement shim)
+Root entry points: run_pipeline.py (orchestrator CLI), webui/server.py
+(operator console bridge), install_fonts.py, _utf8.py (UTF-8 enforcement shim)
 ```
 
 **Data flow:**

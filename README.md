@@ -233,7 +233,6 @@ All flags can also be set via environment variables (`GESAKU_GENRE`, `GESAKU_CHA
 ├── scratch/                 Offline test suites
 ├── typeset/                 LaTeX build helper
 ├── run_pipeline.py          Pipeline orchestrator (entry point)
-├── gui.py                   Desktop GUI (entry point)
 └── install_fonts.py         EB Garamond font installer
 ```
 
@@ -261,7 +260,6 @@ All flags can also be set via environment variables (`GESAKU_GENRE`, `GESAKU_CHA
 | `pipeline/compare_chapters.py` | Revision | Head-to-head Elo tournament |
 | `pipeline/gen_novel_tex.py` | Export | Generate custom LaTeX template via LLM |
 | `run_pipeline.py` | Orchestration | Full pipeline controller |
-| `gui.py` | — | Desktop GUI (customtkinter) |
 
 ## Design
 
