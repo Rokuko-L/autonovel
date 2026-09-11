@@ -287,9 +287,10 @@ function Wizard({ onClose, onLaunch }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex max-h-[92vh] w-full max-w-xl flex-col border border-ink-600 bg-ink-900"
+        className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-x-hidden border border-ink-600 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
+
         {/* Header + mode strip are outside the scroll body so the Hint
             popover (absolute, no z-index) is never clipped by overflow-y. */}
         <header className="shrink-0 border-b border-line px-6 py-4">
