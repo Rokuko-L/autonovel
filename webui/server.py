@@ -129,6 +129,10 @@ class CreateProject(BaseModel):
     wordsPerChapter: int = Field(default=3000, ge=500, le=8000)
     revisionCycles: int = Field(default=3, ge=0, le=6)
     perspective: str = Field(default="third_person", pattern="^(first_person|third_person)$")
+    proseMode: str = Field(
+        default="",
+        pattern="^(|first_intimate|first_voicey|third_close|third_scene)$",
+    )
     fromScratch: bool = True
 
 
@@ -166,6 +170,8 @@ def create_project(req: CreateProject):
         "--revision-cycles", str(req.revisionCycles),
         "--perspective", req.perspective,
     ]
+    if req.proseMode:
+        cli += ["--prose-mode", req.proseMode]
     if notes_arg:
         cli += ["--notes", notes_arg]
 

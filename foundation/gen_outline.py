@@ -128,6 +128,31 @@ def main():
     mystery = required["MYSTERY.md"].read_text()
     craft = required["CRAFT.md"].read_text()
     voice = required["voice.md"].read_text()
+
+    # Optional: sealed foundation (canon generated before outline when available).
+    # Used only for plant-hygiene gates and action-plant guidance — never as prose.
+    from core import canon as canon_mod
+    from core import plant_hygiene
+    canon_path = paths.get_canon_path()
+    canon_text = canon_path.read_text(encoding="utf-8") if canon_path.exists() else ""
+    parsed_canon = canon_mod.parse_canon(canon_text)
+    reveal_chapter = parsed_canon.reveal_chapter()
+    hygiene_denylist = canon_mod.sealed_denylist_terms(parsed_canon)
+    plant_characters = canon_mod.action_plant_characters(parsed_canon, characters)
+    plant_guidance = ""
+    if reveal_chapter and reveal_chapter > 1:
+        plant_list = ", ".join(plant_characters) if plant_characters else "(none auto-detected)"
+        deny = ", ".join(hygiene_denylist[:20]) if hygiene_denylist else "(see canon)"
+        plant_guidance = f"""
+ACTION-SHAPED PLANTS (pre-reveal chapters 1-{reveal_chapter - 1}):
+A major truth is sealed until chapter {reveal_chapter}. Before that chapter:
+- Beats must be ACTION-SHAPED: what a character on the page can see/hear/do.
+- Do NOT write meaning-shaped beats (who "secretly" is, who "really" controls what).
+- Do NOT use these sealed terms in pre-reveal beats: {deny}
+- These characters must appear as agents with observable action in multiple
+  pre-reveal chapters (so a later retrofit has material): {plant_list}.
+  Example action plant: "Mira arrives late, leaves a sealed letter on the table, does not explain."
+"""
     
     # Extract voice part 2
     voice_lines = voice.split('\n')
@@ -333,6 +358,7 @@ CRITICAL RULES:
     - beat_label: scene description
   using these beat labels IN ORDER: {numbered_beats}
   Each bullet's scene description is 1-2 sentences. Put this section right after the "Emotional Arc" line and before the other fields. Then continue with the remaining fields (Summary, Scene Stakes, Scene Beats, Plants & Harvests).
+{plant_guidance}
 """
         # Append retry feedback if editing Block 1
         if start == 1 and args.retry_feedback:
@@ -346,6 +372,13 @@ CRITICAL RULES:
                 print(f"  WARN: Block Ch {start}-{end} attempt {attempt} truncated ({e}), retrying...", file=sys.stderr)
                 continue
             passed, err = validate_block_output(res, start, end)
+            if passed and reveal_chapter and reveal_chapter > 1:
+                leaks = plant_hygiene.check_pre_reveal_leaks(
+                    res, hygiene_denylist, reveal_chapter
+                )
+                if leaks:
+                    passed = False
+                    err = "plant-hygiene: " + "; ".join(leaks[:8])
             if passed:
                 block_result = res
                 break
@@ -419,10 +452,28 @@ CRITICAL RULES:
     full_outline_text = f"# {title.upper()}\n\n" + roadmap_content + "\n\n## DETAILED CHAPTER OUTLINES\n\n" + \
                         "\n\n---\n\n".join(detailed_outlines[ch] for ch in sorted(detailed_outlines.keys()))
     outline_path.write_text(full_outline_text, encoding="utf-8")
-    
+
+    # Plant hygiene sidecar (leaks + coverage). Failures warn here; run_pipeline
+    # re-checks after foundation and can regenerate.
+    if reveal_chapter and reveal_chapter > 1:
+        hy_ok, hy_err, hy_side = plant_hygiene.validate_outline_plant_hygiene(
+            full_outline_text, canon_text, characters
+        )
+        side_path = paths.get_project_dir() / "plant_hygiene.json"
+        side_path.write_text(json.dumps(hy_side, indent=2), encoding="utf-8")
+        if not hy_ok:
+            print(f"[WARN] Outline plant hygiene failed: {hy_err}", file=sys.stderr)
+            print("See plant_hygiene.json — run_pipeline will gate on this.", file=sys.stderr)
+        else:
+            print(
+                f"Plant hygiene OK (reveal ch{reveal_chapter}, "
+                f"plants={hy_side.get('action_plant_characters')})",
+                file=sys.stderr,
+            )
+
     # Save a copy as .outline_part1.md for backwards compatibility
     (paths.get_project_dir() / ".outline_part1.md").write_text(full_outline_text, encoding="utf-8")
-    
+
     print("Outline generation complete!", file=sys.stderr)
 
 if __name__ == "__main__":

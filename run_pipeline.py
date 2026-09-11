@@ -166,6 +166,10 @@ def run_foundation(state: dict) -> dict:
         if not current_title or current_title == "Untitled":
             uv_run("foundation/gen_title.py", timeout=600)
 
+        # Canon before outline so plant hygiene can use sealed-fact denylist.
+        step("Generating canon...")
+        uv_run("foundation/gen_canon.py", timeout=600)
+
         step("Generating outline (part 1)...")
         uv_run("foundation/gen_outline.py", timeout=900)
 
@@ -217,15 +221,34 @@ def run_foundation(state: dict) -> dict:
         ph_passed, ph_error = validate_plants_harvests(outline_text)
         if not ph_passed:
             step(f"WARNING: Outline plants/harvests validation issues found:\n{ph_error}")
-        
+
+        # Plant hygiene: sealed-term leaks + action-plant coverage (twist stories)
+        try:
+            from core import canon as canon_mod
+            from core import plant_hygiene as plant_hygiene_mod
+            canon_text = paths.get_canon_path().read_text(encoding="utf-8")
+            characters_text = paths.get_characters_path().read_text(encoding="utf-8")
+            hy_ok, hy_err, hy_side = plant_hygiene_mod.validate_outline_plant_hygiene(
+                outline_text, canon_text, characters_text
+            )
+            (paths.get_project_dir() / "plant_hygiene.json").write_text(
+                json.dumps(hy_side, indent=2), encoding="utf-8"
+            )
+            if not hy_ok:
+                step(f"WARNING: Outline plant hygiene failed:\n{hy_err}")
+                # Block-level retries already ran in gen_outline. Here we only
+                # surface the sidecar; regenerating the whole outline on a
+                # late-block leak would throw away good earlier chapters.
+            else:
+                step(f"Plant hygiene OK (reveal={hy_side.get('reveal_chapter')})")
+        except Exception as e:
+            step(f"Plant hygiene check skipped: {e}")
+
         state.update(load_state())
         debts = extract_outline_debts(outline_text)
         state["debts"] = debts
         save_state(state)
         step(f"Logged {len(debts)} active narrative debts in project state.")
-
-        step("Generating canon...")
-        uv_run("foundation/gen_canon.py", timeout=600)
 
         step("Running voice fingerprint...")
         uv_run("pipeline/voice_fingerprint.py", timeout=600)
@@ -423,6 +446,42 @@ def resync_canon_after_cycle(kept_results: list, cycle: int):
 # PHASE 2 — DRAFTING
 # ---------------------------------------------------------------------------
 
+def _maybe_run_reveal_retrofit(state: dict, ch: int) -> None:
+    """After the reveal chapter is kept, retrofit ch 1..R-1 once.
+
+    Under-planted outlines block the pass (see pipeline/retrofit_reveal.py).
+    Never retries in a loop — state flag marks completion either way.
+    """
+    if state.get("reveal_retrofit_done"):
+        return
+    try:
+        from core import canon as canon_mod
+        canon_path = paths.get_canon_path()
+        if not canon_path.exists():
+            return
+        parsed = canon_mod.parse_canon(canon_path.read_text(encoding="utf-8"))
+        reveal = parsed.reveal_chapter()
+        if not reveal or ch != reveal:
+            return
+        step(f"Reveal chapter {reveal} kept — running post-reveal retrofit...")
+        result = uv_run("pipeline/retrofit_reveal.py", timeout=1800)
+        state["reveal_retrofit_done"] = True
+        state["reveal_retrofit_exit"] = result.returncode
+        save_state(state)
+        if result.returncode == 2:
+            step("Retrofit BLOCKED (under-planted). See retrofit_report.json — "
+                 "continuing; revision cycles can still polish early chapters.")
+        elif result.returncode != 0:
+            step(f"Retrofit exited {result.returncode}; continuing drafting.")
+        else:
+            git_add_commit(f"retrofit: post-reveal pass through ch{reveal - 1}")
+            step("Retrofit complete.")
+    except Exception as e:
+        step(f"Reveal retrofit skipped due to error: {e}")
+        state["reveal_retrofit_done"] = True
+        save_state(state)
+
+
 def run_drafting(state: dict) -> dict:
     """
     Draft each chapter sequentially, evaluating and retrying as needed.
@@ -540,6 +599,7 @@ def run_drafting(state: dict) -> dict:
 
                 # Append canon entries from the eval JSON LOG FILE
                 update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                _maybe_run_reveal_retrofit(state, ch)
 
                 drafted = True
                 break
@@ -582,6 +642,7 @@ def run_drafting(state: dict) -> dict:
                     state["chapters_drafted"] = ch
                     save_state(state)
                     update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                    _maybe_run_reveal_retrofit(state, ch)
                     drafted = True
                     break
 
@@ -622,6 +683,7 @@ def run_drafting(state: dict) -> dict:
                                 state["chapters_drafted"] = ch
                                 save_state(state)
                                 update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                                _maybe_run_reveal_retrofit(state, ch)
                                 drafted = True
                                 break
                             elif rep_score > best_score and rep_score > 0:
@@ -666,6 +728,7 @@ def run_drafting(state: dict) -> dict:
                 # Append canon entries of the best attempt even when force-kept
                 update_canon_from_eval(ch, attempt_num=best_attempt_num,
                                        eval_log_path=attempt_log_paths.get(best_attempt_num))
+                _maybe_run_reveal_retrofit(state, ch)
             else:
                 if best_draft_content is None:
                     reason = "no valid drafts were generated"
@@ -1727,6 +1790,17 @@ def run_pipeline(args):
         voice_template = root_dir / "fuel" / "voice.md"
         if voice_template.exists():
             shutil.copy2(voice_template, paths.get_voice_path())
+            prose_mode = getattr(args, "prose_mode", "") or os.environ.get("GESAKU_PROSE_MODE", "")
+            if prose_mode:
+                from core.genre import load_prose_pack
+                pack = load_prose_pack(prose_mode)
+                if pack:
+                    voice_path = paths.get_voice_path()
+                    existing = voice_path.read_text(encoding="utf-8")
+                    voice_path.write_text(
+                        existing + f"\n\n---\n\n## Prose mode ({prose_mode})\n\n{pack}\n",
+                        encoding="utf-8",
+                    )
                 
         save_state(state)
     else:
@@ -1814,6 +1888,8 @@ def run_pipeline(args):
                         cmd += ["--notes", notes_for_genre]
                     if args.perspective:
                         cmd += ["--perspective", args.perspective]
+                    if getattr(args, "prose_mode", ""):
+                        cmd += ["--prose-mode", args.prose_mode]
                     subprocess.run(cmd, check=True, timeout=900)
                     from core.genre import reload_genre
                     reload_genre()
@@ -1930,6 +2006,11 @@ Examples:
         choices=["", "first_person", "third_person"],
         help="Force narrative perspective (first_person / third_person). "
              "Empty = foundation decides.")
+    parser.add_argument(
+        "--prose-mode", dest="prose_mode",
+        default=os.environ.get("GESAKU_PROSE_MODE", ""),
+        choices=["", "first_intimate", "first_voicey", "third_close", "third_scene"],
+        help="Prose distance pack (fuel/prose/*.md). Empty = no pack.")
     parser.add_argument("--genre", default=os.environ.get("GESAKU_GENRE", ""),
                         help="Genre description (e.g., 'Cyberpunk Noir')")
     parser.add_argument("--chapters", default=os.environ.get("GESAKU_CHAPTERS", "24"),
