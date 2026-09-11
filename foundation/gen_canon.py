@@ -93,6 +93,11 @@ def main():
             )
             if not parsed.foundation_facts:
                 raise RuntimeError("no parseable foundation facts (visible_from bullets required)")
+            if parsed.malformed_visible_from:
+                bad = "; ".join(parsed.malformed_visible_from[:5])
+                raise RuntimeError(
+                    "malformed visible_from tag(s) — fail closed, retry: " + bad
+                )
             break
         except RuntimeError as e:
             if attempt == 0:

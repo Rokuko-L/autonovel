@@ -37,6 +37,16 @@ Deterministic detectors, each with its own penalty cap (global cap 4.0):
 - The judge also emits `new_canon_entries` (core vs incremental) and
   `unexplained_references`, which feed later chapters' canon files.
 
+## Roadmap (not in v1)
+
+- **Author-continuity judge**: a separate, non-blocking check that sees
+  sealed foundation + full outline + the chapter and reports `mask_breaks`
+  (e.g. A doing something logistically impossible if the mask were true) and
+  `plant_gaps`. Must never affect `chapter_gate` / keep-discard.
+  `pipeline/retrofit_reveal.py` already writes an informational
+  continuity scan to `retrofit_report.json`; a dedicated LLM judge is still
+  outstanding.
+
 Related: [../pipeline/spec.md](spec.md) for sealed foundation + retrofit.
 
 ## Post-Judge Penalties (`evaluate_chapter`)

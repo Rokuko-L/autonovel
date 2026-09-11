@@ -155,13 +155,52 @@ class TagVariantsTest(unittest.TestCase):
             "- [visible_from: 9] bracket form\n"
             "- (from 7) paren form\n"
             "- vf=3: short form\n"
+            "- visible_from 4: space form\n"
         )
         p = parse_canon(text)
         by_fact = {f.fact: f.visible_from for f in p.foundation_facts}
         self.assertEqual(by_fact["bracket form"], 9)
         self.assertEqual(by_fact["paren form"], 7)
         self.assertEqual(by_fact["short form"], 3)
+        self.assertEqual(by_fact["space form"], 4)
         self.assertEqual(p.reveal_chapter(), 3)
+        self.assertEqual(p.malformed_visible_from, [])
+
+
+class FailClosedMalformedTagTest(unittest.TestCase):
+    def test_typo_tag_is_sealed_not_public(self):
+        text = "## Foundation\n\n- visible_from fourteen: the true heir of B.\n"
+        p = parse_canon(text)
+        self.assertEqual(len(p.foundation_facts), 1)
+        fact = p.foundation_facts[0]
+        self.assertTrue(fact.malformed_tag)
+        self.assertGreater(fact.visible_from, 1)
+        self.assertNotIn("true heir", public_foundation_md(p, 1))
+        self.assertNotIn("true heir", writer_view_md(p, 24))
+        self.assertIn("true heir", sealed_foundation_md(p))
+
+    def test_malformed_does_not_invent_reveal_chapter(self):
+        text = (
+            "## Foundation\n\n"
+            "- visible_from=12: real twist\n"
+            "- visible_from oops: typo seal\n"
+        )
+        p = parse_canon(text)
+        self.assertEqual(p.reveal_chapter(), 12)
+        self.assertEqual(len(p.malformed_visible_from), 1)
+
+    def test_prose_from_is_not_mistaken_for_tag(self):
+        text = "## Foundation\n\n- From the capital, the salt road runs east.\n"
+        p = parse_canon(text)
+        self.assertEqual(p.foundation_facts[0].visible_from, 1)
+        self.assertFalse(p.foundation_facts[0].malformed_tag)
+        self.assertEqual(p.malformed_visible_from, [])
+
+    def test_missing_number_is_sealed(self):
+        text = "## Foundation\n\n- visible_from=: the mask of A.\n"
+        p = parse_canon(text)
+        self.assertTrue(p.foundation_facts[0].malformed_tag)
+        self.assertGreater(p.foundation_facts[0].visible_from, 1)
 
 
 if __name__ == "__main__":

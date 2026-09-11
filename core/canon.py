@@ -12,11 +12,30 @@ import re
 from dataclasses import dataclass, field
 
 VISIBLE_FROM_RE = re.compile(
-    r"^\s*[-*]\s*(?:\[(?:visible_from|vf|from)\s*[:=]\s*(\d+)\]|\(from\s*[:=]?\s*(\d+)\)|"
-    r"(?:visible_from|vf|from)\s*[:=]\s*(\d+)\s*[:.)-]?)\s*(.+?)\s*$",
+    r"^\s*[-*]\s*(?:"
+    r"\[(?:visible_from|vf|from)\s*[:= ]\s*(\d+)\s*\]|"
+    r"\(from\s*[:= ]\s*(\d+)\s*\)|"
+    r"(?:visible_from|vf)\s*[:= ]\s*(\d+)\s*[:.)-]?\s*|"
+    r"from\s*[:=]\s*(\d+)\s*[:.)-]?\s*"
+    r")\s*(.+?)\s*$",
     re.IGNORECASE,
 )
 BARE_BULLET_RE = re.compile(r"^\s*[-*]\s+(.+?)\s*$")
+# Any bullet that *looks* like it attempted a reveal tag. Used to fail closed:
+# a typo must never silently become visible_from=1. Deliberately tight so
+# prose like "From the capital..." is not misread as a tag.
+TAG_ATTEMPT_RE = re.compile(
+    r"^\s*[-*]\s*(?:"
+    r"\[\s*(?:visible_from|vf|from)\b|"
+    r"\(\s*from\b|"
+    r"(?:visible_from|vf)\b|"
+    r"from\s*[:=]"
+    r")",
+    re.IGNORECASE,
+)
+# Max seal for malformed tags — never public, unlock only if a chapter this
+# large is actually reached (effectively author-only until fixed).
+MALFORMED_SEAL = 10**6
 MEANING_FRAMES = re.compile(
     r"\b(secretly|actually|really|truly|in truth|the real|mask|front for|"
     r"puppet master|puppet-master|is (?:in fact|in reality)|was never|"
@@ -38,6 +57,7 @@ STOPWORDS = frozenset(
 class FoundationFact:
     fact: str
     visible_from: int = 1
+    malformed_tag: bool = False
 
 
 @dataclass
@@ -50,10 +70,19 @@ class ParsedCanon:
     as_of_raw: dict[int, str] = field(default_factory=dict)
     revision_sync: str = ""
     other_sections: list[str] = field(default_factory=list)
+    malformed_visible_from: list[str] = field(default_factory=list)
 
     def reveal_chapter(self) -> int | None:
-        """Earliest chapter at which any sealed fact becomes visible, else None."""
-        sealed = [f.visible_from for f in self.foundation_facts if f.visible_from > 1]
+        """Earliest chapter at which any sealed fact becomes visible, else None.
+
+        Malformed-tag facts (sealed to MALFORMED_SEAL) are ignored here so a
+        typo does not invent a fake reveal at chapter 10**6.
+        """
+        sealed = [
+            f.visible_from
+            for f in self.foundation_facts
+            if f.visible_from > 1 and not f.malformed_tag
+        ]
         return min(sealed) if sealed else None
 
     def sealed_facts(self) -> list[FoundationFact]:
@@ -90,31 +119,57 @@ def _parse_bullets(body: str) -> list[str]:
     return facts
 
 
-def _parse_foundation(body: str) -> list[FoundationFact]:
+def _parse_foundation(body: str) -> tuple[list[FoundationFact], list[str]]:
     """Parse foundation body into facts with optional visible_from tags.
 
     Accepts:
       - visible_from=14: fact
+      - visible_from 14: fact   (space separator)
       - [visible_from: 14] fact
       - (from 14) fact
       - plain bullet  → visible_from=1
+
+    Fail closed: a bullet that *looks* like a reveal tag but does not parse
+    is sealed to MALFORMED_SEAL (never public). Malformed lines are returned
+    for logging/gen_canon retry.
     """
     facts: list[FoundationFact] = []
+    malformed: list[str] = []
     for line in body.splitlines():
+        if not line.strip():
+            continue
         vm = VISIBLE_FROM_RE.match(line)
         if vm:
-            raw = next(g for g in vm.groups()[:3] if g)
-            text = vm.group(4).strip().lstrip(":-–— ").strip()
+            raw = next(g for g in vm.groups()[:4] if g)
+            text = vm.group(5).strip().lstrip(":-–— ").strip()
             if text:
                 facts.append(FoundationFact(fact=text, visible_from=int(raw)))
             continue
         bm = BARE_BULLET_RE.match(line)
-        if bm:
-            text = bm.group(1).strip()
-            # Skip sub-headers and meta lines
-            if text and not text.startswith("#") and not text.lower().startswith("visible_from"):
-                facts.append(FoundationFact(fact=text, visible_from=1))
-    return facts
+        if not bm:
+            continue
+        text = bm.group(1).strip()
+        if not text or text.startswith("#"):
+            continue
+        if TAG_ATTEMPT_RE.match(line):
+            # Typo / unparseable tag — seal hard, do not open to chapter 1.
+            stripped = re.sub(
+                r"^[\[\(]?\s*(?:visible_from|vf|from)\b[:= ]*\d*\s*[\]\):.\-]?\s*",
+                "",
+                text,
+                flags=re.IGNORECASE,
+            ).strip() or text
+            facts.append(
+                FoundationFact(
+                    fact=stripped,
+                    visible_from=MALFORMED_SEAL,
+                    malformed_tag=True,
+                )
+            )
+            malformed.append(line.strip())
+            continue
+        facts.append(FoundationFact(fact=text, visible_from=1))
+    return facts, malformed
 
 
 def parse_canon(canon_text: str) -> ParsedCanon:
@@ -127,7 +182,7 @@ def parse_canon(canon_text: str) -> ParsedCanon:
         h = header.lower()
         if h.startswith("## foundation"):
             parsed.foundation_raw = body
-            parsed.foundation_facts = _parse_foundation(body)
+            parsed.foundation_facts, parsed.malformed_visible_from = _parse_foundation(body)
         elif h.startswith("## core canon"):
             parsed.core_raw = body
             parsed.core_facts = _parse_bullets(body)
