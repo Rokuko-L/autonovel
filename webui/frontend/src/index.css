@@ -164,6 +164,12 @@ body::after {
   color: var(--color-fog-300);
   pointer-events: none;
 }
+/* Top-of-scroll fields (wizard identity): open downward so overflow-y
+   does not clip the popover against the header edge. */
+.hint-wrap.hint-below .hint-pop {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
 
 /* empty state: explains what the view becomes once the pipeline fills it */
 .empty-state {

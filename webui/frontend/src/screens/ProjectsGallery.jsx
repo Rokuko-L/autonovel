@@ -290,59 +290,61 @@ function Wizard({ onClose, onLaunch }) {
         className="flex max-h-[92vh] w-full max-w-xl flex-col border border-ink-600 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between border-b border-line px-6 py-4">
-          <div>
-            <p className="section-head">initiate a novel</p>
-            <p className="mt-0.5 font-mono text-[10px] text-fog-500">
-              step {step + 1}/{steps.length} · {steps[step]}
+        {/* Header + mode strip are outside the scroll body so the Hint
+            popover (absolute, no z-index) is never clipped by overflow-y. */}
+        <header className="shrink-0 border-b border-line px-6 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="section-head">initiate a novel</p>
+              <p className="mt-0.5 font-mono text-[10px] text-fog-500">
+                step {step + 1}/{steps.length} · {steps[step]}
+              </p>
+            </div>
+            <button onClick={onClose} className="font-mono text-xs text-fog-500 hover:text-fog-200">✕</button>
+          </div>
+          <div className="mt-3">
+            <div className={SEG.wrapper}>
+              <button
+                type="button"
+                onClick={() => setModePersist('creator')}
+                className={SEG.btn(mode === 'creator')}
+                title="guided fields: character, cast, arcs — serialized into seed notes"
+              >
+                [story creator]
+              </button>
+              <button
+                type="button"
+                onClick={() => setModePersist('dump')}
+                className={SEG.btn(mode === 'dump')}
+                title="paste a full premise dump or point at a notes file"
+              >
+                [paste notes]
+              </button>
+            </div>
+            <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-fog-500">
+              {mode === 'creator'
+                ? 'structured quickstart (default). freeform at the end attaches to these fields — it does not replace them.'
+                : 'classic dump mode: one freeform notes box (or file path) becomes the seed as-is.'}
             </p>
           </div>
-          <button onClick={onClose} className="font-mono text-xs text-fog-500 hover:text-fog-200">✕</button>
+          <div className="mt-3 flex gap-0.5">
+            {steps.map((s, i) => (
+              <button
+                key={s}
+                onClick={() => i < step && setStep(i)}
+                title={s}
+                className={`h-1 flex-1 transition-colors ${i <= step ? 'bg-accent' : 'bg-ink-700'} ${i < step ? 'cursor-pointer' : ''}`}
+              />
+            ))}
+          </div>
         </header>
 
-        <div className="border-b border-line px-6 py-3">
-          <div className={SEG.wrapper}>
-            <button
-              type="button"
-              onClick={() => setModePersist('creator')}
-              className={SEG.btn(mode === 'creator')}
-              title="guided fields: character, cast, arcs — serialized into seed notes"
-            >
-              [story creator]
-            </button>
-            <button
-              type="button"
-              onClick={() => setModePersist('dump')}
-              className={SEG.btn(mode === 'dump')}
-              title="paste a full premise dump or point at a notes file"
-            >
-              [paste notes]
-            </button>
-          </div>
-          <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-fog-500">
-            {mode === 'creator'
-              ? 'structured quickstart (default). freeform at the end attaches to these fields — it does not replace them.'
-              : 'classic dump mode: one freeform notes box (or file path) becomes the seed as-is.'}
-          </p>
-        </div>
-
-        <div className="flex gap-0.5 px-6 pt-4">
-          {steps.map((s, i) => (
-            <button
-              key={s}
-              onClick={() => i < step && setStep(i)}
-              title={s}
-              className={`h-1 flex-1 transition-colors ${i <= step ? 'bg-accent' : 'bg-ink-700'} ${i < step ? 'cursor-pointer' : ''}`}
-            />
-          ))}
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-5 pt-5">
           {steps[step] === 'identity' && (
             <>
               <label className="block">
                 <span className="field-label">
-                  project id <Hint>Folder name under projects/. Not the novel's display title — that is generated later (or set below as a working title).</Hint>
+                  project id <Hint below>Folder name under projects/. Not the novel's display title — that is generated later (or set below as a working title).</Hint>
                 </span>
                 <input
                   className="field-input"
@@ -358,7 +360,7 @@ function Wizard({ onClose, onLaunch }) {
               {mode === 'creator' && (
                 <label className="block">
                   <span className="field-label">
-                    working title <Hint>Optional. A human label for you — does not replace the pipeline-generated novel title.</Hint>
+                    working title <Hint below>Optional. A human label for you — does not replace the pipeline-generated novel title.</Hint>
                   </span>
                   <input
                     className="field-input"
@@ -370,7 +372,7 @@ function Wizard({ onClose, onLaunch }) {
               )}
               <label className="block">
                 <span className="field-label">
-                  genre classification <Hint>The genre steers the whole foundation pass — world, tone, and the story engine. Free text works best.</Hint>
+                  genre classification <Hint below>The genre steers the whole foundation pass — world, tone, and the story engine. Free text works best.</Hint>
                 </span>
                 <input
                   className="field-input"
