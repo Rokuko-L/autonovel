@@ -446,6 +446,42 @@ def resync_canon_after_cycle(kept_results: list, cycle: int):
 # PHASE 2 — DRAFTING
 # ---------------------------------------------------------------------------
 
+def _maybe_run_reveal_retrofit(state: dict, ch: int) -> None:
+    """After the reveal chapter is kept, retrofit ch 1..R-1 once.
+
+    Under-planted outlines block the pass (see pipeline/retrofit_reveal.py).
+    Never retries in a loop — state flag marks completion either way.
+    """
+    if state.get("reveal_retrofit_done"):
+        return
+    try:
+        from core import canon as canon_mod
+        canon_path = paths.get_canon_path()
+        if not canon_path.exists():
+            return
+        parsed = canon_mod.parse_canon(canon_path.read_text(encoding="utf-8"))
+        reveal = parsed.reveal_chapter()
+        if not reveal or ch != reveal:
+            return
+        step(f"Reveal chapter {reveal} kept — running post-reveal retrofit...")
+        result = uv_run("pipeline/retrofit_reveal.py", timeout=1800)
+        state["reveal_retrofit_done"] = True
+        state["reveal_retrofit_exit"] = result.returncode
+        save_state(state)
+        if result.returncode == 2:
+            step("Retrofit BLOCKED (under-planted). See retrofit_report.json — "
+                 "continuing; revision cycles can still polish early chapters.")
+        elif result.returncode != 0:
+            step(f"Retrofit exited {result.returncode}; continuing drafting.")
+        else:
+            git_add_commit(f"retrofit: post-reveal pass through ch{reveal - 1}")
+            step("Retrofit complete.")
+    except Exception as e:
+        step(f"Reveal retrofit skipped due to error: {e}")
+        state["reveal_retrofit_done"] = True
+        save_state(state)
+
+
 def run_drafting(state: dict) -> dict:
     """
     Draft each chapter sequentially, evaluating and retrying as needed.
@@ -563,6 +599,7 @@ def run_drafting(state: dict) -> dict:
 
                 # Append canon entries from the eval JSON LOG FILE
                 update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                _maybe_run_reveal_retrofit(state, ch)
 
                 drafted = True
                 break
@@ -605,6 +642,7 @@ def run_drafting(state: dict) -> dict:
                     state["chapters_drafted"] = ch
                     save_state(state)
                     update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                    _maybe_run_reveal_retrofit(state, ch)
                     drafted = True
                     break
 
@@ -645,6 +683,7 @@ def run_drafting(state: dict) -> dict:
                                 state["chapters_drafted"] = ch
                                 save_state(state)
                                 update_canon_from_eval(ch, attempt_num=attempt, eval_log_path=eval_log_path)
+                                _maybe_run_reveal_retrofit(state, ch)
                                 drafted = True
                                 break
                             elif rep_score > best_score and rep_score > 0:
@@ -689,6 +728,7 @@ def run_drafting(state: dict) -> dict:
                 # Append canon entries of the best attempt even when force-kept
                 update_canon_from_eval(ch, attempt_num=best_attempt_num,
                                        eval_log_path=attempt_log_paths.get(best_attempt_num))
+                _maybe_run_reveal_retrofit(state, ch)
             else:
                 if best_draft_content is None:
                     reason = "no valid drafts were generated"
