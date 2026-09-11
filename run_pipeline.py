@@ -166,6 +166,10 @@ def run_foundation(state: dict) -> dict:
         if not current_title or current_title == "Untitled":
             uv_run("foundation/gen_title.py", timeout=600)
 
+        # Canon before outline so plant hygiene can use sealed-fact denylist.
+        step("Generating canon...")
+        uv_run("foundation/gen_canon.py", timeout=600)
+
         step("Generating outline (part 1)...")
         uv_run("foundation/gen_outline.py", timeout=900)
 
@@ -217,15 +221,34 @@ def run_foundation(state: dict) -> dict:
         ph_passed, ph_error = validate_plants_harvests(outline_text)
         if not ph_passed:
             step(f"WARNING: Outline plants/harvests validation issues found:\n{ph_error}")
-        
+
+        # Plant hygiene: sealed-term leaks + action-plant coverage (twist stories)
+        try:
+            from core import canon as canon_mod
+            from core import plant_hygiene as plant_hygiene_mod
+            canon_text = paths.get_canon_path().read_text(encoding="utf-8")
+            characters_text = paths.get_characters_path().read_text(encoding="utf-8")
+            hy_ok, hy_err, hy_side = plant_hygiene_mod.validate_outline_plant_hygiene(
+                outline_text, canon_text, characters_text
+            )
+            (paths.get_project_dir() / "plant_hygiene.json").write_text(
+                json.dumps(hy_side, indent=2), encoding="utf-8"
+            )
+            if not hy_ok:
+                step(f"WARNING: Outline plant hygiene failed:\n{hy_err}")
+                # Block-level retries already ran in gen_outline. Here we only
+                # surface the sidecar; regenerating the whole outline on a
+                # late-block leak would throw away good earlier chapters.
+            else:
+                step(f"Plant hygiene OK (reveal={hy_side.get('reveal_chapter')})")
+        except Exception as e:
+            step(f"Plant hygiene check skipped: {e}")
+
         state.update(load_state())
         debts = extract_outline_debts(outline_text)
         state["debts"] = debts
         save_state(state)
         step(f"Logged {len(debts)} active narrative debts in project state.")
-
-        step("Generating canon...")
-        uv_run("foundation/gen_canon.py", timeout=600)
 
         step("Running voice fingerprint...")
         uv_run("pipeline/voice_fingerprint.py", timeout=600)
